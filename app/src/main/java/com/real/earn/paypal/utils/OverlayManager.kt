@@ -9,7 +9,7 @@ import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.TextView
+import android.widget.ImageView
 import com.real.earn.paypal.R
 
 class OverlayManager(private val context: Context) {
@@ -17,10 +17,13 @@ class OverlayManager(private val context: Context) {
     private var windowManager: WindowManager? = null
     private var overlayView: View? = null
     private var params: WindowManager.LayoutParams? = null
+    private var btnToggle: ImageView? = null
+    private var btnClose: ImageView? = null
 
-    var onPause: (() -> Unit)? = null
-    var onStop: (() -> Unit)? = null
-    var onStopAndClose: (() -> Unit)? = null
+    var onToggle: (() -> Unit)? = null
+    var onClose: (() -> Unit)? = null
+
+    var isPaused = false
 
     @SuppressLint("ClickableViewAccessibility")
     fun show() {
@@ -45,16 +48,17 @@ class OverlayManager(private val context: Context) {
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = 20
-            y = 200
+            y = 240
         }
 
         overlayView = LayoutInflater.from(context).inflate(R.layout.overlay_controls, null)
+        btnToggle = overlayView?.findViewById(R.id.btnToggle)
+        btnClose = overlayView?.findViewById(R.id.btnClose)
 
-        overlayView?.findViewById<TextView>(R.id.btnPause)?.setOnClickListener { onPause?.invoke() }
-        overlayView?.findViewById<TextView>(R.id.btnStop)?.setOnClickListener { onStop?.invoke() }
-        overlayView?.findViewById<TextView>(R.id.btnStopClose)?.setOnClickListener { onStopAndClose?.invoke() }
+        btnToggle?.setOnClickListener { onToggle?.invoke() }
+        btnClose?.setOnClickListener { onClose?.invoke() }
 
-        // Drag support
+        // Drag support (only on the panel, not on buttons)
         overlayView?.setOnTouchListener(object : View.OnTouchListener {
             private var initialX = 0
             private var initialY = 0
@@ -75,7 +79,7 @@ class OverlayManager(private val context: Context) {
                     MotionEvent.ACTION_MOVE -> {
                         val dx = event.rawX - touchX
                         val dy = event.rawY - touchY
-                        if (dx * dx + dy * dy > 100) isDragging = true
+                        if (dx * dx + dy * dy > 150) isDragging = true
                         if (isDragging) {
                             params?.x = initialX + dx.toInt()
                             params?.y = initialY + dy.toInt()
@@ -91,9 +95,7 @@ class OverlayManager(private val context: Context) {
 
         try {
             windowManager?.addView(overlayView, params)
-        } catch (e: Exception) {
-            // Permission missing or other
-        }
+        } catch (_: Exception) {}
     }
 
     fun hide() {
@@ -102,9 +104,14 @@ class OverlayManager(private val context: Context) {
         }
         overlayView = null
         windowManager = null
+        btnToggle = null
+        btnClose = null
     }
 
-    fun setPauseText(text: String) {
-        overlayView?.findViewById<TextView>(R.id.btnPause)?.text = text
+    /** Paused → show Play icon; Running → show Pause icon */
+    fun setPaused(paused: Boolean) {
+        isPaused = paused
+        btnToggle?.setImageResource(if (paused) R.drawable.ic_play else R.drawable.ic_pause)
+        btnToggle?.contentDescription = if (paused) "Resume" else "Pause"
     }
 }
