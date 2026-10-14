@@ -36,82 +36,76 @@ object PayPalAutomation {
                     AirplaneModeController.strictToggle(service)
                 }
                 if (!ok) {
-                    AutomationState.log("✘ [ABORT] Flight failed")
+                    AutomationState.log("✘ [ABORT] Flight")
                     onNumberFail(num); fail++
                     continue
                 }
             }
-            StepUtils.sleepMs(1000)
 
-            // ② Clear data
+            // ② Clear data (with 3 retries)
             val clearOk = StepUtils.retryStep("Clear data") {
                 PayPalClearData.strictClear(service)
             }
             if (!clearOk) {
-                AutomationState.log("✘ [ABORT] Clear data failed")
+                AutomationState.log("✘ [ABORT] Clear data")
                 onNumberFail(num); fail++
                 continue
             }
-            StepUtils.sleepMs(1200)
+            StepUtils.sleepMs(800)
 
             // ③ Launch
-            val launchOk = StepUtils.retryStep("Launch PayPal") {
+            val launchOk = StepUtils.retryStep("Launch") {
                 PayPalActions.launch(service)
             }
             if (!launchOk) {
-                AutomationState.log("✘ [ABORT] Launch failed")
+                AutomationState.log("✘ [ABORT] Launch")
                 onNumberFail(num); fail++
                 continue
             }
-            StepUtils.sleepMs(1500)
 
-            // ④ Get Started
-            PayPalActions.tapGetStarted(service, 8000)
-            StepUtils.sleepMs(1500)
+            // ④ Get Started — click instantly
+            PayPalActions.tapGetStarted(service, 10000)
 
-            // ⑤ US Button — hardcoded (600, 125)
+            // ⑤ US button — poll & hardcoded tap
             val usOk = StepUtils.retryStep("US button") {
                 PayPalActions.clickUsButton(service, 8000)
             }
             if (!usOk) {
-                AutomationState.log("✘ [ABORT] US button fail")
+                AutomationState.log("✘ [ABORT] US button")
                 onNumberFail(num); fail++
                 PayPalActions.closePayPal(service)
                 continue
             }
-            StepUtils.sleepMs(1000)
 
-            // ⑥ Country select
+            // ⑥ Country select — by text "Search"
             val countryOk = StepUtils.retryStep("Country select") {
                 PayPalActions.typeAndSelectCountry(service, countryName, countryIso)
             }
             if (!countryOk) {
-                AutomationState.log("✘ [ABORT] Country select fail")
+                AutomationState.log("✘ [ABORT] Country select")
                 onNumberFail(num); fail++
                 PayPalActions.closePayPal(service)
                 continue
             }
             AutomationState.log("✔ Country: $countryIso")
-            StepUtils.sleepMs(1500)
 
-            // ⑦ Number type (watcher handles popup in background)
+            // ⑦ Number type — by text "phone number"
             val numTypeOk = StepUtils.retryStep("Number type") {
                 PayPalActions.typeNumber(service, num, dialingCode)
             }
             if (!numTypeOk) {
-                AutomationState.log("✘ [ABORT] Number type fail")
+                AutomationState.log("✘ [ABORT] Number type")
                 onNumberFail(num); fail++
                 PayPalActions.closePayPal(service)
                 continue
             }
-            StepUtils.sleepMs(700)
 
             // ⑧ Continue
             val contOk = StepUtils.retryStep("Continue") {
                 PayPalActions.tapContinue(service)
             }
             if (!contOk) {
-                AutomationState.log("✘ [ABORT] Continue not found")
+                AutomationState.log("✘ [ABORT] Continue")
                 onNumberFail(num); fail++
                 PayPalActions.closePayPal(service)
                 continue
