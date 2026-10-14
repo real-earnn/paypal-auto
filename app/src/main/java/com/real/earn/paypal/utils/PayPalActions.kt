@@ -23,63 +23,59 @@ object PayPalActions {
             )
             service.startActivity(intent)
 
-            val end = SystemClock.uptimeMillis() + 6000
-            while (SystemClock.uptimeMillis() < end) {
-                val root = service.rootInActiveWindow
-                val pkg = root?.packageName?.toString() ?: ""
-                if (pkg.contains("paypal")) {
-                    sleepMs(600)
-                    return true
-                }
-                sleepMs(300)
+            if (!StepUtils.waitForPackage(service, "paypal", 6000)) {
+                AutomationState.log("✘ PayPal not foreground")
+                return false
             }
-            false
+            StepUtils.sleepMs(800)
+            true
         } catch (e: Exception) {
             AutomationState.log("✘ Launch: ${e.message}")
             false
         }
     }
 
-    // ── Wait Get Started → tap → number screen (NO continue-in-lambda) ──
+    // ── Wait Get Started → tap → number screen ──
     fun handleGetStartedAndWaitNumber(service: AccessibilityService, timeoutMs: Long = 15000): Boolean {
         val end = SystemClock.uptimeMillis() + timeoutMs
         var clicked = false
         var stableAt = 0L
 
         while (SystemClock.uptimeMillis() < end) {
+            if (StepUtils.shouldStop()) return false
+
             val root = service.rootInActiveWindow
             if (root == null) {
-                sleepMs(300)
-            } else {
-                // Get Started (once)
-                if (!clicked && NodeFinder.containsAny(root, "Get Started")) {
-                    if (NodeFinder.clickAny(root, "Get Started")) {
-                        AutomationState.log("ℹ Get Started tapped")
-                        clicked = true
-                        sleepMs(2500)
-                        continue
-                    }
-                }
-
-                // Number screen: has text + EditText
-                val hasText = NodeFinder.containsAny(root, "email or number", "Email or phone number")
-                val hasEdit = NodeFinder.findEditText(root) != null
-                if (hasText && hasEdit) {
-                    if (stableAt == 0L) stableAt = SystemClock.uptimeMillis()
-                    if (SystemClock.uptimeMillis() - stableAt > 1200) {
-                        AutomationState.log("✔ On number screen")
-                        return true
-                    }
-                } else {
-                    stableAt = 0L
-                }
-                sleepMs(300)
+                StepUtils.sleepMs(300)
+                continue
             }
+
+            if (!clicked && NodeFinder.containsAny(root, "Get Started")) {
+                if (NodeFinder.clickAny(root, "Get Started")) {
+                    AutomationState.log("ℹ Get Started tapped")
+                    clicked = true
+                    StepUtils.sleepMs(2500)
+                    continue
+                }
+            }
+
+            val hasText = NodeFinder.containsAny(root, "email or number", "Email or phone number")
+            val hasEdit = NodeFinder.findEditText(root) != null
+            if (hasText && hasEdit) {
+                if (stableAt == 0L) stableAt = SystemClock.uptimeMillis()
+                if (SystemClock.uptimeMillis() - stableAt > 1200) {
+                    AutomationState.log("✔ On number screen")
+                    return true
+                }
+            } else {
+                stableAt = 0L
+            }
+            StepUtils.sleepMs(300)
         }
         return false
     }
 
-    // ── Click US button (top-right quadrant) ──
+    // ── Click US button ──
     fun clickUsButton(service: AccessibilityService, timeoutMs: Long = 8000): Boolean {
         val codes = listOf(
             "US", "GB", "PK", "IN", "MY", "BD", "ID", "EG", "SA", "AE",
@@ -88,12 +84,13 @@ object PayPalActions {
         )
         val end = SystemClock.uptimeMillis() + timeoutMs
         while (SystemClock.uptimeMillis() < end) {
+            if (StepUtils.shouldStop()) return false
+
             // Close Gmail popup if appears mid-wait
             dismissPopupsIfAny(service)
 
             val root = service.rootInActiveWindow
             if (root != null) {
-                // Already open?
                 if (NodeFinder.containsAny(root, "Country of residence", "Country/region")) {
                     AutomationState.log("ℹ Country dialog open")
                     return true
@@ -102,8 +99,7 @@ object PayPalActions {
                 val rootR = Rect(); root.getBoundsInScreen(rootR)
 
                 for (code in codes) {
-                    val node = NodeFinder.findByText(root, code)
-                    if (node == null) continue
+                    val node = NodeFinder.findByText(root, code) ?: continue
                     if (!NodeFinder.isVisible(node)) continue
 
                     val r = Rect(); node.getBoundsInScreen(r)
@@ -118,7 +114,7 @@ object PayPalActions {
                     }
                 }
             }
-            sleepMs(400)
+            StepUtils.sleepMs(400)
         }
         return false
     }
@@ -126,17 +122,18 @@ object PayPalActions {
     private fun waitForDialog(service: AccessibilityService, timeoutMs: Long): Boolean {
         val end = SystemClock.uptimeMillis() + timeoutMs
         while (SystemClock.uptimeMillis() < end) {
+            if (StepUtils.shouldStop()) return false
             val root = service.rootInActiveWindow
             if (root != null) {
                 if (NodeFinder.containsAny(root, "Country of residence", "Country/region") ||
                     NodeFinder.findEditText(root) != null) return true
             }
-            sleepMs(300)
+            StepUtils.sleepMs(300)
         }
         return false
     }
 
-    // ── Search country: click search → type → click result ──
+    // ── Type country + select result ──
     fun typeAndSelectCountry(
         service: AccessibilityService,
         countryName: String,
@@ -150,21 +147,22 @@ object PayPalActions {
         }
 
         NodeFinder.click(search)
-        sleepMs(500)
+        StepUtils.sleepMs(500)
 
         NodeFinder.setText(search, countryName)
         AutomationState.log("ℹ Typed: $countryName")
-        sleepMs(1500)
+        StepUtils.sleepMs(1500)
 
         val end = SystemClock.uptimeMillis() + 4000
         while (SystemClock.uptimeMillis() < end) {
+            if (StepUtils.shouldStop()) return false
             val r = service.rootInActiveWindow
             val match = findResult(r, countryName, countryIso)
             if (match != null && NodeFinder.click(match)) {
                 AutomationState.log("✔ Country clicked: $countryName")
                 return true
             }
-            sleepMs(400)
+            StepUtils.sleepMs(400)
         }
         AutomationState.log("✘ No result for $countryName")
         return false
@@ -187,17 +185,16 @@ object PayPalActions {
         return null
     }
 
-    // ── Wait for Gmail popup, close it ──
     fun waitAndClosePopup(service: AccessibilityService, timeoutMs: Long = 5000): Boolean {
         val end = SystemClock.uptimeMillis() + timeoutMs
         while (SystemClock.uptimeMillis() < end) {
+            if (StepUtils.shouldStop()) return false
             if (dismissPopupsIfAny(service)) return true
-            sleepMs(300)
+            StepUtils.sleepMs(300)
         }
         return false
     }
 
-    // ── Dismiss any popup now ──
     fun dismissPopupsIfAny(service: AccessibilityService): Boolean {
         val root = service.rootInActiveWindow ?: return false
         val candidates = arrayOf(
@@ -208,13 +205,12 @@ object PayPalActions {
             ?: return false
         if (NodeFinder.click(node)) {
             AutomationState.log("ℹ Popup closed")
-            sleepMs(700)
+            StepUtils.sleepMs(700)
             return true
         }
         return false
     }
 
-    // ── Type number ──
     fun typeNumber(service: AccessibilityService, fullNumber: String, dialingCode: String): Boolean {
         var national = fullNumber.trim().removePrefix("+")
         if (dialingCode.isNotEmpty() && national.startsWith(dialingCode)) {
@@ -229,14 +225,13 @@ object PayPalActions {
             return false
         }
         NodeFinder.click(edit)
-        sleepMs(400)
+        StepUtils.sleepMs(400)
         NodeFinder.setText(edit, national)
         AutomationState.log("ℹ Number typed: $national")
-        sleepMs(600)
+        StepUtils.sleepMs(600)
         return true
     }
 
-    // ── Continue ──
     fun tapContinue(service: AccessibilityService): Boolean {
         val root = service.rootInActiveWindow ?: return false
         val node = NodeFinder.findByText(root, "Continue", "Next") ?: return false
@@ -247,13 +242,13 @@ object PayPalActions {
         return false
     }
 
-    // ── Check result ──
     enum class Result { OTP_SCREEN, ERROR, TIMEOUT }
 
     fun checkResult(service: AccessibilityService, timeoutMs: Long = 10000): Result {
         val end = SystemClock.uptimeMillis() + timeoutMs
         var errorFlag = false
         while (SystemClock.uptimeMillis() < end) {
+            if (StepUtils.shouldStop()) return Result.TIMEOUT
             val root = service.rootInActiveWindow
             if (root != null) {
                 if (NodeFinder.containsAny(root, "Resend Code", "Resend code", "Resend")) {
@@ -266,7 +261,7 @@ object PayPalActions {
                     )
                 ) errorFlag = true
             }
-            sleepMs(400)
+            StepUtils.sleepMs(400)
         }
         return if (errorFlag) Result.ERROR else Result.TIMEOUT
     }
@@ -278,18 +273,14 @@ object PayPalActions {
             if (node != null && NodeFinder.click(node)) {
                 AutomationState.log("ℹ Resend (${attempt + 1}/2)")
             }
-            sleepMs(5000)
+            StepUtils.sleepMs(5000)
         }
     }
 
     fun closePayPal(service: AccessibilityService) {
         try {
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-            sleepMs(600)
+            StepUtils.sleepMs(700)
         } catch (_: Exception) {}
-    }
-
-    private fun sleepMs(ms: Long) {
-        try { Thread.sleep(ms) } catch (_: InterruptedException) {}
     }
 }
