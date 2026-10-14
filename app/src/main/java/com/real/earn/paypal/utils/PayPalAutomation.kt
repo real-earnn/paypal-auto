@@ -27,104 +27,105 @@ object PayPalAutomation {
             if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
 
             onNumberStart(num)
-            AutomationState.log("▶ Trying: $num")
+            AutomationState.log("─────────────")
+            AutomationState.log("▶ NUMBER: $num")
 
-            // ── STEP 1: Clear PayPal data ──
-            PayPalClearData.clear(service)
-            delay(1200)
-
-            // ── STEP 2: Flight cycle (if enabled) ──
+            // ① Flight ON → 1s → OFF → HOME
             if (autoFlightMode) {
-                AirplaneModeController.toggleCycle(service)
-            } else {
-                AutomationState.log("ℹ Flight skip")
+                AirplaneModeController.strictToggle(service)
+                delay(700)
             }
-            delay(800)
 
-            // ── STEP 3: Launch PayPal ──
-            if (!PayPalActions.launchPayPal(service)) {
+            // ② Clear data
+            val ok1 = PayPalClearData.strictClear(service)
+            if (!ok1) {
+                AutomationState.log("✘ Clear failed — skip")
+                onNumberFail(num); fail++
+                continue
+            }
+            delay(700)
+
+            // ③ Launch
+            if (!PayPalActions.launch(service)) {
+                AutomationState.log("✘ Launch failed")
                 onNumberFail(num); fail++
                 continue
             }
 
-            // ── STEP 4: Wait for number screen ──
-            if (!PayPalActions.waitForNumberScreen(service, 15000)) {
-                AutomationState.log("✘ Number screen miss")
+            // ④ Get Started → number screen
+            if (!PayPalActions.handleGetStartedAndWaitNumber(service, 15000)) {
+                AutomationState.log("✘ Number screen not ready")
                 onNumberFail(num); fail++
-                cleanup(service)
+                PayPalActions.closePayPal(service)
                 continue
             }
 
-            // ── STEP 5: Dismiss any popup ──
+            // Small settle + dismiss any popup before US click
+            delay(500)
             PayPalActions.dismissPopupsIfAny(service)
-            delay(300)
 
-            // ── STEP 6: Open country selector ──
-            if (!PayPalActions.openCountrySelector(service, 6000)) {
-                AutomationState.log("✘ Country selector open fail")
+            // ⑤ Click US button
+            if (!PayPalActions.clickUsButton(service, 8000)) {
+                AutomationState.log("✘ US button fail")
                 onNumberFail(num); fail++
-                cleanup(service)
+                PayPalActions.closePayPal(service)
                 continue
             }
-            AutomationState.log("ℹ Dialog open")
 
-            // ── STEP 7: Select country ──
-            if (!PayPalActions.selectCountry(service, countryName, countryIso)) {
+            // ⑥ Search + select country
+            if (!PayPalActions.typeAndSelectCountry(service, countryName, countryIso)) {
                 AutomationState.log("✘ Country select fail")
                 onNumberFail(num); fail++
-                cleanup(service)
+                PayPalActions.closePayPal(service)
                 continue
             }
             AutomationState.log("✔ Country set: $countryIso")
 
-            // ── STEP 8: Wait for number screen to return ──
-            delay(1200)
-            PayPalActions.dismissPopupsIfAny(service)
-            PayPalActions.waitForNumberScreen(service, 6000)
+            // ⑦ After country select — wait for Gmail popup, close it
+            AutomationState.log("ℹ Waiting for Gmail popup…")
+            PayPalActions.waitAndClosePopup(service, 6000)
+            delay(800)
 
-            // ── STEP 9: Fill number ──
-            if (!PayPalActions.fillNumber(service, num, dialingCode)) {
+            // ⑧ Type number
+            if (!PayPalActions.typeNumber(service, num, dialingCode)) {
+                AutomationState.log("✘ Number type fail")
                 onNumberFail(num); fail++
-                cleanup(service)
+                PayPalActions.closePayPal(service)
                 continue
             }
 
-            // ── STEP 10: Continue ──
+            // ⑨ Continue
             if (!PayPalActions.tapContinue(service)) {
+                AutomationState.log("✘ Continue fail")
                 onNumberFail(num); fail++
-                cleanup(service)
+                PayPalActions.closePayPal(service)
                 continue
             }
+            AutomationState.log("✔ Continue — waiting result…")
 
-            // ── STEP 11: Wait result ──
-            when (PayPalActions.waitForResult(service, 10000)) {
+            // ⑩ Result
+            when (PayPalActions.checkResult(service, 10000)) {
                 PayPalActions.Result.OTP_SCREEN -> {
-                    AutomationState.log("✔ OTP screen — SUCCESS: $num")
+                    AutomationState.log("✔ OTP SCREEN — SUCCESS")
                     PayPalActions.tapResendTwice(service)
                     onNumberSuccess(num)
                     success++
                 }
                 PayPalActions.Result.ERROR -> {
-                    AutomationState.log("✘ Error — FAIL: $num")
+                    AutomationState.log("✘ RED ERROR — FAIL")
                     onNumberFail(num); fail++
                 }
                 PayPalActions.Result.TIMEOUT -> {
-                    AutomationState.log("⏱ Timeout — FAIL: $num")
+                    AutomationState.log("⏱ TIMEOUT — FAIL")
                     onNumberFail(num); fail++
                 }
             }
 
-            cleanup(service)
+            // Close PayPal before next iteration
+            PayPalActions.closePayPal(service)
+            delay(800)
         }
 
         return Pair(success, fail)
-    }
-
-    private suspend fun cleanup(service: AccessibilityService) {
-        if (AutomationState.getStatus() == AutomationState.Status.STOPPING) return
-        PayPalActions.closePayPal(service)
-        delay(600)
-        PayPalClearData.clear(service)
-        delay(500)
     }
 }
