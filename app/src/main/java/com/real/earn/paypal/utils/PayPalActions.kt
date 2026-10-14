@@ -44,7 +44,6 @@ object PayPalActions {
 
             val root = service.rootInActiveWindow
             if (root != null) {
-                // Skip only if number screen visible
                 val hasEditField = findEditableUnder(root) != null
                 val hasEmailText = NodeFinder.containsAny(
                     root, "email or number", "Email or phone number"
@@ -54,7 +53,6 @@ object PayPalActions {
                     return true
                 }
 
-                // Find Get Started (text or contentDescription)
                 val node = findByTextEquals(root, "Get Started")
                     ?: findByTextContains(root, "Get Started")
                     ?: findByContentDescContains(root, "Get Started")
@@ -84,10 +82,10 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  CLICK US  — pure text detection, no hardcoded location
+    //  CLICK US  — pure text detection (no hardcoded location)
     // ══════════════════════════════════════════════════════
     fun clickUsButton(service: AccessibilityService, timeoutMs: Long = 15000): Boolean {
-        AutomationState.log("ℹ Searching for 'US' text on screen…")
+        AutomationState.log("ℹ Searching for US button…")
         val end = SystemClock.uptimeMillis() + timeoutMs
         var lastDump = 0L
         var lastLog = 0L
@@ -97,20 +95,17 @@ object PayPalActions {
 
             val root = service.rootInActiveWindow
             if (root != null) {
-                // Dialog already open?
                 if (dialogOrSearchVisible(root)) {
                     AutomationState.log("✔ Country dialog already open")
                     return true
                 }
 
-                // ═══ Find "US" text — MULTIPLE strategies ═══
                 val usNode = findUsNode(root)
 
                 if (usNode != null) {
                     AutomationState.log("ℹ US found — attempting click")
                     val clicked = tryClick(usNode)
                     if (clicked) {
-                        // 2 sec wait, then verify
                         StepUtils.sleepMs(2000)
                         val r2 = service.rootInActiveWindow
                         if (r2 != null && dialogOrSearchVisible(r2)) {
@@ -123,7 +118,6 @@ object PayPalActions {
                         AutomationState.log("⚠ US click failed")
                     }
                 } else {
-                    // Log every 4s that US not found
                     val now = SystemClock.uptimeMillis()
                     if (now - lastLog > 4000) {
                         AutomationState.log("ℹ 'US' not yet visible — waiting…")
@@ -131,7 +125,6 @@ object PayPalActions {
                     }
                 }
 
-                // Dump all text nodes once (after 8s if still not found)
                 val elapsed = timeoutMs - (end - SystemClock.uptimeMillis())
                 if (elapsed > 8000 && SystemClock.uptimeMillis() - lastDump > 10000) {
                     dumpAllText(root)
@@ -143,80 +136,76 @@ object PayPalActions {
         }
 
         AutomationState.log("✘ US button not found in ${timeoutMs}ms")
-        // Final dump for debugging
         val r = service.rootInActiveWindow
         if (r != null) dumpAllText(r)
         return false
     }
 
     /**
-     * Find "US" node using multiple strategies:
-     *   1. Exact text "US"
-     *   2. Text starts with "US" (e.g., "US ")
-     *   3. Content description equals "US"
-     *   4. Text containing "US" as standalone word
+     * 🎯 Find "US" node with MULTIPLE matching strategies:
+     *   1. Exact text "US" (case-insensitive)
+     *   2. Exact contentDescription "US"
+     *   3. Word-boundary "US" in text or description ("United States (US)")
+     *   4. Contains "United States"
+     *   5. Contains "(US)"
      */
     private fun findUsNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        // Strategy 1: exact text "US"
-        findByTextEquals(root, "US")?.let {
-            AutomationState.log("ℹ US match: exact text")
-            return it
-        }
-
-        // Strategy 2: text starts with "US" (short)
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         while (queue.isNotEmpty()) {
             val n = queue.removeFirst()
+            if (!n.isVisibleToUser) continue
+
             val t = n.text?.toString()?.trim() ?: ""
-            // "US" exact, "US " trimmed, "US\n"
-            if (t.equals("US", ignoreCase = true) && n.isVisibleToUser) {
-                AutomationState.log("ℹ US match: case-insensitive")
-                return n
-            }
-            // desc equals "US" or "Country: US"
             val d = n.contentDescription?.toString()?.trim() ?: ""
-            if (d.equals("US", ignoreCase = true) && n.isVisibleToUser) {
-                AutomationState.log("ℹ US match: contentDescription")
+            val combined = "$t $d".trim()
+
+            if (matchesUS(combined)) {
+                AutomationState.log("ℹ US match: T='$t' D='$d'")
                 return n
             }
+
             for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
         }
-
-        // Strategy 3: any visible node whose text IS "US" ignoring spaces
-        queue.clear(); queue.add(root)
-        while (queue.isNotEmpty()) {
-            val n = queue.removeFirst()
-            val t = n.text?.toString()?.trim()?.uppercase() ?: ""
-            if (t == "US" && n.isVisibleToUser) {
-                AutomationState.log("ℹ US match: uppercase compare")
-                return n
-            }
-            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
-        }
-
         return null
     }
 
+    /**
+     * Match if combined text/desc:
+     *   - Contains standalone "US" (word boundary, e.g. "(US)", " US ", "US")
+     *   - Contains "United States" (any case)
+     */
+    private fun matchesUS(s: String): Boolean {
+        if (s.isEmpty()) return false
+        val upper = s.uppercase()
+
+        // Exact "US"
+        if (upper == "US") return true
+
+        // "United States"
+        if (upper.contains("UNITED STATES")) return true
+
+        // Word-boundary "US" — catches "(US)", " US ", "US."
+        // Avoids matching "STATES" (no standalone US inside)
+        if (Regex("\\bUS\\b").containsMatchIn(upper)) return true
+
+        return false
+    }
+
     private fun tryClick(node: AccessibilityNodeInfo): Boolean {
-        // Try direct click
         if (node.isClickable && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
 
-        // Try clickable parent
         val parent = NodeFinder.findClickableParent(node)
         if (parent != null && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
 
-        // Try clickable child
         for (i in 0 until node.childCount) {
             val c = node.getChild(i) ?: continue
             if (c.isClickable && c.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
         }
 
-        // Fallback: NodeFinder
         return NodeFinder.click(node)
     }
 
-    /** Dump all visible text nodes to log for debugging */
     private fun dumpAllText(root: AccessibilityNodeInfo) {
         AutomationState.log("═══ SCREEN TEXT DUMP ═══")
         val queue = ArrayDeque<AccessibilityNodeInfo>()
