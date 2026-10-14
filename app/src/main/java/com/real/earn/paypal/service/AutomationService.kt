@@ -19,6 +19,7 @@ import com.real.earn.paypal.auth.AuthManager
 import com.real.earn.paypal.utils.AppPrefs
 import com.real.earn.paypal.utils.OverlayManager
 import com.real.earn.paypal.utils.PayPalAutomation
+import com.real.earn.paypal.utils.PopupWatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -87,15 +88,13 @@ class AutomationService : Service() {
                 "RealEarnPayPal::AutomationWakeLock"
             ).apply {
                 setReferenceCounted(false)
-                acquire(2 * 60 * 60 * 1000L)   // 2 hours max
+                acquire(2 * 60 * 60 * 1000L)
             }
         } catch (_: Exception) {}
     }
 
     private fun releaseWakeLock() {
-        try {
-            if (wakeLock?.isHeld == true) wakeLock?.release()
-        } catch (_: Exception) {}
+        try { if (wakeLock?.isHeld == true) wakeLock?.release() } catch (_: Exception) {}
         wakeLock = null
     }
 
@@ -144,6 +143,7 @@ class AutomationService : Service() {
         updateNotification("Running")
 
         loopJob = scope.launch {
+            var watcherStarted = false
             try {
                 val a11y = PayPalAccessibilityService.instance
                 if (a11y == null) {
@@ -152,6 +152,10 @@ class AutomationService : Service() {
                     return@launch
                 }
                 AutomationState.log("✔ Accessibility connected")
+
+                // 🟢 Start background popup watcher
+                PopupWatcher.start(scope, a11y)
+                watcherStarted = true
 
                 val auth = AuthManager(applicationContext)
                 val prefs = AppPrefs(applicationContext)
@@ -205,6 +209,7 @@ class AutomationService : Service() {
             } catch (e: Exception) {
                 AutomationState.log("✘ Loop error: ${e.message}")
             } finally {
+                if (watcherStarted) PopupWatcher.stop()
                 AutomationState.setStatus(AutomationState.Status.STOPPED)
                 cleanupAfterStop()
             }
@@ -246,26 +251,20 @@ class AutomationService : Service() {
         } catch (_: Exception) {}
     }
 
-    /**
-     * Stop: set STOPPING, let loop exit naturally, then cleanup.
-     * Don't cancel loop immediately — it must finish its sleepMs.
-     */
     private fun stopAutomation(closeActivity: Boolean) {
         val cur = AutomationState.getStatus()
         if (cur == AutomationState.Status.STOPPING || cur == AutomationState.Status.STOPPED) return
 
         AutomationState.setStatus(AutomationState.Status.STOPPING)
         AutomationState.log("⏹ Stopping…")
+        PopupWatcher.stop()
 
-        // Watchdog: after 6 seconds, force cleanup
         scope.launch {
             var waited = 0L
             while (loopJob?.isActive == true && waited < 6000) {
-                delay(200)
-                waited += 200
+                delay(200); waited += 200
             }
-            loopJob?.cancel()
-            loopJob = null
+            loopJob?.cancel(); loopJob = null
 
             if (AutomationState.getStatus() != AutomationState.Status.STOPPED) {
                 AutomationState.setStatus(AutomationState.Status.STOPPED)
@@ -273,9 +272,7 @@ class AutomationService : Service() {
                 cleanupAfterStop()
             }
 
-            if (closeActivity) {
-                AutomationState.requestClose()
-            }
+            if (closeActivity) AutomationState.requestClose()
         }
     }
 
@@ -290,9 +287,7 @@ class AutomationService : Service() {
                     else -> {}
                 }
             }
-            onClose = {
-                stopAutomation(closeActivity = true)
-            }
+            onClose = { stopAutomation(closeActivity = true) }
             show()
         }
     }
@@ -319,6 +314,7 @@ class AutomationService : Service() {
     }
 
     override fun onDestroy() {
+        PopupWatcher.stop()
         loopJob?.cancel(); scope.cancel()
         overlay?.hide(); overlay = null
         releaseWakeLock()
