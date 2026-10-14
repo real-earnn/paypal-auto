@@ -35,7 +35,8 @@ class CountrySelectActivity : AppCompatActivity() {
 
         if (serviceName.isEmpty()) {
             Toast.makeText(this, "Service missing", Toast.LENGTH_SHORT).show()
-            finish(); return
+            finish()
+            return
         }
 
         loadCountries()
@@ -49,8 +50,9 @@ class CountrySelectActivity : AppCompatActivity() {
             try {
                 val res = ApiClient.service(authManager).getCountries(serviceName)
                 if (res.isSuccessful && res.body()?.success == true) {
+
                     val body = res.body()!!
-                    val countries = body.countries
+                    val countries = body.countries ?: emptyList()      // 🟢 safe
                     val unpaid = body.isUnpaid || isUnpaid
 
                     if (countries.isEmpty()) {
@@ -68,15 +70,18 @@ class CountrySelectActivity : AppCompatActivity() {
                             startActivity(i)
                         }
                     }
+
                 } else if (res.code() == 401) {
                     Toast.makeText(this@CountrySelectActivity, "Session khatam", Toast.LENGTH_LONG).show()
                     authManager.clear()
-                    startActivity(Intent(this@CountrySelectActivity, LoginActivity::class.java)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+                    startActivity(
+                        Intent(this@CountrySelectActivity, LoginActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                    )
                     finish()
                 } else {
                     binding.tvEmpty.visibility = View.VISIBLE
-                    binding.tvEmpty.text = "Countries load nahi hui"
+                    binding.tvEmpty.text = "Countries load nahi hui (code ${res.code()})"
                 }
             } catch (e: Exception) {
                 binding.tvEmpty.visibility = View.VISIBLE
