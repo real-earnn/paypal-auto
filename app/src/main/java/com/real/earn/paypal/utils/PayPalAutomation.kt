@@ -63,15 +63,15 @@ object PayPalAutomation {
                 onNumberFail(num); fail++
                 continue
             }
-            StepUtils.sleepMs(1000)
+            StepUtils.sleepMs(1500)
 
-            // ④ Get Started (agar aaye) — number screen ka wait nahi karenge
+            // ④ Get Started
             PayPalActions.tapGetStarted(service, 8000)
             StepUtils.sleepMs(1500)
 
-            // ⑤ US button (yahan tak popup dismiss hota rahega)
+            // ⑤ US Button — hardcoded (600, 125)
             val usOk = StepUtils.retryStep("US button") {
-                PayPalActions.clickUsButton(service, 10000)
+                PayPalActions.clickUsButton(service, 8000)
             }
             if (!usOk) {
                 AutomationState.log("✘ [ABORT] US button fail")
@@ -79,7 +79,7 @@ object PayPalAutomation {
                 PayPalActions.closePayPal(service)
                 continue
             }
-            StepUtils.sleepMs(800)
+            StepUtils.sleepMs(1000)
 
             // ⑥ Country select
             val countryOk = StepUtils.retryStep("Country select") {
@@ -92,13 +92,9 @@ object PayPalAutomation {
                 continue
             }
             AutomationState.log("✔ Country: $countryIso")
-            StepUtils.sleepMs(1200)
+            StepUtils.sleepMs(1500)
 
-            // ⑦ Gmail popup (after country select)
-            PayPalActions.waitAndClosePopup(service, 5000)
-            StepUtils.sleepMs(700)
-
-            // ⑧ Number
+            // ⑦ Number type (watcher handles popup in background)
             val numTypeOk = StepUtils.retryStep("Number type") {
                 PayPalActions.typeNumber(service, num, dialingCode)
             }
@@ -110,7 +106,7 @@ object PayPalAutomation {
             }
             StepUtils.sleepMs(700)
 
-            // ⑨ Continue
+            // ⑧ Continue
             val contOk = StepUtils.retryStep("Continue") {
                 PayPalActions.tapContinue(service)
             }
@@ -122,7 +118,7 @@ object PayPalAutomation {
             }
             AutomationState.log("ℹ Continue — waiting result…")
 
-            // ⑩ Result
+            // ⑨ Result
             when (PayPalActions.checkResult(service, 10000)) {
                 PayPalActions.Result.OTP_SCREEN -> {
                     AutomationState.log("✔ SUCCESS")
