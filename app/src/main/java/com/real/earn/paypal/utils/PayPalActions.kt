@@ -1,7 +1,10 @@
 package com.real.earn.paypal.utils
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
 import android.content.Intent
+import android.graphics.Path
+import android.graphics.Rect
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityNodeInfo
 import com.real.earn.paypal.service.AutomationState
@@ -59,9 +62,7 @@ object PayPalActions {
 
                 if (node != null) {
                     AutomationState.log("ℹ Get Started FOUND — clicking")
-                    val ok = NodeFinder.click(node)
-                        || (NodeFinder.findClickableParent(node)
-                                ?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true)
+                    val ok = tapNode(service, node)
                     if (ok) {
                         AutomationState.log("✔ Get Started tapped — 5s wait")
                         StepUtils.sleepMs(5000)
@@ -82,13 +83,11 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  CLICK US  — pure text detection (no hardcoded location)
+    //  CLICK US
     // ══════════════════════════════════════════════════════
-    fun clickUsButton(service: AccessibilityService, timeoutMs: Long = 15000): Boolean {
+    fun clickUsButton(service: AccessibilityService, timeoutMs: Long = 20000): Boolean {
         AutomationState.log("ℹ Searching for US button…")
         val end = SystemClock.uptimeMillis() + timeoutMs
-        var lastDump = 0L
-        var lastLog = 0L
 
         while (SystemClock.uptimeMillis() < end) {
             if (StepUtils.shouldStop()) return false
@@ -101,34 +100,30 @@ object PayPalActions {
                 }
 
                 val usNode = findUsNode(root)
-
                 if (usNode != null) {
-                    AutomationState.log("ℹ US found — attempting click")
-                    val clicked = tryClick(usNode)
+                    AutomationState.log("ℹ US found — tapping via bounds")
+                    val clicked = tapNode(service, usNode)
                     if (clicked) {
                         StepUtils.sleepMs(2000)
                         val r2 = service.rootInActiveWindow
                         if (r2 != null && dialogOrSearchVisible(r2)) {
-                            AutomationState.log("✔ Dialog opened via US click")
+                            AutomationState.log("✔ Dialog opened via US tap")
                             return true
                         } else {
-                            AutomationState.log("⚠ Click done but dialog not visible — retrying")
+                            AutomationState.log("⚠ Tap done but dialog not visible — retrying")
+                            StepUtils.sleepMs(800)
+                            // retry same spot once
+                            tapNode(service, usNode)
+                            StepUtils.sleepMs(2000)
+                            val r3 = service.rootInActiveWindow
+                            if (r3 != null && dialogOrSearchVisible(r3)) {
+                                AutomationState.log("✔ Dialog opened on retry")
+                                return true
+                            }
                         }
                     } else {
-                        AutomationState.log("⚠ US click failed")
+                        AutomationState.log("⚠ US tap failed (bounds invalid?)")
                     }
-                } else {
-                    val now = SystemClock.uptimeMillis()
-                    if (now - lastLog > 4000) {
-                        AutomationState.log("ℹ 'US' not yet visible — waiting…")
-                        lastLog = now
-                    }
-                }
-
-                val elapsed = timeoutMs - (end - SystemClock.uptimeMillis())
-                if (elapsed > 8000 && SystemClock.uptimeMillis() - lastDump > 10000) {
-                    dumpAllText(root)
-                    lastDump = SystemClock.uptimeMillis()
                 }
             }
 
@@ -136,19 +131,66 @@ object PayPalActions {
         }
 
         AutomationState.log("✘ US button not found in ${timeoutMs}ms")
-        val r = service.rootInActiveWindow
-        if (r != null) dumpAllText(r)
         return false
     }
 
     /**
-     * 🎯 Find "US" node with MULTIPLE matching strategies:
-     *   1. Exact text "US" (case-insensitive)
-     *   2. Exact contentDescription "US"
-     *   3. Word-boundary "US" in text or description ("United States (US)")
-     *   4. Contains "United States"
-     *   5. Contains "(US)"
+     * 🎯 Taps a node. Tries in order:
+     *   1. node.performAction(CLICK)
+     *   2. clickable parent
+     *   3. GESTURE TAP at node's screen bounds center (most reliable)
      */
+    private fun tapNode(service: AccessibilityService, node: AccessibilityNodeInfo): Boolean {
+        // 1. Direct click
+        if (node.isClickable) {
+            if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                AutomationState.log("  ↳ click: direct")
+                return true
+            }
+        }
+
+        // 2. Clickable parent
+        val parent = NodeFinder.findClickableParent(node)
+        if (parent != null) {
+            if (parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                AutomationState.log("  ↳ click: parent")
+                return true
+            }
+        }
+
+        // 3. Gesture tap at bounds center
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        if (bounds.width() > 0 && bounds.height() > 0) {
+            val x = bounds.centerX()
+            val y = bounds.centerY()
+            AutomationState.log("  ↳ tap at ($x, $y)")
+            return tapAt(service, x, y)
+        }
+
+        AutomationState.log("  ↳ tap: bounds invalid")
+        return false
+    }
+
+    private fun tapAt(service: AccessibilityService, x: Int, y: Int): Boolean {
+        return try {
+            val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
+            val stroke = GestureDescription.StrokeDescription(path, 0, 60)
+            val gesture = GestureDescription.Builder().addStroke(stroke).build()
+            val latch = java.util.concurrent.CountDownLatch(1)
+            var ok = false
+            service.dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
+                override fun onCompleted(d: GestureDescription?) { ok = true; latch.countDown() }
+                override fun onCancelled(d: GestureDescription?) { ok = false; latch.countDown() }
+            }, null)
+            latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
+            ok
+        } catch (e: Exception) {
+            AutomationState.log("✘ tapAt: ${e.message}")
+            false
+        }
+    }
+
     private fun findUsNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
@@ -161,7 +203,8 @@ object PayPalActions {
             val combined = "$t $d".trim()
 
             if (matchesUS(combined)) {
-                AutomationState.log("ℹ US match: T='$t' D='$d'")
+                val r = Rect(); n.getBoundsInScreen(r)
+                AutomationState.log("ℹ US match: T='$t' D='$d' bounds=${r.centerX()},${r.centerY()}")
                 return n
             }
 
@@ -170,63 +213,13 @@ object PayPalActions {
         return null
     }
 
-    /**
-     * Match if combined text/desc:
-     *   - Contains standalone "US" (word boundary, e.g. "(US)", " US ", "US")
-     *   - Contains "United States" (any case)
-     */
     private fun matchesUS(s: String): Boolean {
         if (s.isEmpty()) return false
         val upper = s.uppercase()
-
-        // Exact "US"
         if (upper == "US") return true
-
-        // "United States"
         if (upper.contains("UNITED STATES")) return true
-
-        // Word-boundary "US" — catches "(US)", " US ", "US."
-        // Avoids matching "STATES" (no standalone US inside)
         if (Regex("\\bUS\\b").containsMatchIn(upper)) return true
-
         return false
-    }
-
-    private fun tryClick(node: AccessibilityNodeInfo): Boolean {
-        if (node.isClickable && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
-
-        val parent = NodeFinder.findClickableParent(node)
-        if (parent != null && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
-
-        for (i in 0 until node.childCount) {
-            val c = node.getChild(i) ?: continue
-            if (c.isClickable && c.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
-        }
-
-        return NodeFinder.click(node)
-    }
-
-    private fun dumpAllText(root: AccessibilityNodeInfo) {
-        AutomationState.log("═══ SCREEN TEXT DUMP ═══")
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        var count = 0
-        while (queue.isNotEmpty() && count < 60) {
-            val n = queue.removeFirst()
-            val t = n.text?.toString()?.trim() ?: ""
-            val d = n.contentDescription?.toString()?.trim() ?: ""
-            if (t.isNotEmpty() || d.isNotEmpty()) {
-                val shown = when {
-                    t.isNotEmpty() && d.isNotEmpty() -> "T='$t' D='$d'"
-                    t.isNotEmpty() -> "T='$t'"
-                    else -> "D='$d'"
-                }
-                AutomationState.log("  • $shown")
-                count++
-            }
-            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
-        }
-        AutomationState.log("═══ END DUMP ($count nodes) ═══")
     }
 
     private fun dialogOrSearchVisible(root: AccessibilityNodeInfo): Boolean {
@@ -263,11 +256,9 @@ object PayPalActions {
             return false
         }
 
-        val clickTarget = NodeFinder.findClickableParent(searchNode) ?: searchNode
-        if (!clickTarget.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-            NodeFinder.click(searchNode)
-        }
-        AutomationState.log("ℹ Search clicked")
+        // Tap the search field (bounds-based)
+        tapNode(service, searchNode)
+        AutomationState.log("ℹ Search tapped")
         StepUtils.sleepMs(700)
 
         var inputField = findEditableUnder(service.rootInActiveWindow) ?: searchNode
@@ -280,7 +271,7 @@ object PayPalActions {
             if (StepUtils.shouldStop()) return false
             val r = service.rootInActiveWindow
             val match = findCountryResult(r, countryName, countryIso)
-            if (match != null && NodeFinder.click(match)) {
+            if (match != null && tapNode(service, match)) {
                 AutomationState.log("✔ Country clicked: $countryName")
                 StepUtils.sleepMs(1500)
                 return true
@@ -341,8 +332,7 @@ object PayPalActions {
             return false
         }
 
-        val clickTarget = NodeFinder.findClickableParent(phoneLabel) ?: phoneLabel
-        clickTarget.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        tapNode(service, phoneLabel)
         StepUtils.sleepMs(600)
 
         val inputField = findEditableUnder(service.rootInActiveWindow) ?: phoneLabel
@@ -358,7 +348,7 @@ object PayPalActions {
     fun tapContinue(service: AccessibilityService): Boolean {
         val root = service.rootInActiveWindow ?: return false
         val node = NodeFinder.findByText(root, "Continue", "Next") ?: return false
-        if (NodeFinder.click(node)) {
+        if (tapNode(service, node)) {
             AutomationState.log("ℹ Continue tapped")
             return true
         }
@@ -397,7 +387,7 @@ object PayPalActions {
         repeat(2) { attempt ->
             val root = service.rootInActiveWindow
             val node = NodeFinder.findByText(root, "Resend Code", "Resend code", "Resend")
-            if (node != null && NodeFinder.click(node)) {
+            if (node != null && tapNode(service, node)) {
                 AutomationState.log("ℹ Resend (${attempt + 1}/2)")
             }
             StepUtils.sleepMs(5000)
