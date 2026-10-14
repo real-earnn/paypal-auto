@@ -11,47 +11,76 @@ object PayPalClearData {
 
     const val PAYPAL_PKG = "com.paypal.android.p2pmobile"
 
-    /**
-     * App Info → Storage → Clear → (popup?) → HOME.
-     * Aggressive: har step ko 2-3s tak poll karta hai, milta hi click.
-     * Na mile to reason log karke abort.
-     */
     fun strictClear(service: AccessibilityService): Boolean {
         return try {
             AutomationState.log("🧹 Clear data…")
 
-            // Open app info
-            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.parse("package:$PAYPAL_PKG")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            }
-            service.startActivity(intent)
+            // ① Go HOME first and settle
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+            StepUtils.sleepMs(1200)
 
-            // Wait app info (Settings foreground)
-            if (!StepUtils.waitForPackage(service, "settings", 2500) &&
-                !StepUtils.waitForPackage(service, "android", 1200)) {
-                AutomationState.log("✘ App Info not opened")
+            // ② Open App Info (with retry inside a loop — actually try twice)
+            var appInfoOpened = false
+            repeat(3) { attempt ->
+                if (StepUtils.shouldStop()) return false
+                if (attempt > 0) {
+                    AutomationState.log("ℹ App Info retry #$attempt")
+                    service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                    StepUtils.sleepMs(1500)
+                }
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.parse("package:$PAYPAL_PKG")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                }
+                try { service.startActivity(intent) } catch (_: Exception) {}
+
+                if (StepUtils.waitForPackage(service, "settings", 3000) ||
+                    StepUtils.waitForPackage(service, "android", 1500)) {
+                    // Verify we're actually on App Info page — check for "Storage" or package name
+                    StepUtils.sleepMs(1000)
+                    val root = service.rootInActiveWindow
+                    if (root != null &&
+                        (NodeFinder.containsAny(root, "Storage", "Force stop", "Uninstall", "App info") ||
+                         NodeFinder.containsAny(root, PAYPAL_PKG))
+                    ) {
+                        appInfoOpened = true
+                    }
+                }
+                if (appInfoOpened) return@repeat
+            }
+
+            if (!appInfoOpened) {
+                AutomationState.log("✘ App Info not opened after retries")
                 exitHome(service); return false
             }
+            AutomationState.log("✔ App Info open")
+            StepUtils.sleepMs(800)
 
-            // Tap Storage
-            if (!tapWhen(service, 3000,
-                    "Storage & cache", "Storage and cache", "Storage", "Memory")) {
+            // ③ Tap Storage (retry)
+            if (!StepUtils.retryStep("Storage row",
+                    { tapWhen(service, 2500,
+                        "Storage & cache", "Storage and cache", "Storage", "Memory") })) {
                 AutomationState.log("✘ Storage row not found")
                 exitHome(service); return false
             }
+            AutomationState.log("✔ Storage tapped")
+            StepUtils.sleepMs(1000)
 
-            // Tap Clear storage
-            if (!tapWhen(service, 2500,
-                    "Clear storage", "Clear data", "Clear all data", "Delete data")) {
+            // ④ Tap Clear storage (retry)
+            if (!StepUtils.retryStep("Clear row",
+                    { tapWhen(service, 2500,
+                        "Clear storage", "Clear data", "Clear all data", "Delete data") })) {
                 AutomationState.log("✘ Clear row not found")
                 exitHome(service); return false
             }
+            AutomationState.log("✔ Clear tapped")
+            StepUtils.sleepMs(1000)
 
-            // Popup optional — if visible within 1.5s tap confirm; else assume done
+            // ⑤ Confirm popup (optional)
             if (findWithin(service, 1500, "Delete", "Clear", "OK", "Yes", "Confirm", "Erase")) {
                 tapWhen(service, 1000, "Delete", "Clear", "OK", "Yes", "Confirm", "Erase")
                 AutomationState.log("ℹ Confirm popup handled")
+                StepUtils.sleepMs(1500)
             } else {
                 AutomationState.log("ℹ No popup — already cleared")
             }
@@ -66,7 +95,6 @@ object PayPalClearData {
         }
     }
 
-    /** Poll aggressively; as soon as a matching text appears → click. Returns false on timeout. */
     private fun tapWhen(service: AccessibilityService, timeoutMs: Long, vararg texts: String): Boolean {
         val end = SystemClock.uptimeMillis() + timeoutMs
         while (SystemClock.uptimeMillis() < end) {
@@ -101,12 +129,12 @@ object PayPalClearData {
 
     private fun exitHome(service: AccessibilityService) {
         try {
-            repeat(2) {
+            repeat(3) {
                 service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                StepUtils.sleepMs(250)
+                StepUtils.sleepMs(400)
             }
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-            StepUtils.sleepMs(400)
+            StepUtils.sleepMs(800)
         } catch (_: Exception) {}
     }
 }
