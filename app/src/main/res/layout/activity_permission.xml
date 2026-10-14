@@ -39,7 +39,6 @@
             android:textColor="@color/text_dim"
             android:textSize="13sp" />
 
-        <!-- 1. Accessibility -->
         <LinearLayout
             android:id="@+id/rowAccessibility"
             android:layout_width="match_parent"
@@ -74,10 +73,8 @@
                 android:textColor="@color/error_red"
                 android:textSize="13sp"
                 android:textStyle="bold" />
-
         </LinearLayout>
 
-        <!-- 2. Overlay -->
         <LinearLayout
             android:id="@+id/rowOverlay"
             android:layout_width="match_parent"
@@ -99,7 +96,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:text="Floating controls (Pause/Stop) ke liye"
+                android:text="Floating controls (Pause/Stop)"
                 android:textColor="@color/text_dim"
                 android:textSize="11sp" />
 
@@ -112,10 +109,8 @@
                 android:textColor="@color/error_red"
                 android:textSize="13sp"
                 android:textStyle="bold" />
-
         </LinearLayout>
 
-        <!-- 3. Battery -->
         <LinearLayout
             android:id="@+id/rowBattery"
             android:layout_width="match_parent"
@@ -150,10 +145,8 @@
                 android:textColor="@color/error_red"
                 android:textSize="13sp"
                 android:textStyle="bold" />
-
         </LinearLayout>
 
-        <!-- 4. Auto Flight Mode (toggle + position picker) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -196,107 +189,29 @@
                     android:id="@+id/switchAutoFlight"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content" />
-
             </LinearLayout>
 
-            <!-- Position section — hidden when toggle is OFF -->
-            <LinearLayout
-                android:id="@+id/layoutPosition"
+            <Button
+                android:id="@+id/btnTestFlight"
                 android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginTop="10dp"
+                android:backgroundTint="@color/paypal_blue_dark"
+                android:text="🧪 Test Flight Toggle"
+                android:textColor="@color/white"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvTestResult"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Notification panel mein Airplane icon ki position?"
-                    android:textColor="@color/text_light"
-                    android:textSize="13sp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="Top row ke left se count karo (1 se 6 tak)"
-                    android:textColor="@color/text_dim"
-                    android:textSize="11sp" />
-
-                <!-- Position chips 1-6 -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:orientation="horizontal">
-
-                    <TextView
-                        android:id="@+id/pos1"
-                        style="@style/PositionChip"
-                        android:text="1" />
-
-                    <TextView
-                        android:id="@+id/pos2"
-                        style="@style/PositionChip"
-                        android:text="2" />
-
-                    <TextView
-                        android:id="@+id/pos3"
-                        style="@style/PositionChip"
-                        android:text="3" />
-
-                    <TextView
-                        android:id="@+id/pos4"
-                        style="@style/PositionChip"
-                        android:text="4" />
-
-                    <TextView
-                        android:id="@+id/pos5"
-                        style="@style/PositionChip"
-                        android:text="5" />
-
-                    <TextView
-                        android:id="@+id/pos6"
-                        style="@style/PositionChip"
-                        android:text="6" />
-
-                </LinearLayout>
-
-                <TextView
-                    android:id="@+id/tvSelectedPos"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:text="Selected: none"
-                    android:textColor="@color/paypal_blue"
-                    android:textSize="13sp"
-                    android:textStyle="bold" />
-
-                <Button
-                    android:id="@+id/btnTestFlight"
-                    android:layout_width="match_parent"
-                    android:layout_height="44dp"
-                    android:layout_marginTop="10dp"
-                    android:backgroundTint="@color/paypal_blue_dark"
-                    android:text="🧪 Test Flight Toggle"
-                    android:textColor="@color/white"
-                    android:textSize="13sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/tvTestResult"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:text=""
-                    android:textColor="@color/text_dim"
-                    android:textSize="11sp" />
-
-            </LinearLayout>
-
+                android:layout_marginTop="6dp"
+                android:text=""
+                android:textColor="@color/text_dim"
+                android:textSize="11sp" />
         </LinearLayout>
 
-        <!-- Start button -->
         <Button
             android:id="@+id/btnStart"
             android:layout_width="match_parent"
@@ -310,5 +225,4 @@
             android:textStyle="bold" />
 
     </LinearLayout>
-
 </ScrollView>
