@@ -2,7 +2,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- ============ PERMISSIONS ============ -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -17,7 +16,6 @@
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
-    <!-- ============ PAYPAL PACKAGE VISIBILITY (Android 11+) ============ -->
     <queries>
         <package android:name="com.paypal.android.p2pmobile" />
     </queries>
@@ -33,7 +31,6 @@
         android:usesCleartextTraffic="true"
         tools:targetApi="34">
 
-        <!-- ============ SPLASH (LAUNCHER) ============ -->
         <activity
             android:name=".SplashActivity"
             android:exported="true"
@@ -44,45 +41,15 @@
             </intent-filter>
         </activity>
 
-        <!-- ============ AUTH SCREENS ============ -->
-        <activity
-            android:name=".LoginActivity"
-            android:exported="false"
-            android:theme="@style/Theme.RealEarnPayPal" />
+        <activity android:name=".LoginActivity" android:exported="false" />
+        <activity android:name=".CodeVerifyActivity" android:exported="false" />
+        <activity android:name=".DashboardActivity" android:exported="false" />
+        <activity android:name=".ServiceSelectActivity" android:exported="false" />
+        <activity android:name=".CountrySelectActivity" android:exported="false" />
+        <activity android:name=".PermissionActivity" android:exported="false" />
+        <activity android:name=".AutomationActivity" android:exported="false" />
+        <activity android:name=".MainActivity" android:exported="false" />
 
-        <activity
-            android:name=".CodeVerifyActivity"
-            android:exported="false"
-            android:theme="@style/Theme.RealEarnPayPal" />
-
-        <activity
-            android:name=".DashboardActivity"
-            android:exported="false"
-            android:theme="@style/Theme.RealEarnPayPal" />
-
-        <!-- ============ PHASE 4 — SERVICE / COUNTRY / PERMISSION ============ -->
-        <activity
-            android:name=".ServiceSelectActivity"
-            android:exported="false"
-            android:theme="@style/Theme.RealEarnPayPal" />
-
-        <activity
-            android:name=".CountrySelectActivity"
-            android:exported="false"
-            android:theme="@style/Theme.RealEarnPayPal" />
-
-        <activity
-            android:name=".PermissionActivity"
-            android:exported="false"
-            android:theme="@style/Theme.RealEarnPayPal" />
-
-        <!-- ============ MAIN ACTIVITY (no longer launcher) ============ -->
-        <activity
-            android:name=".MainActivity"
-            android:exported="false"
-            android:theme="@style/Theme.RealEarnPayPal" />
-
-        <!-- ============ VOICE INTERACTION (Assist App for Airplane Mode) ============ -->
         <service
             android:name=".voice.PayPalInteractionService"
             android:exported="true"
@@ -100,7 +67,6 @@
             android:exported="true"
             android:permission="android.permission.BIND_VOICE_INTERACTION" />
 
-        <!-- ============ ACCESSIBILITY SERVICE (PayPal UI Automation) ============ -->
         <service
             android:name=".service.PayPalAccessibilityService"
             android:exported="true"
@@ -113,7 +79,6 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
-        <!-- ============ FOREGROUND AUTOMATION SERVICE ============ -->
         <service
             android:name=".service.AutomationService"
             android:exported="false"
