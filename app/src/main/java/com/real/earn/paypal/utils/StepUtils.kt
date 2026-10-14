@@ -26,7 +26,6 @@ object StepUtils {
 
     /**
      * Run a step up to 3 times with progressive delay: 1s, 3s, 5s.
-     * Logs each retry. Returns true on first success.
      */
     fun retryStep(stepName: String, block: () -> Boolean): Boolean {
         val delays = longArrayOf(1000L, 3000L, 5000L)
