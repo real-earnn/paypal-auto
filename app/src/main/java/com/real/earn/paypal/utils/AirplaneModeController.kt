@@ -12,71 +12,69 @@ object AirplaneModeController {
 
     fun toggleCycle(service: AccessibilityService): Boolean = strictToggle(service)
 
+    /**
+     * Fast flight cycle:
+     *  QS open → wait tile (max 1.5s) → click ON → wait state (max 2s)
+     *  → 800ms → click OFF → wait state (max 2s) → HOME.
+     * No signal wait — signal will come back during next steps.
+     */
     fun strictToggle(service: AccessibilityService): Boolean {
         return try {
-            // Normalize: if already ON, turn OFF first
+            // Normalize if already ON
             if (isAirplaneModeOn(service)) {
                 AutomationState.log("ℹ Flight was ON — normalizing")
-                if (!openQsAndWait(service)) return false
-                if (!clickTileOnce(service)) {
-                    AutomationState.log("✘ Normalize click fail")
-                    goHome(service); return false
+                if (openQsAndWaitTile(service, 1500)) {
+                    clickTile(service)
+                    waitAirplaneState(service, false, 2000)
                 }
-                waitAirplaneState(service, false, 4000)
                 service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-                StepUtils.waitForPackageExit(service, "systemui", 3000)
-                StepUtils.sleepMs(700)
+                StepUtils.waitForPackageExit(service, "systemui", 1200)
             }
 
-            AutomationState.log("✈ Flight cycle start")
-
-            // ON
-            if (!openQsAndWait(service)) {
-                AutomationState.log("✘ QS not shown")
-                return false
+            AutomationState.log("✈ Flight ON")
+            if (!openQsAndWaitTile(service, 1500)) {
+                AutomationState.log("✘ QS tile not found")
+                goHome(service); return false
             }
-            if (!clickTileOnce(service)) {
+
+            if (!clickTile(service)) {
                 AutomationState.log("✘ ON click fail")
                 goHome(service); return false
             }
-            if (!waitAirplaneState(service, true, 4500)) {
-                AutomationState.log("⚠ ON not confirmed")
-            } else {
-                AutomationState.log("✔ Flight ON")
+            if (!waitAirplaneState(service, true, 2500)) {
+                AutomationState.log("✘ ON state not confirmed")
+                goHome(service); return false
             }
+            AutomationState.log("✔ Flight ON")
 
-            // 1 second ON
-            StepUtils.sleepMs(1000)
+            // 800ms ON
+            StepUtils.sleepMs(800)
 
-            // Some OEMs auto-close QS
+            // Ensure QS still open
             if (!isQsOpen(service)) {
-                AutomationState.log("ℹ QS closed — reopening for OFF")
                 service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS)
-                StepUtils.waitForPackage(service, "systemui", 2500)
-                StepUtils.sleepMs(800)
+                StepUtils.waitForPackage(service, "systemui", 1500)
+                StepUtils.sleepMs(300)
             }
 
-            // OFF
-            if (!clickTileOnce(service)) {
-                AutomationState.log("ℹ OFF retry — reopening QS")
+            if (!clickTile(service)) {
+                // retry once
                 service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS)
-                StepUtils.waitForPackage(service, "systemui", 2500)
-                StepUtils.sleepMs(800)
-                if (!clickTileOnce(service)) {
+                StepUtils.waitForPackage(service, "systemui", 1500)
+                StepUtils.sleepMs(300)
+                if (!clickTile(service)) {
                     AutomationState.log("✘ OFF click fail")
                     goHome(service); return false
                 }
             }
-            if (!waitAirplaneState(service, false, 4500)) {
-                AutomationState.log("⚠ OFF not confirmed")
-            } else {
-                AutomationState.log("✔ Flight OFF")
+            if (!waitAirplaneState(service, false, 2500)) {
+                AutomationState.log("✘ OFF not confirmed")
+                goHome(service); return false
             }
+            AutomationState.log("✔ Flight OFF")
 
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-            StepUtils.waitForPackageExit(service, "systemui", 3000)
-            AutomationState.log("ℹ Waiting for signal…")
-            StepUtils.sleepMs(4000)
+            StepUtils.waitForPackageExit(service, "systemui", 1200)
 
             AutomationState.log("✔ Flight cycle done")
             true
@@ -89,15 +87,13 @@ object AirplaneModeController {
 
     // ══ helpers ══
 
-    private fun openQsAndWait(service: AccessibilityService): Boolean {
+    private fun openQsAndWaitTile(service: AccessibilityService, timeoutMs: Long): Boolean {
         service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS)
-        if (!StepUtils.waitForPackage(service, "systemui", 2500)) return false
-        StepUtils.sleepMs(800)
-        val end = SystemClock.uptimeMillis() + 3000
+        val end = SystemClock.uptimeMillis() + timeoutMs
         while (SystemClock.uptimeMillis() < end) {
             if (StepUtils.shouldStop()) return false
-            if (findTile(service) != null) return true
-            StepUtils.sleepMs(250)
+            if (isQsOpen(service) && findTile(service) != null) return true
+            StepUtils.sleepMs(StepUtils.POLL_MS)
         }
         return false
     }
@@ -105,7 +101,7 @@ object AirplaneModeController {
     private fun isQsOpen(service: AccessibilityService): Boolean =
         StepUtils.isPackageForeground(service, "systemui")
 
-    private fun clickTileOnce(service: AccessibilityService): Boolean {
+    private fun clickTile(service: AccessibilityService): Boolean {
         val tile = findTile(service) ?: return false
         return NodeFinder.click(tile)
     }
@@ -115,18 +111,16 @@ object AirplaneModeController {
         while (SystemClock.uptimeMillis() < end) {
             if (StepUtils.shouldStop()) return false
             if (isAirplaneModeOn(service) == desired) return true
-            StepUtils.sleepMs(250)
+            StepUtils.sleepMs(StepUtils.POLL_MS)
         }
         return false
     }
 
     /**
-     * 🎯 SMART findTile:
-     *  1. Collect ALL "airplane mode" matches (text/desc/id)
-     *  2. Filter out status bar (top 150px) — wo carrier name wala hota hai
-     *  3. Remaining:
-     *     - 1  → wahi click
-     *     - 2+ → sort by Y, take middle
+     * Smart picker:
+     *  - Collect all "airplane" matches
+     *  - Skip status bar (top 150px)
+     *  - 1 → it, 2 → 2nd, 3+ → middle by Y
      */
     private fun findTile(service: AccessibilityService): AccessibilityNodeInfo? {
         val root = service.rootInActiveWindow ?: return null
@@ -156,7 +150,6 @@ object AirplaneModeController {
 
         if (all.isEmpty()) return null
 
-        // Dedupe by bounds
         val seen = mutableSetOf<String>()
         val unique = all.filter { node ->
             val r = Rect(); node.getBoundsInScreen(r)
@@ -164,27 +157,23 @@ object AirplaneModeController {
             if (seen.contains(key)) false else { seen.add(key); true }
         }
 
-        // Filter out status bar (top 150px)
-        val nonStatusBar = unique.filter { node ->
-            val r = Rect(); node.getBoundsInScreen(r)
-            r.top > 150
+        val nonStatusBar = unique.filter {
+            val r = Rect(); it.getBoundsInScreen(r); r.top > 150
         }
 
         val pool = if (nonStatusBar.isNotEmpty()) nonStatusBar else unique
-
-        // Sort by Y
-        val sorted = pool.sortedBy { node ->
-            val r = Rect(); node.getBoundsInScreen(r); r.top
+        val sorted = pool.sortedBy {
+            val r = Rect(); it.getBoundsInScreen(r); r.top
         }
 
         val picked = when {
             sorted.size == 1 -> sorted[0]
-            sorted.size == 2 -> sorted[1]          // 2nd one = tile (1st is carrier/status)
-            else -> sorted[sorted.size / 2]        // middle
+            sorted.size == 2 -> sorted[1]
+            else -> sorted[sorted.size / 2]
         }
 
         val pr = Rect(); picked.getBoundsInScreen(pr)
-        AutomationState.log("ℹ Tile pick: size=${sorted.size} at y=${pr.top}")
+        AutomationState.log("ℹ Tile: ${sorted.size} matches → picked y=${pr.top}")
         return picked
     }
 
@@ -201,7 +190,7 @@ object AirplaneModeController {
     private fun goHome(service: AccessibilityService) {
         try {
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-            StepUtils.sleepMs(800)
+            StepUtils.sleepMs(400)
         } catch (_: Exception) {}
     }
 
