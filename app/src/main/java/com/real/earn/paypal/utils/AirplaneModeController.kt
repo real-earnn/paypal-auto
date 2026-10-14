@@ -2,97 +2,165 @@ package com.real.earn.paypal.utils
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Context
-import android.graphics.Rect
+import android.os.SystemClock
 import android.provider.Settings
-import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
 import com.real.earn.paypal.service.AutomationState
 
 /**
- * Toggle airplane mode by position in Quick Settings panel.
+ * Icon-based Airplane mode toggle — non-rooted, no position needed.
+ * Uses contentDescription "Airplane mode" which is standard on all Android.
  *
- * User tells us: "airplane icon is at position N (1-6) in the top row".
- * We open QS, click that position, wait, click again (ON → OFF).
+ * STEP-BY-STEP, no blind sleeps.
  */
 object AirplaneModeController {
 
-    private const val TAG = "AirplaneMode"
-
-    /**
-     * Toggle airplane mode ON then OFF — one full cycle.
-     * This is what we call during automation after clearing data.
-     */
-    fun toggleFlightCycle(service: AccessibilityService, position: Int): Boolean {
-        if (position !in 1..6) {
-            AutomationState.log("✘ Flight position invalid: $position")
-            return false
-        }
-
+    fun toggleCycle(service: AccessibilityService): Boolean {
         return try {
-            AutomationState.log("✈ Flight cycle (pos $position)...")
+            AutomationState.log("✈ Flight cycle start")
 
-            // 1. Open Quick Settings
+            // ── STEP 1: Open Quick Settings ─────────────────
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS)
-            Thread.sleep(1800)
 
-            // 2. Find tiles
-            val root = service.rootInActiveWindow
-            val tiles = findTiles(root)
+            // STEP 2: Wait for tile to appear (up to 3 sec)
+            if (!waitForAirplaneTile(service, 3000)) {
+                AutomationState.log("✘ Airplane tile not found")
+                closeQS(service)
+                return false
+            }
+            AutomationState.log("ℹ Tile found")
 
-            AutomationState.log("ℹ Found ${tiles.size} tiles")
-
-            if (tiles.size < position) {
-                AutomationState.log("✘ Position $position > tiles (${tiles.size})")
-                closeQuickSettings(service)
+            // STEP 3: Click tile → ON
+            val tile = findAirplaneTile(service)
+            if (tile == null || !NodeFinder.click(tile)) {
+                AutomationState.log("✘ Click ON fail")
+                closeQS(service)
                 return false
             }
 
-            val target = tiles[position - 1]
-
-            // 3. Click ON
-            if (!NodeFinder.click(target)) {
-                AutomationState.log("✘ Tile click fail")
-                closeQuickSettings(service)
-                return false
-            }
-            AutomationState.log("✈ Flight ON")
-            Thread.sleep(3500)
-
-            // 4. Re-fetch tiles (panel may scroll/reset)
-            val root2 = service.rootInActiveWindow
-            val tiles2 = findTiles(root2)
-
-            // 5. Click same position → OFF
-            if (tiles2.size >= position) {
-                NodeFinder.click(tiles2[position - 1])
-                AutomationState.log("✈ Flight OFF")
-                Thread.sleep(2500)
+            // STEP 4: Wait until system reports airplane ON
+            if (!waitForAirplaneState(service, true, 4000)) {
+                AutomationState.log("⚠ ON state not confirmed")
             } else {
-                AutomationState.log("⚠ Reopen skip — closing QS")
+                AutomationState.log("✔ Flight ON")
             }
 
-            // 6. Close Quick Settings
-            closeQuickSettings(service)
-            true
+            // STEP 5: Wait 3 sec with airplane ON
+            wait(3000)
 
+            // STEP 6: Re-find tile (panel may have scrolled / state text changed)
+            var tile2 = findAirplaneTile(service)
+            if (tile2 == null) {
+                // Reopen panel
+                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS)
+                wait(1200)
+                tile2 = findAirplaneTile(service)
+            }
+            if (tile2 == null) {
+                AutomationState.log("✘ Tile lost for OFF")
+                closeQS(service)
+                return false
+            }
+
+            // STEP 7: Click → OFF
+            if (!NodeFinder.click(tile2)) {
+                AutomationState.log("✘ Click OFF fail")
+                closeQS(service)
+                return false
+            }
+
+            // STEP 8: Wait until system reports OFF
+            if (!waitForAirplaneState(service, false, 4000)) {
+                AutomationState.log("⚠ OFF state not confirmed")
+            } else {
+                AutomationState.log("✔ Flight OFF")
+            }
+
+            // STEP 9: Close QS
+            closeQS(service)
+            wait(500)
+            true
         } catch (e: Exception) {
-            Log.e(TAG, "toggleFlightCycle error: ${e.message}")
             AutomationState.log("✘ Flight error: ${e.message}")
+            try { service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK) } catch (_: Exception) {}
             false
         }
     }
 
-    /**
-     * Test — click ON then OFF once from a UI button.
-     */
-    fun testPosition(service: AccessibilityService, position: Int): Boolean {
-        return toggleFlightCycle(service, position)
+    // ── Wait until airplane tile appears in QS ────────────
+    private fun waitForAirplaneTile(service: AccessibilityService, timeoutMs: Long): Boolean {
+        val end = SystemClock.uptimeMillis() + timeoutMs
+        while (SystemClock.uptimeMillis() < end) {
+            if (findAirplaneTile(service) != null) return true
+            wait(300)
+        }
+        return false
     }
 
-    private fun closeQuickSettings(service: AccessibilityService) {
+    // ── Wait until system reports the desired state ───────
+    private fun waitForAirplaneState(
+        service: AccessibilityService,
+        desired: Boolean,
+        timeoutMs: Long
+    ): Boolean {
+        val end = SystemClock.uptimeMillis() + timeoutMs
+        while (SystemClock.uptimeMillis() < end) {
+            val cur = isAirplaneModeOn(service)
+            if (cur == desired) return true
+            wait(250)
+        }
+        return false
+    }
+
+    // ── Find airplane tile by contentDescription / id / text ──
+    private fun findAirplaneTile(service: AccessibilityService): AccessibilityNodeInfo? {
+        val root = service.rootInActiveWindow ?: return null
+
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val n = queue.removeFirst()
+
+            val desc = n.contentDescription?.toString()?.lowercase() ?: ""
+            val text = n.text?.toString()?.lowercase() ?: ""
+            val id = n.viewIdResourceName?.lowercase() ?: ""
+
+            // Standard Android: contentDescription = "Airplane mode" / "Flight mode"
+            if (desc.contains("airplane") ||
+                desc.contains("flight mode") ||
+                desc.contains("aeroplane") ||
+                text.contains("airplane mode") ||
+                text.contains("flight mode") ||
+                id.contains("airplane")
+            ) {
+                // Clickable ancestor or self
+                val clickable = if (n.isClickable) n else findClickableAncestor(n)
+                if (clickable != null) return clickable
+                return n
+            }
+
+            for (i in 0 until n.childCount) {
+                n.getChild(i)?.let { queue.add(it) }
+            }
+        }
+        return null
+    }
+
+    private fun findClickableAncestor(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        var cur = node.parent
+        var depth = 0
+        while (cur != null && depth < 6) {
+            if (cur.isClickable) return cur
+            cur = cur.parent
+            depth++
+        }
+        return null
+    }
+
+    private fun closeQS(service: AccessibilityService) {
         try {
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-            Thread.sleep(600)
+            wait(400)
         } catch (_: Exception) {}
     }
 
@@ -100,85 +168,12 @@ object AirplaneModeController {
         return try {
             Settings.Global.getInt(
                 context.contentResolver,
-                Settings.Global.AIRPLANE_MODE_ON,
-                0
+                Settings.Global.AIRPLANE_MODE_ON, 0
             ) == 1
         } catch (e: Exception) { false }
     }
 
-    /**
-     * Find all clickable tiles in QS panel, sorted by (row, column).
-     * Filters out status bar, QS panel, giant containers.
-     */
-    private fun findTiles(root: AccessibilityNodeInfo?): List<AccessibilityNodeInfo> {
-        if (root == null) return emptyList()
-
-        val screenRect = Rect()
-        root.getBoundsInScreen(screenRect)
-        val screenHeight = screenRect.height()
-
-        val candidates = mutableListOf<AccessibilityNodeInfo>()
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-
-        while (queue.isNotEmpty()) {
-            val n = queue.removeFirst()
-
-            if (n.isClickable && n.isVisibleToUser) {
-                val r = Rect()
-                n.getBoundsInScreen(r)
-
-                val w = r.width()
-                val h = r.height()
-
-                // Tile heuristic:
-                // - Reasonable size (not giant panel, not tiny icon)
-                // - In the tile area (below status bar, above bottom 40%)
-                val inTileArea = r.top > 100 && r.top < screenHeight * 0.6
-                val sizeOk = w in 100..550 && h in 100..550
-
-                if (inTileArea && sizeOk) {
-                    candidates.add(n)
-                }
-            }
-
-            for (i in 0 until n.childCount) {
-                n.getChild(i)?.let { queue.add(it) }
-            }
-        }
-
-        // Deduplicate by bounds — prefer the deepest (smallest) node
-        val byBounds = mutableMapOf<String, AccessibilityNodeInfo>()
-        for (c in candidates) {
-            val r = Rect(); c.getBoundsInScreen(r)
-            val key = "${r.left},${r.top},${r.right},${r.bottom}"
-            val existing = byBounds[key]
-            if (existing == null) {
-                byBounds[key] = c
-            }
-        }
-
-        val unique = byBounds.values.toList()
-
-        // Group into rows by top Y (tolerance 60px), sort each row by X
-        val withBounds = unique.map { n ->
-            val r = Rect(); n.getBoundsInScreen(r); n to r
-        }.sortedBy { it.second.top }
-
-        val rows = mutableListOf<MutableList<Pair<AccessibilityNodeInfo, Rect>>>()
-        for ((n, r) in withBounds) {
-            val existingRow = rows.find { row ->
-                row.isNotEmpty() && Math.abs(row[0].second.top - r.top) < 60
-            }
-            if (existingRow != null) {
-                existingRow.add(n to r)
-            } else {
-                rows.add(mutableListOf(n to r))
-            }
-        }
-
-        rows.forEach { it.sortBy { p -> p.second.left } }
-
-        return rows.flatMap { row -> row.map { it.first } }
+    private fun wait(ms: Long) {
+        try { Thread.sleep(ms) } catch (_: InterruptedException) {}
     }
 }
