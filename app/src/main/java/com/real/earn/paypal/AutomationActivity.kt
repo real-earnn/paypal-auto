@@ -1,6 +1,7 @@
 package com.real.earn.paypal
 
 import android.os.Bundle
+import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -23,7 +24,10 @@ class AutomationActivity : AppCompatActivity() {
         val country = intent.getStringExtra("country") ?: ""
         binding.tvSubHeader.text = "$service · $country"
 
-        binding.btnBack.setOnClickListener { finish() }
+        binding.btnBack.setOnClickListener {
+            // Do NOT stop — just hide activity, service keeps running
+            finish()
+        }
 
         binding.btnPause.setOnClickListener {
             when (AutomationState.getStatus()) {
@@ -34,6 +38,7 @@ class AutomationActivity : AppCompatActivity() {
         }
 
         binding.btnStop.setOnClickListener {
+            // "Stop" → stop + close both
             AutomationService.stopAndClose(this)
         }
 
@@ -44,7 +49,7 @@ class AutomationActivity : AppCompatActivity() {
                     AutomationState.logs.collect { list ->
                         binding.tvLog.text = list.joinToString("\n")
                         binding.scrollLog.post {
-                            binding.scrollLog.fullScroll(android.view.View.FOCUS_DOWN)
+                            binding.scrollLog.fullScroll(View.FOCUS_DOWN)
                         }
                     }
                 }
