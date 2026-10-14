@@ -25,6 +25,11 @@ class DashboardActivity : AppCompatActivity() {
         binding.btnRefresh.setOnClickListener { loadMe() }
         binding.btnLogout.setOnClickListener { logout() }
 
+        // 🟢 Phase 4 — Start Automation button
+        binding.btnStartAutomation.setOnClickListener {
+            startActivity(Intent(this, ServiceSelectActivity::class.java))
+        }
+
         loadMe()
     }
 
@@ -35,21 +40,35 @@ class DashboardActivity : AppCompatActivity() {
                 if (response.isSuccessful && response.body()?.success == true) {
                     val user = response.body()?.user
                     if (user != null) {
-                        binding.tvName.text = user.firstName.ifEmpty { user.username.ifEmpty { "User #${user.id}" } }
+                        binding.tvName.text = user.firstName.ifEmpty {
+                            user.username.ifEmpty { "User #${user.id}" }
+                        }
                         binding.tvBalance.text = "%.2f %s".format(user.balance, user.currency)
                         binding.tvTodayOtps.text = user.todayOtps.toString()
                         binding.tvTotalOtps.text = user.totalOtps.toString()
                         binding.tvTotalEarned.text = "%.2f %s".format(user.totalEarned, user.currency)
                     }
                 } else if (response.code() == 401) {
-                    Toast.makeText(this@DashboardActivity, "Session khatam. Dobara login karo.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        this@DashboardActivity,
+                        "Session khatam. Dobara login karo.",
+                        Toast.LENGTH_LONG
+                    ).show()
                     authManager.clear()
                     goToLogin()
                 } else {
-                    Toast.makeText(this@DashboardActivity, "Data load nahi hua", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        this@DashboardActivity,
+                        "Data load nahi hua",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             } catch (e: Exception) {
-                Toast.makeText(this@DashboardActivity, "Network error: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(
+                    this@DashboardActivity,
+                    "Network error: ${e.message}",
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }
     }
@@ -58,7 +77,8 @@ class DashboardActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 ApiClient.service(authManager).logout()
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            }
             authManager.clear()
             goToLogin()
         }
