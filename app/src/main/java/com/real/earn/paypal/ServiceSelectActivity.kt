@@ -38,7 +38,12 @@ class ServiceSelectActivity : AppCompatActivity() {
             try {
                 val res = ApiClient.service(authManager).getServices()
                 if (res.isSuccessful && res.body()?.success == true) {
-                    val services = res.body()!!.services.filter { it.countries.isNotEmpty() }
+
+                    val allServices = res.body()?.services ?: emptyList()
+
+                    // 🟢 Filter: sirf woh services jinki countries non-empty hain
+                    val services = allServices.filter { it.countriesSafe.isNotEmpty() }
+
                     if (services.isEmpty()) {
                         binding.tvEmpty.visibility = View.VISIBLE
                         binding.tvEmpty.text = "Abhi koi service available nahi hai"
@@ -50,15 +55,22 @@ class ServiceSelectActivity : AppCompatActivity() {
                             startActivity(i)
                         }
                     }
+
                 } else if (res.code() == 401) {
-                    Toast.makeText(this@ServiceSelectActivity, "Session khatam. Login karo.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        this@ServiceSelectActivity,
+                        "Session khatam. Login karo.",
+                        Toast.LENGTH_LONG
+                    ).show()
                     authManager.clear()
-                    startActivity(Intent(this@ServiceSelectActivity, LoginActivity::class.java)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+                    startActivity(
+                        Intent(this@ServiceSelectActivity, LoginActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                    )
                     finish()
                 } else {
                     binding.tvEmpty.visibility = View.VISIBLE
-                    binding.tvEmpty.text = "Services load nahi hue"
+                    binding.tvEmpty.text = "Services load nahi hue (code ${res.code()})"
                 }
             } catch (e: Exception) {
                 binding.tvEmpty.visibility = View.VISIBLE
