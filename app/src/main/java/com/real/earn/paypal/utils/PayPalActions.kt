@@ -13,6 +13,10 @@ object PayPalActions {
 
     const val PAYPAL_PKG = "com.paypal.android.p2pmobile"
 
+    // 🟢 Hardcoded US button position (pointer location se confirm kiya)
+    private const val US_TAP_X = 600
+    private const val US_TAP_Y = 125
+
     // ══════════════════════════════════════════════════════
     //  LAUNCH
     // ══════════════════════════════════════════════════════
@@ -38,115 +42,27 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  GMAIL POPUP DISMISS — PayPal header + X same row
-    // ══════════════════════════════════════════════════════
-    /**
-     * Robust popup dismiss:
-     *  1. If "Choose an account" / "Sign-in options" text visible → it's Gmail popup
-     *  2. Else if "PayPal" text visible anywhere → find X/close in same row (right side)
-     */
-    fun dismissGmailPopup(service: AccessibilityService): Boolean {
-        val root = service.rootInActiveWindow ?: return false
-
-        // Method A: "Choose an account for PayPal" is Gmail popup
-        if (NodeFinder.containsAny(root, "Choose an account", "Sign-in options")) {
-            if (clickAnyCloseButton(root)) {
-                AutomationState.log("ℹ Gmail popup closed (account chooser)")
-                StepUtils.sleepMs(700)
-                return true
-            }
-        }
-
-        // Method B: Find "PayPal" text anywhere, then X in same Y row
-        val paypalTexts = findAllByText(root, "PayPal")
-        for (pp in paypalTexts) {
-            if (clickCloseInSameRow(root, pp)) {
-                AutomationState.log("ℹ Gmail popup closed (PayPal header)")
-                StepUtils.sleepMs(700)
-                return true
-            }
-        }
-
-        return false
-    }
-
-    private fun findAllByText(root: AccessibilityNodeInfo?, target: String): List<AccessibilityNodeInfo> {
-        if (root == null) return emptyList()
-        val result = mutableListOf<AccessibilityNodeInfo>()
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val n = queue.removeFirst()
-            val t = n.text?.toString()?.trim() ?: ""
-            if (t.equals(target, true) && n.isVisibleToUser) result.add(n)
-            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
-        }
-        return result
-    }
-
-    /**
-     * Same Y row (±120px), to the right of "header" → click X.
-     */
-    private fun clickCloseInSameRow(root: AccessibilityNodeInfo, header: AccessibilityNodeInfo): Boolean {
-        val hr = Rect(); header.getBoundsInScreen(hr)
-        val closeWords = arrayOf("✕", "✖", "×", "X", "✗", "❌", "❎", "Close", "close", "Cancel")
-
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val n = queue.removeFirst()
-            val t = n.text?.toString()?.trim() ?: ""
-            val d = n.contentDescription?.toString()?.trim() ?: ""
-
-            val isClose = closeWords.any { it.equals(t, true) || it.equals(d, true) }
-            if (isClose && n.isVisibleToUser) {
-                val r = Rect(); n.getBoundsInScreen(r)
-                val sameRow = Math.abs(r.centerY() - hr.centerY()) < 120
-                val onRight = r.centerX() > hr.centerX()
-                if (sameRow && onRight) {
-                    if (NodeFinder.click(n)) return true
-                }
-            }
-            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
-        }
-        return false
-    }
-
-    /** Generic X click anywhere. Used as fallback. */
-    private fun clickAnyCloseButton(root: AccessibilityNodeInfo): Boolean {
-        val closeWords = arrayOf("✕", "✖", "×", "X", "✗", "❌", "❎")
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val n = queue.removeFirst()
-            val t = n.text?.toString()?.trim() ?: ""
-            val d = n.contentDescription?.toString()?.trim() ?: ""
-            if (n.isVisibleToUser && closeWords.any { it.equals(t, true) || it.equals(d, true) }) {
-                if (NodeFinder.click(n)) return true
-            }
-            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
-        }
-        return false
-    }
-
-    // ══════════════════════════════════════════════════════
     //  TAP GET STARTED
     // ══════════════════════════════════════════════════════
     fun tapGetStarted(service: AccessibilityService, timeoutMs: Long = 8000): Boolean {
         val end = SystemClock.uptimeMillis() + timeoutMs
         while (SystemClock.uptimeMillis() < end) {
             if (StepUtils.shouldStop()) return false
-            dismissGmailPopup(service)
 
             val root = service.rootInActiveWindow
             if (root != null) {
-                if (findCountryCodeNode(root) != null) return true
+                // Direct US text visible → we're done
+                if (NodeFinder.containsAny(root, "US")
+                    || NodeFinder.containsAny(root, "Country of residence")
+                ) {
+                    return true
+                }
 
                 val node = NodeFinder.findByText(root, "Get Started")
                     ?: NodeFinder.findByTextContains(root, "Get Started")
                 if (node != null && NodeFinder.click(node)) {
                     AutomationState.log("ℹ Get Started tapped")
-                    StepUtils.sleepMs(1500)
+                    StepUtils.sleepMs(1800)
                     return true
                 }
             }
@@ -156,89 +72,42 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  FIND COUNTRY CODE NODE
+    //  CLICK US BUTTON  — (600, 125) HARDCODED
     // ══════════════════════════════════════════════════════
-    private fun findCountryCodeNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        val codes = listOf(
-            "US", "GB", "PK", "IN", "MY", "BD", "ID", "EG", "SA", "AE",
-            "NG", "KE", "PH", "VN", "TH", "TR", "RU", "BR", "MX", "AR",
-            "UA", "ZA", "GH", "CM", "SN", "KH", "KZ", "DZ"
-        )
-        val rootR = Rect(); root.getBoundsInScreen(rootR)
-        for (code in codes) {
-            val node = NodeFinder.findByText(root, code) ?: continue
-            if (!NodeFinder.isVisible(node)) continue
-            val r = Rect(); node.getBoundsInScreen(r)
-            val inTop = r.centerY() < rootR.top + rootR.height() * 0.35
-            val inRight = r.centerX() > rootR.left + rootR.width() * 0.50
-            if (inTop && inRight) return node
+    fun clickUsButton(service: AccessibilityService, timeoutMs: Long = 8000): Boolean {
+        AutomationState.log("ℹ US tap at ($US_TAP_X, $US_TAP_Y)")
+
+        // Wait a moment to let PayPal settle
+        StepUtils.sleepMs(1500)
+
+        // Tap hardcoded location
+        val ok = tapAt(service, US_TAP_X, US_TAP_Y)
+        if (!ok) {
+            AutomationState.log("✘ Tap gesture failed")
+            return false
         }
-        return null
-    }
 
-    // ══════════════════════════════════════════════════════
-    //  CLICK US BUTTON (with popup dismiss + corner fallback)
-    // ══════════════════════════════════════════════════════
-    fun clickUsButton(service: AccessibilityService, timeoutMs: Long = 10000): Boolean {
-        val end = SystemClock.uptimeMillis() + timeoutMs
-        var cornerTried = false
-
-        while (SystemClock.uptimeMillis() < end) {
-            if (StepUtils.shouldStop()) return false
-
-            // Try to close popup first
-            if (dismissGmailPopup(service)) {
-                StepUtils.sleepMs(800)
-                continue
-            }
-
-            val root = service.rootInActiveWindow
-            if (root != null) {
-                // Already open?
-                if (NodeFinder.containsAny(root, "Country of residence", "Country/region")) {
-                    AutomationState.log("ℹ Country dialog open")
-                    return true
-                }
-
-                // Try "US" or any country code
-                val node = findCountryCodeNode(root)
-                if (node != null) {
-                    val clickable = NodeFinder.findClickableParent(node) ?: node
-                    if (clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                        AutomationState.log("ℹ Country code clicked (text)")
-                        StepUtils.sleepMs(900)
-                        if (waitForCountryDialog(service, 3000)) return true
-                    }
-                }
-            }
-
-            // Halfway through — try corner tap
-            val elapsed = SystemClock.uptimeMillis() - (end - timeoutMs)
-            if (!cornerTried && elapsed > timeoutMs / 2) {
-                AutomationState.log("ℹ US not found — trying corner tap")
-                if (tapTopRightCorner(service)) {
-                    StepUtils.sleepMs(1200)
-                    if (waitForCountryDialog(service, 3000)) return true
-                }
-                cornerTried = true
-            }
-
-            StepUtils.sleepMs(StepUtils.POLL_MS)
+        // Wait for country dialog to appear
+        StepUtils.sleepMs(1500)
+        if (waitForCountryDialog(service, 3000)) {
+            AutomationState.log("✔ Country dialog appeared")
+            return true
         }
-        AutomationState.log("✘ US button not found")
+
+        // Retry once
+        AutomationState.log("ℹ Dialog not visible — retry tap")
+        tapAt(service, US_TAP_X, US_TAP_Y)
+        StepUtils.sleepMs(1500)
+        if (waitForCountryDialog(service, 3000)) {
+            AutomationState.log("✔ Country dialog appeared (retry)")
+            return true
+        }
+
+        AutomationState.log("✘ Country dialog did not open")
         return false
     }
 
-    private fun tapTopRightCorner(service: AccessibilityService): Boolean {
-        val root = service.rootInActiveWindow ?: return false
-        val r = Rect(); root.getBoundsInScreen(r)
-
-        // 12% from right, 10% from top (below status bar, hits US area)
-        val x = r.right - (r.width() * 0.12f).toInt()
-        val y = r.top + (r.height() * 0.10f).toInt()
-
-        AutomationState.log("ℹ Corner tap at ($x, $y)")
-
+    private fun tapAt(service: AccessibilityService, x: Int, y: Int): Boolean {
         return try {
             val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
             val stroke = GestureDescription.StrokeDescription(path, 0, 60)
@@ -253,7 +122,7 @@ object PayPalActions {
             latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
             ok
         } catch (e: Exception) {
-            AutomationState.log("✘ Corner tap fail: ${e.message}")
+            AutomationState.log("✘ tapAt error: ${e.message}")
             false
         }
     }
@@ -265,8 +134,8 @@ object PayPalActions {
             val root = service.rootInActiveWindow
             if (root != null) {
                 if (NodeFinder.containsAny(root, "Country of residence", "Country/region") ||
-                    findSearchField(root) != null) {
-                    StepUtils.sleepMs(700)
+                    findSearchField(root) != null
+                ) {
                     return true
                 }
             }
@@ -275,9 +144,6 @@ object PayPalActions {
         return false
     }
 
-    // ══════════════════════════════════════════════════════
-    //  FIND SEARCH FIELD (hint = "Search")
-    // ══════════════════════════════════════════════════════
     private fun findSearchField(root: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
         if (root == null) return null
         val queue = ArrayDeque<AccessibilityNodeInfo>()
@@ -293,7 +159,6 @@ object PayPalActions {
         return null
     }
 
-    /** Field with hint containing email/phone/number → main number input */
     private fun findNumberField(root: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
         if (root == null) return null
         val queue = ArrayDeque<AccessibilityNodeInfo>()
@@ -311,7 +176,7 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  TYPE COUNTRY (STRICT — verify dialog open before typing)
+    //  TYPE COUNTRY
     // ══════════════════════════════════════════════════════
     fun typeAndSelectCountry(
         service: AccessibilityService,
@@ -321,31 +186,25 @@ object PayPalActions {
         val countryName = cleanCountryName(countryNameRaw)
         AutomationState.log("ℹ Search: $countryName (from $countryNameRaw)")
 
-        dismissGmailPopup(service)
-        StepUtils.sleepMs(500)
-
-        // ⚠️ VERIFY country dialog is actually open — search field with hint="Search"
+        // Wait for search field (dialog should already be open by now)
         var search: AccessibilityNodeInfo? = null
         val sEnd = SystemClock.uptimeMillis() + 3500
         while (SystemClock.uptimeMillis() < sEnd) {
             if (StepUtils.shouldStop()) return false
-            dismissGmailPopup(service)
-
             val root = service.rootInActiveWindow
             if (root != null) {
-                // Positive signal: "Country of residence" visible OR search field with hint "Search"
                 val dialogOpen = NodeFinder.containsAny(root, "Country of residence", "Country/region")
-                val searchField = findSearchField(root)
-                if (dialogOpen || searchField != null) {
-                    search = searchField
-                    if (search != null) break
+                search = findSearchField(root)
+                if (search != null && dialogOpen) break
+                if (search != null && dialogOpen == false) {
+                    // search field exists but no dialog text — probably still loading
                 }
             }
             StepUtils.sleepMs(StepUtils.POLL_MS)
         }
 
         if (search == null) {
-            AutomationState.log("✘ Search field not found — aborting (dialog not open)")
+            AutomationState.log("✘ Search field not found — aborting")
             return false
         }
 
@@ -355,11 +214,10 @@ object PayPalActions {
         NodeFinder.setText(search, countryName)
         StepUtils.sleepMs(1500)
 
-        // Result click
+        // Find & click result
         val end = SystemClock.uptimeMillis() + 4000
         while (SystemClock.uptimeMillis() < end) {
             if (StepUtils.shouldStop()) return false
-            dismissGmailPopup(service)
 
             val r = service.rootInActiveWindow
             val match = findCountryResult(r, countryName, countryIso)
@@ -374,7 +232,6 @@ object PayPalActions {
         return false
     }
 
-    /** "Malaysia10" → "Malaysia" ; "Nigeria10-1" → "Nigeria" */
     private fun cleanCountryName(raw: String): String {
         return raw.replace(Regex("[0-9]+(-[0-9]+)*$"), "").trim()
     }
@@ -397,20 +254,7 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  WAIT + CLOSE POPUP
-    // ══════════════════════════════════════════════════════
-    fun waitAndClosePopup(service: AccessibilityService, timeoutMs: Long = 6000): Boolean {
-        val end = SystemClock.uptimeMillis() + timeoutMs
-        while (SystemClock.uptimeMillis() < end) {
-            if (StepUtils.shouldStop()) return false
-            if (dismissGmailPopup(service)) return true
-            StepUtils.sleepMs(StepUtils.POLL_MS)
-        }
-        return false
-    }
-
-    // ══════════════════════════════════════════════════════
-    //  TYPE NUMBER (STRICT — only into field with email/phone hint)
+    //  TYPE NUMBER
     // ══════════════════════════════════════════════════════
     fun typeNumber(service: AccessibilityService, fullNumber: String, dialingCode: String): Boolean {
         var national = fullNumber.trim().removePrefix("+")
@@ -419,17 +263,14 @@ object PayPalActions {
         }
         national = national.replace(" ", "").replace("-", "")
 
-        dismissGmailPopup(service)
-        StepUtils.sleepMs(500)
+        StepUtils.sleepMs(1000)   // wait for popup watcher to clear any Gmail popup
 
         var edit: AccessibilityNodeInfo? = null
-        val end = SystemClock.uptimeMillis() + 3000
+        val end = SystemClock.uptimeMillis() + 4000
         while (SystemClock.uptimeMillis() < end) {
             if (StepUtils.shouldStop()) return false
-            dismissGmailPopup(service)
 
             val root = service.rootInActiveWindow
-            // Strict: only match field with hint containing email/phone/number
             edit = findNumberField(root)
             if (edit != null) break
             StepUtils.sleepMs(StepUtils.POLL_MS)
@@ -451,8 +292,7 @@ object PayPalActions {
     //  CONTINUE
     // ══════════════════════════════════════════════════════
     fun tapContinue(service: AccessibilityService): Boolean {
-        dismissGmailPopup(service)
-        StepUtils.sleepMs(400)
+        StepUtils.sleepMs(600)
 
         val root = service.rootInActiveWindow ?: return false
         val node = NodeFinder.findByText(root, "Continue", "Next") ?: return false
