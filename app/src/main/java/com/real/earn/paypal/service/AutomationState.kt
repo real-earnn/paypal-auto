@@ -29,6 +29,9 @@ object AutomationState {
     private val _stats = MutableStateFlow(Stats())
     val stats: StateFlow<Stats> = _stats.asStateFlow()
 
+    private val _closeRequested = MutableStateFlow(false)
+    val closeRequested: StateFlow<Boolean> = _closeRequested.asStateFlow()
+
     fun setStatus(s: Status) { _status.value = s }
     fun getStatus(): Status = _status.value
 
@@ -36,7 +39,6 @@ object AutomationState {
         val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
         val line = "[$time] $msg"
         val cur = _logs.value
-        // Keep last 300 lines
         val next = if (cur.size >= 300) cur.drop(50) + line else cur + line
         _logs.value = next
     }
@@ -44,14 +46,15 @@ object AutomationState {
     fun clearLogs() { _logs.value = emptyList() }
 
     fun setStats(s: Stats) { _stats.value = s }
+    fun updateStats(block: (Stats) -> Stats) { _stats.value = block(_stats.value) }
 
-    fun updateStats(block: (Stats) -> Stats) {
-        _stats.value = block(_stats.value)
-    }
+    fun requestClose() { _closeRequested.value = true }
+    fun resetClose() { _closeRequested.value = false }
 
     fun reset() {
         _logs.value = emptyList()
         _stats.value = Stats()
         _status.value = Status.IDLE
+        _closeRequested.value = false
     }
 }
