@@ -27,8 +27,13 @@ class ServiceAdapter(
 
     override fun onBindViewHolder(holder: VH, position: Int) {
         val item = items[position]
-        holder.tvName.text = item.name
-        holder.tvCount.text = "${item.countries.size} countries"
+
+        // 🟢 Name safe
+        holder.tvName.text = item.name.ifEmpty { "Unnamed Service" }
+
+        // 🟢 countriesSafe use karo — null crash nahi hoga
+        val count = item.countriesSafe.size
+        holder.tvCount.text = "$count countries"
 
         if (item.isUnpaid) {
             holder.tvBadge.visibility = View.VISIBLE
