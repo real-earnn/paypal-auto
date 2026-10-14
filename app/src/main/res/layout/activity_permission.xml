@@ -15,7 +15,7 @@
             android:id="@+id/btnBack"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:padding="8dp"
+            android:padding="6dp"
             android:text="← Back"
             android:textColor="@color/paypal_blue"
             android:textSize="14sp"
@@ -25,7 +25,7 @@
             android:id="@+id/tvTitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="6dp"
             android:text="PayPal — Pakistan"
             android:textColor="@color/text_light"
             android:textSize="22sp"
@@ -35,7 +35,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="Automation shuru karne se pehle yeh permissions enable karo:"
+            android:text="Automation se pehle permissions enable karo:"
             android:textColor="@color/text_dim"
             android:textSize="13sp" />
 
@@ -44,32 +44,32 @@
             android:id="@+id/rowAccessibility"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="16dp"
             android:background="@color/bg_card"
             android:orientation="vertical"
-            android:padding="16dp">
+            android:padding="14dp">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="1. Accessibility Service"
                 android:textColor="@color/text_light"
-                android:textSize="16sp"
+                android:textSize="15sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="PayPal ki UI automate karne ke liye zaroori"
+                android:layout_marginTop="2dp"
+                android:text="PayPal ki UI automate karne ke liye"
                 android:textColor="@color/text_dim"
-                android:textSize="12sp" />
+                android:textSize="11sp" />
 
             <TextView
                 android:id="@+id/tvAccessibilityState"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="6dp"
                 android:text="✘ Tap to enable"
                 android:textColor="@color/error_red"
                 android:textSize="13sp"
@@ -82,32 +82,32 @@
             android:id="@+id/rowOverlay"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="10dp"
             android:background="@color/bg_card"
             android:orientation="vertical"
-            android:padding="16dp">
+            android:padding="14dp">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="2. Display Over Other Apps"
                 android:textColor="@color/text_light"
-                android:textSize="16sp"
+                android:textSize="15sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="Live log aur floating buttons ke liye"
+                android:layout_marginTop="2dp"
+                android:text="Floating controls (Pause/Stop) ke liye"
                 android:textColor="@color/text_dim"
-                android:textSize="12sp" />
+                android:textSize="11sp" />
 
             <TextView
                 android:id="@+id/tvOverlayState"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="6dp"
                 android:text="✘ Tap to enable"
                 android:textColor="@color/error_red"
                 android:textSize="13sp"
@@ -120,32 +120,32 @@
             android:id="@+id/rowBattery"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="10dp"
             android:background="@color/bg_card"
             android:orientation="vertical"
-            android:padding="16dp">
+            android:padding="14dp">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="3. Battery Optimization OFF"
                 android:textColor="@color/text_light"
-                android:textSize="16sp"
+                android:textSize="15sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="Background mein automation chalne ke liye"
+                android:layout_marginTop="2dp"
+                android:text="Background automation ke liye"
                 android:textColor="@color/text_dim"
-                android:textSize="12sp" />
+                android:textSize="11sp" />
 
             <TextView
                 android:id="@+id/tvBatteryState"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="6dp"
                 android:text="✘ Tap to enable"
                 android:textColor="@color/error_red"
                 android:textSize="13sp"
@@ -153,64 +153,161 @@
 
         </LinearLayout>
 
-        <!-- 4. Assistant -->
+        <!-- 4. Auto Flight Mode (toggle + position picker) -->
         <LinearLayout
-            android:id="@+id/rowAssistant"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="10dp"
             android:background="@color/bg_card"
             android:orientation="vertical"
-            android:padding="16dp">
+            android:padding="14dp">
 
-            <TextView
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="4. Default Assistant (Optional)"
-                android:textColor="@color/text_light"
-                android:textSize="16sp"
-                android:textStyle="bold" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="Airplane mode toggle ke liye best (without root)"
-                android:textColor="@color/text_dim"
-                android:textSize="12sp" />
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
 
-            <TextView
-                android:id="@+id/tvAssistantState"
-                android:layout_width="wrap_content"
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="4. Auto Flight Mode"
+                        android:textColor="@color/text_light"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="PayPal se pehle Airplane ON/OFF karega (IP refresh)"
+                        android:textColor="@color/text_dim"
+                        android:textSize="11sp" />
+
+                </LinearLayout>
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/switchAutoFlight"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+
+            </LinearLayout>
+
+            <!-- Position section — hidden when toggle is OFF -->
+            <LinearLayout
+                android:id="@+id/layoutPosition"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="✘ Tap to open settings"
-                android:textColor="@color/error_red"
-                android:textSize="13sp"
-                android:textStyle="bold" />
+                android:layout_marginTop="12dp"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Notification panel mein Airplane icon ki position?"
+                    android:textColor="@color/text_light"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Top row ke left se count karo (1 se 6 tak)"
+                    android:textColor="@color/text_dim"
+                    android:textSize="11sp" />
+
+                <!-- Position chips 1-6 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/pos1"
+                        style="@style/PositionChip"
+                        android:text="1" />
+
+                    <TextView
+                        android:id="@+id/pos2"
+                        style="@style/PositionChip"
+                        android:text="2" />
+
+                    <TextView
+                        android:id="@+id/pos3"
+                        style="@style/PositionChip"
+                        android:text="3" />
+
+                    <TextView
+                        android:id="@+id/pos4"
+                        style="@style/PositionChip"
+                        android:text="4" />
+
+                    <TextView
+                        android:id="@+id/pos5"
+                        style="@style/PositionChip"
+                        android:text="5" />
+
+                    <TextView
+                        android:id="@+id/pos6"
+                        style="@style/PositionChip"
+                        android:text="6" />
+
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvSelectedPos"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="Selected: none"
+                    android:textColor="@color/paypal_blue"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnTestFlight"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="10dp"
+                    android:backgroundTint="@color/paypal_blue_dark"
+                    android:text="🧪 Test Flight Toggle"
+                    android:textColor="@color/white"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvTestResult"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text=""
+                    android:textColor="@color/text_dim"
+                    android:textSize="11sp" />
+
+            </LinearLayout>
 
         </LinearLayout>
 
+        <!-- Start button -->
         <Button
             android:id="@+id/btnStart"
             android:layout_width="match_parent"
             android:layout_height="56dp"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="20dp"
             android:backgroundTint="@color/paypal_blue"
             android:enabled="false"
-            android:text="Start Automation"
+            android:text="▶ Start Automation"
             android:textColor="@color/white"
             android:textSize="16sp"
             android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:layout_gravity="center_horizontal"
-            android:text="Start button Phase 5 mein kaam karega"
-            android:textColor="@color/text_dim"
-            android:textSize="11sp" />
 
     </LinearLayout>
 
