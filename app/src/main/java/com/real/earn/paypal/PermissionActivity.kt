@@ -1,9 +1,11 @@
 package com.real.earn.paypal
 
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.real.earn.paypal.databinding.ActivityPermissionBinding
+import com.real.earn.paypal.service.AutomationService
 import com.real.earn.paypal.utils.PermissionHelper
 
 class PermissionActivity : AppCompatActivity() {
@@ -37,12 +39,32 @@ class PermissionActivity : AppCompatActivity() {
         binding.rowAssistant.setOnClickListener { PermissionHelper.openAssistantSettings(this) }
 
         binding.btnStart.setOnClickListener {
-            if (allGranted()) {
-                Toast.makeText(this, "Phase 5 mein automation start hoga", Toast.LENGTH_LONG).show()
-                // TODO: Phase 5 — AutomationActivity start karna
-            } else {
+            if (!allGranted()) {
                 Toast.makeText(this, "Pehle saari permissions enable karo", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
             }
+
+            // 🟢 Launch Automation Activity (shows logs)
+            val actIntent = Intent(this, AutomationActivity::class.java).apply {
+                putExtra("service", serviceName)
+                putExtra("country", countryName)
+                putExtra("country_code", countryCode)
+                putExtra("dialing_code", dialingCode)
+                putExtra("price", price)
+            }
+            startActivity(actIntent)
+
+            // 🟢 Start Automation Service (foreground + overlay)
+            AutomationService.start(
+                this,
+                service = serviceName,
+                country = countryName,
+                countryCode = countryCode,
+                dialingCode = dialingCode,
+                price = price
+            )
+
+            Toast.makeText(this, "Automation start ho rahi hai…", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -77,7 +99,6 @@ class PermissionActivity : AppCompatActivity() {
     }
 
     private fun allGranted(): Boolean {
-        // Assistant check is fuzzy — treat as granted so we don't block the user forever
         val a11y = PermissionHelper.isAccessibilityEnabled(this)
         val overlay = PermissionHelper.isOverlayGranted(this)
         val battery = PermissionHelper.isBatteryOptimizationIgnored(this)
