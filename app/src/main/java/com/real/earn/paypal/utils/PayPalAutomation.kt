@@ -6,11 +6,6 @@ import kotlinx.coroutines.delay
 
 object PayPalAutomation {
 
-    /**
-     * Run automation for a batch of numbers.
-     * Returns pair (successCount, failCount) for this batch.
-     * Callbacks are suspend so callers can do async work (e.g. backend release).
-     */
     suspend fun runBatch(
         service: AccessibilityService,
         numbers: List<String>,
@@ -33,59 +28,64 @@ object PayPalAutomation {
             onNumberStart(num)
             AutomationState.log("▶ Trying: $num")
 
-            // 1. Clear PayPal data first
+            // ── 1. Clear PayPal data (also kills Settings) ──
             PayPalClearData.clear(service)
-            delay(800)
+            delay(1000)
 
-            // 2. Airplane ON → OFF
+            // ── 2. Airplane ON → OFF ──
             AirplaneModeController.setAirplaneMode(service, true, 2500)
             AirplaneModeController.setAirplaneMode(service, false, 2000)
 
-            // 3. Launch PayPal
+            // ── 3. Launch PayPal ──
             if (!PayPalActions.launchPayPal(service)) {
-                onNumberFail(num)
-                fail++
+                onNumberFail(num); fail++
                 continue
             }
 
-            // 4. Wait for Get Started / Number screen
-            val screenReady = PayPalActions.handleGetStartedIfPresent(service, 10000)
-            if (!screenReady) {
+            // ── 4. Wait for Get Started → click → wait for number screen ──
+            if (!PayPalActions.waitForNumberScreen(service, 15000)) {
                 AutomationState.log("✘ Number screen nahi aayi")
-                onNumberFail(num)
-                fail++
+                onNumberFail(num); fail++
                 cleanupAndNext(service)
                 continue
             }
 
-            // 5. Wait for Continue loader
-            PayPalActions.waitForContinueReady(service, 8000)
-
-            // 6. Dismiss popups
+            // ── 5. Dismiss any popup (Gmail etc.) ──
             PayPalActions.dismissPopupsIfAny(service)
+            delay(300)
 
-            // 7. Country selector
-            if (PayPalActions.openCountrySelector(service)) {
-                PayPalActions.selectCountry(service, countryName, countryIso)
-                delay(1500)
-                PayPalActions.dismissPopupsIfAny(service)
-                PayPalActions.waitForContinueReady(service, 6000)
-            } else {
-                AutomationState.log("⚠ Country selector nahi mila (skip)")
-            }
-
-            // 8. Fill number
-            if (!PayPalActions.fillNumber(service, num, dialingCode)) {
-                onNumberFail(num)
-                fail++
+            // ── 6. Open country selector (click "US" at top-right) ──
+            if (!PayPalActions.openCountrySelector(service, 6000)) {
+                AutomationState.log("⚠ Country selector nahi khula")
+                onNumberFail(num); fail++
                 cleanupAndNext(service)
                 continue
             }
 
-            // 9. Tap Continue
+            // ── 7. Search + select country ──
+            if (!PayPalActions.selectCountry(service, countryName, countryIso)) {
+                AutomationState.log("✘ Country select fail")
+                onNumberFail(num); fail++
+                cleanupAndNext(service)
+                continue
+            }
+
+            // ── 8. Wait for number screen to return ──
+            delay(1500)
+            PayPalActions.dismissPopupsIfAny(service)
+            PayPalActions.waitForNumberScreen(service, 6000)
+
+            // ── 9. Fill number ──
+            if (!PayPalActions.fillNumber(service, num, dialingCode)) {
+                onNumberFail(num); fail++
+                cleanupAndNext(service)
+                continue
+            }
+
+            // ── 10. Tap Continue ──
             PayPalActions.tapContinue(service)
 
-            // 10. Wait for result
+            // ── 11. Wait for result ──
             val result = PayPalActions.waitForResult(service, 10000)
 
             when (result) {
@@ -96,18 +96,12 @@ object PayPalAutomation {
                     success++
                 }
                 PayPalActions.Result.ERROR -> {
-                    AutomationState.log("✘ Error red — FAIL: $num")
-                    onNumberFail(num)
-                    fail++
+                    AutomationState.log("✘ Error — FAIL: $num")
+                    onNumberFail(num); fail++
                 }
                 PayPalActions.Result.TIMEOUT -> {
-                    AutomationState.log("⏱ No response in 10s — FAIL: $num")
-                    onNumberFail(num)
-                    fail++
-                }
-                PayPalActions.Result.UNKNOWN -> {
-                    onNumberFail(num)
-                    fail++
+                    AutomationState.log("⏱ Timeout — FAIL: $num")
+                    onNumberFail(num); fail++
                 }
             }
 
@@ -120,7 +114,7 @@ object PayPalAutomation {
     private suspend fun cleanupAndNext(service: AccessibilityService) {
         if (AutomationState.getStatus() == AutomationState.Status.STOPPING) return
         PayPalActions.closePayPal(service)
-        delay(500)
+        delay(600)
         PayPalClearData.clear(service)
         delay(600)
         AirplaneModeController.setAirplaneMode(service, true, 2500)
