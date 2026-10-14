@@ -12,7 +12,6 @@ object PayPalActions {
 
     const val PAYPAL_PKG = "com.paypal.android.p2pmobile"
 
-    // US button hardcoded (pointer location se confirm kiya)
     private const val US_TAP_X = 600
     private const val US_TAP_Y = 125
 
@@ -41,83 +40,78 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  TAP GET STARTED  (then 5 sec settle)
+    //  TAP GET STARTED → 5 sec settle
     // ══════════════════════════════════════════════════════
-    fun tapGetStarted(service: AccessibilityService, timeoutMs: Long = 10000): Boolean {
+    fun tapGetStarted(service: AccessibilityService, timeoutMs: Long = 12000): Boolean {
         val end = SystemClock.uptimeMillis() + timeoutMs
-        var clicked = false
 
+        // Wait for Get Started button
         while (SystemClock.uptimeMillis() < end) {
             if (StepUtils.shouldStop()) return false
 
             val root = service.rootInActiveWindow
             if (root != null) {
-                // Already past Get Started?
+                // Already past Get Started → US/Search/Country visible?
                 if (NodeFinder.containsAny(root, "US") ||
-                    NodeFinder.containsAny(root, "Country of residence") ||
-                    NodeFinder.containsAny(root, "Search")) {
-                    if (clicked) {
-                        AutomationState.log("✔ Get Started done — main page ready")
-                    }
+                    NodeFinder.containsAny(root, "Search") ||
+                    NodeFinder.containsAny(root, "Country of residence")) {
+                    AutomationState.log("ℹ Already past Get Started")
                     return true
                 }
 
-                // Click Get Started
-                if (!clicked) {
-                    val node = NodeFinder.findByText(root, "Get Started")
-                        ?: NodeFinder.findByTextContains(root, "Get Started")
-                    if (node != null && NodeFinder.click(node)) {
-                        AutomationState.log("ℹ Get Started tapped — waiting 5s for main page…")
-                        clicked = true
-                        StepUtils.sleepMs(5000)   // 🟢 5 seconds settle
-                    }
+                val node = NodeFinder.findByText(root, "Get Started")
+                    ?: NodeFinder.findByTextContains(root, "Get Started")
+                if (node != null && NodeFinder.click(node)) {
+                    AutomationState.log("ℹ Get Started tapped — waiting 5s for main page…")
+                    StepUtils.sleepMs(5000)   // 🟢 FIXED: 5 seconds
+                    return true
                 }
             }
             StepUtils.sleepMs(StepUtils.POLL_MS)
         }
-        if (!clicked) AutomationState.log("ℹ Get Started not seen")
+        AutomationState.log("ℹ Get Started not seen")
         return true
     }
 
     // ══════════════════════════════════════════════════════
-    //  CLICK US  — (600,125) with 2 sec verify after each tap
+    //  CLICK US  — 5 attempts, delays: 2s, 3s, 5s, 5s, 5s
     // ══════════════════════════════════════════════════════
-    fun clickUsButton(service: AccessibilityService, timeoutMs: Long = 10000): Boolean {
-        val end = SystemClock.uptimeMillis() + timeoutMs
-        var attempt = 0
+    fun clickUsButton(service: AccessibilityService): Boolean {
+        val delays = longArrayOf(2000L, 3000L, 5000L, 5000L, 5000L)
 
-        while (SystemClock.uptimeMillis() < end) {
+        for (attempt in 0 until 5) {
             if (StepUtils.shouldStop()) return false
 
-            // Already dialog open?
-            val root = service.rootInActiveWindow
-            if (root != null && dialogOrSearchVisible(root)) {
-                AutomationState.log("✔ Country dialog visible")
+            // Already visible?
+            val r0 = service.rootInActiveWindow
+            if (r0 != null && dialogOrSearchVisible(r0)) {
+                AutomationState.log("✔ Country dialog visible (pre-check #${attempt + 1})")
                 return true
             }
 
-            attempt++
-            AutomationState.log("ℹ US tap #$attempt at ($US_TAP_X, $US_TAP_Y)")
+            // Tap
+            AutomationState.log("ℹ US tap #${attempt + 1} at ($US_TAP_X, $US_TAP_Y)")
             tapAt(service, US_TAP_X, US_TAP_Y)
 
-            // 2 second wait, then verify
-            StepUtils.sleepMs(2000)
-            val r2 = service.rootInActiveWindow
-            if (r2 != null && dialogOrSearchVisible(r2)) {
-                AutomationState.log("✔ Country dialog visible after tap #$attempt")
+            // Progressive wait
+            StepUtils.sleepMs(delays[attempt])
+
+            // Verify
+            val r1 = service.rootInActiveWindow
+            if (r1 != null && dialogOrSearchVisible(r1)) {
+                AutomationState.log("✔ Country dialog visible after tap #${attempt + 1}")
                 return true
             }
         }
-        AutomationState.log("✘ US button failed after $attempt attempts")
+
+        AutomationState.log("✘ US button failed after 5 attempts")
         return false
     }
 
-    /** Dialog is "open" if either dialog title OR Search text visible */
+    /** Dialog is "open" if dialog title or Search text is visible */
     private fun dialogOrSearchVisible(root: AccessibilityNodeInfo): Boolean {
         if (NodeFinder.containsAny(root, "Country of residence", "Country/region")) return true
-        // Search text node
         if (findByExactText(root, "Search") != null) return true
-        if (findByExactText(root, "search") != null) return true
         return false
     }
 
@@ -141,7 +135,7 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  TYPE COUNTRY — text "Search" click → type → result click
+    //  TYPE COUNTRY — text "Search" → click → type → result click
     // ══════════════════════════════════════════════════════
     fun typeAndSelectCountry(
         service: AccessibilityService,
@@ -159,8 +153,6 @@ object PayPalActions {
             val root = service.rootInActiveWindow
             if (root != null) {
                 searchNode = findByExactText(root, "Search")
-                    ?: findByExactText(root, "search")
-                    ?: findByExactText(root, "SEARCH")
                 if (searchNode != null) break
             }
             StepUtils.sleepMs(StepUtils.POLL_MS)
@@ -171,7 +163,6 @@ object PayPalActions {
             return false
         }
 
-        // Click Search
         val clickTarget = NodeFinder.findClickableParent(searchNode) ?: searchNode
         if (!clickTarget.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
             NodeFinder.click(searchNode)
@@ -179,15 +170,11 @@ object PayPalActions {
         AutomationState.log("ℹ Search clicked")
         StepUtils.sleepMs(700)
 
-        // Find editable field
         var inputField = findEditableUnder(service.rootInActiveWindow) ?: searchNode
-
-        // Type country
         NodeFinder.setText(inputField, countryName)
         AutomationState.log("ℹ Typed: $countryName")
         StepUtils.sleepMs(1800)
 
-        // Click result
         val end = SystemClock.uptimeMillis() + 4500
         while (SystemClock.uptimeMillis() < end) {
             if (StepUtils.shouldStop()) return false
@@ -260,7 +247,7 @@ object PayPalActions {
         }
         national = national.replace(" ", "").replace("-", "")
 
-        StepUtils.sleepMs(1500)   // Gmail popup watcher settle
+        StepUtils.sleepMs(1500)
 
         var phoneLabel: AccessibilityNodeInfo? = null
         val end = SystemClock.uptimeMillis() + 5000
