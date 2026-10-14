@@ -7,84 +7,89 @@ import android.provider.Settings
 import android.view.accessibility.AccessibilityNodeInfo
 import com.real.earn.paypal.service.AutomationState
 
+/**
+ * Simple flight cycle:
+ *  QS open → ON → 1s → OFF → HOME (close QS completely)
+ */
 object AirplaneModeController {
 
-    fun toggleCycle(service: AccessibilityService): Boolean {
+    fun strictToggle(service: AccessibilityService): Boolean {
         return try {
-            AutomationState.log("✈ Flight cycle start")
+            AutomationState.log("✈ Flight ON...")
 
+            // ① Open QS
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS)
-
-            if (!waitForAirplaneTile(service, 3000)) {
-                AutomationState.log("✘ Airplane tile not found")
-                closeQS(service)
-                return false
-            }
-            AutomationState.log("ℹ Tile found")
-
-            val tile = findAirplaneTile(service)
-            if (tile == null || !NodeFinder.click(tile)) {
-                AutomationState.log("✘ Click ON fail")
-                closeQS(service)
+            if (!waitForQs(service, 2000)) {
+                AutomationState.log("✘ QS not shown")
                 return false
             }
 
-            if (!waitForAirplaneState(service, true, 4000)) {
-                AutomationState.log("⚠ ON state not confirmed")
-            } else {
-                AutomationState.log("✔ Flight ON")
-            }
-
-            sleepMs(3000)
-
-            var tile2 = findAirplaneTile(service)
-            if (tile2 == null) {
-                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS)
-                sleepMs(1200)
-                tile2 = findAirplaneTile(service)
-            }
-            if (tile2 == null) {
-                AutomationState.log("✘ Tile lost for OFF")
-                closeQS(service)
+            // ② Find tile
+            val tile1 = waitForTile(service, 3000)
+            if (tile1 == null) {
+                AutomationState.log("✘ Tile not found")
+                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
                 return false
             }
 
-            if (!NodeFinder.click(tile2)) {
-                AutomationState.log("✘ Click OFF fail")
-                closeQS(service)
+            // ③ Click ON
+            if (!NodeFinder.click(tile1)) {
+                AutomationState.log("✘ ON click fail")
+                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
                 return false
             }
+            waitAirplaneState(service, true, 4000)
+            AutomationState.log("✔ Flight ON")
 
-            if (!waitForAirplaneState(service, false, 4000)) {
-                AutomationState.log("⚠ OFF state not confirmed")
-            } else {
-                AutomationState.log("✔ Flight OFF")
+            // ④ 1 second wait
+            sleepMs(1000)
+
+            // ⑤ Click OFF (re-find tile)
+            val tile2 = findTile(service)
+            if (tile2 == null || !NodeFinder.click(tile2)) {
+                AutomationState.log("✘ OFF click fail")
+                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                return false
             }
+            waitAirplaneState(service, false, 4000)
+            AutomationState.log("✔ Flight OFF")
 
-            closeQS(service)
-            sleepMs(500)
+            // ⑥ HOME — close QS completely
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+            sleepMs(900)
+
+            AutomationState.log("✔ Flight cycle done")
             true
         } catch (e: Exception) {
             AutomationState.log("✘ Flight error: ${e.message}")
-            try { service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK) } catch (_: Exception) {}
+            try { service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME) } catch (_: Exception) {}
             false
         }
     }
 
-    private fun waitForAirplaneTile(service: AccessibilityService, timeoutMs: Long): Boolean {
+    // ══ Helpers ══
+
+    private fun waitForQs(service: AccessibilityService, timeoutMs: Long): Boolean {
         val end = SystemClock.uptimeMillis() + timeoutMs
         while (SystemClock.uptimeMillis() < end) {
-            if (findAirplaneTile(service) != null) return true
-            sleepMs(300)
+            val root = service.rootInActiveWindow
+            val pkg = root?.packageName?.toString() ?: ""
+            if (pkg.contains("systemui")) return true
+            sleepMs(200)
         }
         return false
     }
 
-    private fun waitForAirplaneState(
-        service: AccessibilityService,
-        desired: Boolean,
-        timeoutMs: Long
-    ): Boolean {
+    private fun waitForTile(service: AccessibilityService, timeoutMs: Long): AccessibilityNodeInfo? {
+        val end = SystemClock.uptimeMillis() + timeoutMs
+        while (SystemClock.uptimeMillis() < end) {
+            findTile(service)?.let { return it }
+            sleepMs(250)
+        }
+        return null
+    }
+
+    private fun waitAirplaneState(service: AccessibilityService, desired: Boolean, timeoutMs: Long): Boolean {
         val end = SystemClock.uptimeMillis() + timeoutMs
         while (SystemClock.uptimeMillis() < end) {
             if (isAirplaneModeOn(service) == desired) return true
@@ -93,62 +98,40 @@ object AirplaneModeController {
         return false
     }
 
-    private fun findAirplaneTile(service: AccessibilityService): AccessibilityNodeInfo? {
+    private fun findTile(service: AccessibilityService): AccessibilityNodeInfo? {
         val root = service.rootInActiveWindow ?: return null
-
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         while (queue.isNotEmpty()) {
             val n = queue.removeFirst()
-
             val desc = n.contentDescription?.toString()?.lowercase() ?: ""
             val text = n.text?.toString()?.lowercase() ?: ""
             val id = n.viewIdResourceName?.lowercase() ?: ""
 
-            if (desc.contains("airplane") ||
-                desc.contains("flight mode") ||
-                desc.contains("aeroplane") ||
-                text.contains("airplane mode") ||
-                text.contains("flight mode") ||
+            if (desc.contains("airplane") || desc.contains("flight mode") ||
+                text.contains("airplane mode") || text.contains("flight mode") ||
                 id.contains("airplane")
             ) {
-                val clickable = if (n.isClickable) n else findClickableAncestor(n)
-                return clickable ?: n
+                return if (n.isClickable) n else (findClickableAncestor(n) ?: n)
             }
-
-            for (i in 0 until n.childCount) {
-                n.getChild(i)?.let { queue.add(it) }
-            }
+            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
         }
         return null
     }
 
     private fun findClickableAncestor(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         var cur = node.parent
-        var depth = 0
-        while (cur != null && depth < 6) {
+        var d = 0
+        while (cur != null && d < 6) {
             if (cur.isClickable) return cur
-            cur = cur.parent
-            depth++
+            cur = cur.parent; d++
         }
         return null
     }
 
-    private fun closeQS(service: AccessibilityService) {
-        try {
-            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-            sleepMs(400)
-        } catch (_: Exception) {}
-    }
-
-    fun isAirplaneModeOn(context: Context): Boolean {
-        return try {
-            Settings.Global.getInt(
-                context.contentResolver,
-                Settings.Global.AIRPLANE_MODE_ON, 0
-            ) == 1
-        } catch (e: Exception) { false }
-    }
+    fun isAirplaneModeOn(context: Context): Boolean = try {
+        Settings.Global.getInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) == 1
+    } catch (e: Exception) { false }
 
     private fun sleepMs(ms: Long) {
         try { Thread.sleep(ms) } catch (_: InterruptedException) {}
