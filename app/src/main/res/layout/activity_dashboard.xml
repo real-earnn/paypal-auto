@@ -208,11 +208,24 @@
 
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- Start Automation Button -->
+        <Button
+            android:id="@+id/btnStartAutomation"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="24dp"
+            android:backgroundTint="@color/success_green"
+            android:text="▶  Start Automation"
+            android:textColor="@color/white"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <!-- Refresh Button -->
         <Button
             android:id="@+id/btnRefresh"
             android:layout_width="match_parent"
             android:layout_height="52dp"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="12dp"
             android:backgroundTint="@color/paypal_blue"
             android:text="Refresh"
             android:textColor="@color/white" />
@@ -222,7 +235,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
             android:layout_gravity="center_horizontal"
-            android:text="Phase 4 mein Services list yahan aayegi"
+            android:text="Balance update hone ke liye Refresh dabao"
             android:textColor="@color/text_dim"
             android:textSize="12sp" />
 
