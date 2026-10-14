@@ -7,12 +7,16 @@ import android.provider.Settings
 import android.view.accessibility.AccessibilityNodeInfo
 import com.real.earn.paypal.service.AutomationState
 
-/**
- * Simple flight cycle:
- *  QS open → ON → 1s → OFF → HOME (close QS completely)
- */
 object AirplaneModeController {
 
+    /**
+     * Alias for backward compatibility with PermissionActivity.
+     */
+    fun toggleCycle(service: AccessibilityService): Boolean = strictToggle(service)
+
+    /**
+     * QS open → Flight ON → 1s → Flight OFF → HOME
+     */
     fun strictToggle(service: AccessibilityService): Boolean {
         return try {
             AutomationState.log("✈ Flight ON...")
@@ -66,8 +70,6 @@ object AirplaneModeController {
             false
         }
     }
-
-    // ══ Helpers ══
 
     private fun waitForQs(service: AccessibilityService, timeoutMs: Long): Boolean {
         val end = SystemClock.uptimeMillis() + timeoutMs
