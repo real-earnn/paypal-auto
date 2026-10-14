@@ -43,7 +43,8 @@ class OverlayManager(private val context: Context) {
             WindowManager.LayoutParams.WRAP_CONTENT,
             type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,   // 🟢 screen on
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -107,10 +108,6 @@ class OverlayManager(private val context: Context) {
         btnClose = null
     }
 
-    /**
-     * Updates icon + description based on paused state.
-     * Named "updatePausedVisuals" to avoid clash with property setter.
-     */
     fun updatePausedVisuals(isPaused: Boolean) {
         paused = isPaused
         btnToggle?.setImageResource(if (isPaused) R.drawable.ic_play else R.drawable.ic_pause)
