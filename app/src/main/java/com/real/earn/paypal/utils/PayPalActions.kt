@@ -1,10 +1,7 @@
 package com.real.earn.paypal.utils
 
 import android.accessibilityservice.AccessibilityService
-import android.accessibilityservice.GestureDescription
 import android.content.Intent
-import android.graphics.Path
-import android.graphics.Rect
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityNodeInfo
 import com.real.earn.paypal.service.AutomationState
@@ -12,9 +9,6 @@ import com.real.earn.paypal.service.AutomationState
 object PayPalActions {
 
     const val PAYPAL_PKG = "com.paypal.android.p2pmobile"
-
-    private const val US_TAP_X = 600
-    private const val US_TAP_Y = 125
 
     // ══════════════════════════════════════════════════════
     //  LAUNCH
@@ -29,7 +23,6 @@ object PayPalActions {
                 Intent.FLAG_ACTIVITY_CLEAR_TASK
             )
             service.startActivity(intent)
-            // Wait for PayPal app to be foreground (package match)
             StepUtils.waitForPackage(service, "paypal", 8000)
         } catch (e: Exception) {
             AutomationState.log("✘ Launch: ${e.message}")
@@ -38,190 +31,219 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  TAP GET STARTED — strict
-    //  Only skips if number screen (edit field or email text) is visible
+    //  TAP GET STARTED
     // ══════════════════════════════════════════════════════
     fun tapGetStarted(service: AccessibilityService, timeoutMs: Long = 15000): Boolean {
         val end = SystemClock.uptimeMillis() + timeoutMs
         var lastLog = 0L
 
-        AutomationState.log("ℹ Waiting for Get Started button…")
+        AutomationState.log("ℹ Waiting for Get Started…")
 
         while (SystemClock.uptimeMillis() < end) {
             if (StepUtils.shouldStop()) return false
 
             val root = service.rootInActiveWindow
             if (root != null) {
-                // ONLY skip if number screen already visible
+                // Skip only if number screen visible
                 val hasEditField = findEditableUnder(root) != null
                 val hasEmailText = NodeFinder.containsAny(
                     root, "email or number", "Email or phone number"
                 )
                 if (hasEditField || hasEmailText) {
-                    AutomationState.log("ℹ Number screen already visible — Get Started skipped")
+                    AutomationState.log("ℹ Number screen already visible")
                     return true
                 }
 
-                // Look for Get Started — text first
-                val node = NodeFinder.findByText(root, "Get Started")
-                    ?: NodeFinder.findByTextContains(root, "Get Started")
-                    ?: findByContentDescription(root, "Get Started")
+                // Find Get Started (text or contentDescription)
+                val node = findByTextEquals(root, "Get Started")
+                    ?: findByTextContains(root, "Get Started")
+                    ?: findByContentDescContains(root, "Get Started")
 
                 if (node != null) {
-                    AutomationState.log("ℹ Get Started FOUND — clicking…")
+                    AutomationState.log("ℹ Get Started FOUND — clicking")
                     val ok = NodeFinder.click(node)
                         || (NodeFinder.findClickableParent(node)
                                 ?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true)
                     if (ok) {
-                        AutomationState.log("✔ Get Started tapped — 5s wait for main page…")
+                        AutomationState.log("✔ Get Started tapped — 5s wait")
                         StepUtils.sleepMs(5000)
                         return true
-                    } else {
-                        AutomationState.log("⚠ Get Started click returned false")
                     }
                 }
             }
 
-            // Log progress every 3s
             val now = SystemClock.uptimeMillis()
             if (now - lastLog > 3000) {
                 AutomationState.log("ℹ Still waiting for Get Started…")
                 lastLog = now
             }
-
             StepUtils.sleepMs(StepUtils.POLL_MS)
         }
-
-        AutomationState.log("⚠ Get Started not found in ${timeoutMs}ms — proceeding anyway")
+        AutomationState.log("⚠ Get Started not found")
         return true
     }
 
-    private fun findByContentDescription(root: AccessibilityNodeInfo?, target: String): AccessibilityNodeInfo? {
-        if (root == null) return null
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val n = queue.removeFirst()
-            val d = n.contentDescription?.toString()?.trim() ?: ""
-            if (d.contains(target, ignoreCase = true) && n.isVisibleToUser) return n
-            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
-        }
-        return null
-    }
+    // ══════════════════════════════════════════════════════
+    //  CLICK US  — pure text detection, no hardcoded location
+    // ══════════════════════════════════════════════════════
+    fun clickUsButton(service: AccessibilityService, timeoutMs: Long = 15000): Boolean {
+        AutomationState.log("ℹ Searching for 'US' text on screen…")
+        val end = SystemClock.uptimeMillis() + timeoutMs
+        var lastDump = 0L
+        var lastLog = 0L
 
-    // ══════════════════════════════════════════════════════
-    //  CLICK US BUTTON — US text 5s, then 5 hardcoded taps
-    // ══════════════════════════════════════════════════════
-    fun clickUsButton(service: AccessibilityService): Boolean {
-        // ═══ STEP 1: Try "US" as TEXT for 5 seconds ═══
-        AutomationState.log("ℹ Trying 'US' as text (5s)…")
-        val textEnd = SystemClock.uptimeMillis() + 5000
-        while (SystemClock.uptimeMillis() < textEnd) {
+        while (SystemClock.uptimeMillis() < end) {
             if (StepUtils.shouldStop()) return false
 
             val root = service.rootInActiveWindow
             if (root != null) {
+                // Dialog already open?
                 if (dialogOrSearchVisible(root)) {
-                    AutomationState.log("✔ Country dialog visible (US text pass)")
+                    AutomationState.log("✔ Country dialog already open")
                     return true
                 }
 
-                val usNode = findUsTextNode(root)
+                // ═══ Find "US" text — MULTIPLE strategies ═══
+                val usNode = findUsNode(root)
+
                 if (usNode != null) {
-                    val clickable = NodeFinder.findClickableParent(usNode) ?: usNode
-                    if (clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                        AutomationState.log("ℹ US text clicked")
+                    AutomationState.log("ℹ US found — attempting click")
+                    val clicked = tryClick(usNode)
+                    if (clicked) {
+                        // 2 sec wait, then verify
                         StepUtils.sleepMs(2000)
                         val r2 = service.rootInActiveWindow
                         if (r2 != null && dialogOrSearchVisible(r2)) {
-                            AutomationState.log("✔ Dialog opened via US text")
+                            AutomationState.log("✔ Dialog opened via US click")
                             return true
+                        } else {
+                            AutomationState.log("⚠ Click done but dialog not visible — retrying")
                         }
+                    } else {
+                        AutomationState.log("⚠ US click failed")
+                    }
+                } else {
+                    // Log every 4s that US not found
+                    val now = SystemClock.uptimeMillis()
+                    if (now - lastLog > 4000) {
+                        AutomationState.log("ℹ 'US' not yet visible — waiting…")
+                        lastLog = now
                     }
                 }
+
+                // Dump all text nodes once (after 8s if still not found)
+                val elapsed = timeoutMs - (end - SystemClock.uptimeMillis())
+                if (elapsed > 8000 && SystemClock.uptimeMillis() - lastDump > 10000) {
+                    dumpAllText(root)
+                    lastDump = SystemClock.uptimeMillis()
+                }
             }
-            StepUtils.sleepMs(StepUtils.POLL_MS)
+
+            StepUtils.sleepMs(500)
         }
 
-        AutomationState.log("ℹ US text not found in 5s — using hardcoded location")
-
-        // ═══ STEP 2: 5 hardcoded taps with progressive delays ═══
-        val delays = longArrayOf(2000L, 3000L, 5000L, 5000L, 5000L)
-
-        for (attempt in 0 until 5) {
-            if (StepUtils.shouldStop()) return false
-
-            // Check if dialog opened already
-            val r0 = service.rootInActiveWindow
-            if (r0 != null && dialogOrSearchVisible(r0)) {
-                AutomationState.log("✔ Dialog visible (pre-tap #${attempt + 1})")
-                return true
-            }
-
-            // Tap
-            AutomationState.log("ℹ US tap #${attempt + 1}/5 at ($US_TAP_X, $US_TAP_Y)")
-            tapAt(service, US_TAP_X, US_TAP_Y)
-
-            // Wait with progressive delay
-            StepUtils.sleepMs(delays[attempt])
-
-            // Verify
-            val r1 = service.rootInActiveWindow
-            if (r1 != null && dialogOrSearchVisible(r1)) {
-                AutomationState.log("✔ Dialog visible after tap #${attempt + 1}")
-                return true
-            }
-        }
-
-        AutomationState.log("✘ US button failed after 5 hardcoded attempts")
+        AutomationState.log("✘ US button not found in ${timeoutMs}ms")
+        // Final dump for debugging
+        val r = service.rootInActiveWindow
+        if (r != null) dumpAllText(r)
         return false
     }
 
-    /** Find node whose text equals "US" (top-right quadrant) */
-    private fun findUsTextNode(root: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
-        if (root == null) return null
-        val rootR = Rect(); root.getBoundsInScreen(rootR)
+    /**
+     * Find "US" node using multiple strategies:
+     *   1. Exact text "US"
+     *   2. Text starts with "US" (e.g., "US ")
+     *   3. Content description equals "US"
+     *   4. Text containing "US" as standalone word
+     */
+    private fun findUsNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        // Strategy 1: exact text "US"
+        findByTextEquals(root, "US")?.let {
+            AutomationState.log("ℹ US match: exact text")
+            return it
+        }
+
+        // Strategy 2: text starts with "US" (short)
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         while (queue.isNotEmpty()) {
             val n = queue.removeFirst()
             val t = n.text?.toString()?.trim() ?: ""
-            if (t.equals("US", true) && n.isVisibleToUser) {
-                val r = Rect(); n.getBoundsInScreen(r)
-                // top 30% and right 40%
-                if (r.centerY() < rootR.top + rootR.height() * 0.30 &&
-                    r.centerX() > rootR.left + rootR.width() * 0.55) {
-                    return n
-                }
+            // "US" exact, "US " trimmed, "US\n"
+            if (t.equals("US", ignoreCase = true) && n.isVisibleToUser) {
+                AutomationState.log("ℹ US match: case-insensitive")
+                return n
+            }
+            // desc equals "US" or "Country: US"
+            val d = n.contentDescription?.toString()?.trim() ?: ""
+            if (d.equals("US", ignoreCase = true) && n.isVisibleToUser) {
+                AutomationState.log("ℹ US match: contentDescription")
+                return n
             }
             for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
         }
+
+        // Strategy 3: any visible node whose text IS "US" ignoring spaces
+        queue.clear(); queue.add(root)
+        while (queue.isNotEmpty()) {
+            val n = queue.removeFirst()
+            val t = n.text?.toString()?.trim()?.uppercase() ?: ""
+            if (t == "US" && n.isVisibleToUser) {
+                AutomationState.log("ℹ US match: uppercase compare")
+                return n
+            }
+            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
+        }
+
         return null
+    }
+
+    private fun tryClick(node: AccessibilityNodeInfo): Boolean {
+        // Try direct click
+        if (node.isClickable && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+
+        // Try clickable parent
+        val parent = NodeFinder.findClickableParent(node)
+        if (parent != null && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+
+        // Try clickable child
+        for (i in 0 until node.childCount) {
+            val c = node.getChild(i) ?: continue
+            if (c.isClickable && c.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+        }
+
+        // Fallback: NodeFinder
+        return NodeFinder.click(node)
+    }
+
+    /** Dump all visible text nodes to log for debugging */
+    private fun dumpAllText(root: AccessibilityNodeInfo) {
+        AutomationState.log("═══ SCREEN TEXT DUMP ═══")
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var count = 0
+        while (queue.isNotEmpty() && count < 60) {
+            val n = queue.removeFirst()
+            val t = n.text?.toString()?.trim() ?: ""
+            val d = n.contentDescription?.toString()?.trim() ?: ""
+            if (t.isNotEmpty() || d.isNotEmpty()) {
+                val shown = when {
+                    t.isNotEmpty() && d.isNotEmpty() -> "T='$t' D='$d'"
+                    t.isNotEmpty() -> "T='$t'"
+                    else -> "D='$d'"
+                }
+                AutomationState.log("  • $shown")
+                count++
+            }
+            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
+        }
+        AutomationState.log("═══ END DUMP ($count nodes) ═══")
     }
 
     private fun dialogOrSearchVisible(root: AccessibilityNodeInfo): Boolean {
         if (NodeFinder.containsAny(root, "Country of residence", "Country/region")) return true
-        if (findByExactText(root, "Search") != null) return true
+        if (findByTextEquals(root, "Search") != null) return true
         return false
-    }
-
-    private fun tapAt(service: AccessibilityService, x: Int, y: Int): Boolean {
-        return try {
-            val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
-            val stroke = GestureDescription.StrokeDescription(path, 0, 60)
-            val gesture = GestureDescription.Builder().addStroke(stroke).build()
-            val latch = java.util.concurrent.CountDownLatch(1)
-            var ok = false
-            service.dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
-                override fun onCompleted(d: GestureDescription?) { ok = true; latch.countDown() }
-                override fun onCancelled(d: GestureDescription?) { ok = false; latch.countDown() }
-            }, null)
-            latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
-            ok
-        } catch (e: Exception) {
-            AutomationState.log("✘ tapAt: ${e.message}")
-            false
-        }
     }
 
     // ══════════════════════════════════════════════════════
@@ -241,7 +263,7 @@ object PayPalActions {
             if (StepUtils.shouldStop()) return false
             val root = service.rootInActiveWindow
             if (root != null) {
-                searchNode = findByExactText(root, "Search")
+                searchNode = findByTextEquals(root, "Search")
                 if (searchNode != null) break
             }
             StepUtils.sleepMs(StepUtils.POLL_MS)
@@ -278,31 +300,6 @@ object PayPalActions {
         }
         AutomationState.log("✘ Country result not found")
         return false
-    }
-
-    private fun findByExactText(root: AccessibilityNodeInfo?, target: String): AccessibilityNodeInfo? {
-        if (root == null) return null
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val n = queue.removeFirst()
-            val t = n.text?.toString()?.trim() ?: ""
-            if (t.equals(target, ignoreCase = true) && n.isVisibleToUser) return n
-            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
-        }
-        return null
-    }
-
-    private fun findEditableUnder(root: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
-        if (root == null) return null
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val n = queue.removeFirst()
-            if (n.isEditable && n.isVisibleToUser) return n
-            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
-        }
-        return null
     }
 
     private fun cleanCountryName(raw: String): String {
@@ -344,7 +341,7 @@ object PayPalActions {
             if (StepUtils.shouldStop()) return false
             val root = service.rootInActiveWindow
             if (root != null) {
-                phoneLabel = findByTextContainsExact(root, "phone number")
+                phoneLabel = findByTextContains(root, "phone number")
                 if (phoneLabel != null) break
             }
             StepUtils.sleepMs(StepUtils.POLL_MS)
@@ -364,20 +361,6 @@ object PayPalActions {
         AutomationState.log("ℹ Number typed: $national")
         StepUtils.sleepMs(800)
         return true
-    }
-
-    private fun findByTextContainsExact(root: AccessibilityNodeInfo?, needle: String): AccessibilityNodeInfo? {
-        if (root == null) return null
-        val lower = needle.lowercase()
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val n = queue.removeFirst()
-            val t = n.text?.toString()?.lowercase() ?: ""
-            if (t.contains(lower) && n.isVisibleToUser) return n
-            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
-        }
-        return null
     }
 
     // ══════════════════════════════════════════════════════
@@ -437,5 +420,61 @@ object PayPalActions {
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
             StepUtils.sleepMs(800)
         } catch (_: Exception) {}
+    }
+
+    // ══════════════════════════════════════════════════════
+    //  HELPERS
+    // ══════════════════════════════════════════════════════
+    private fun findByTextEquals(root: AccessibilityNodeInfo?, target: String): AccessibilityNodeInfo? {
+        if (root == null) return null
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val n = queue.removeFirst()
+            val t = n.text?.toString()?.trim() ?: ""
+            if (t.equals(target, ignoreCase = true) && n.isVisibleToUser) return n
+            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
+        }
+        return null
+    }
+
+    private fun findByTextContains(root: AccessibilityNodeInfo?, needle: String): AccessibilityNodeInfo? {
+        if (root == null) return null
+        val lower = needle.lowercase()
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val n = queue.removeFirst()
+            val t = n.text?.toString()?.lowercase() ?: ""
+            if (t.contains(lower) && n.isVisibleToUser) return n
+            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
+        }
+        return null
+    }
+
+    private fun findByContentDescContains(root: AccessibilityNodeInfo?, needle: String): AccessibilityNodeInfo? {
+        if (root == null) return null
+        val lower = needle.lowercase()
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val n = queue.removeFirst()
+            val d = n.contentDescription?.toString()?.lowercase() ?: ""
+            if (d.contains(lower) && n.isVisibleToUser) return n
+            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
+        }
+        return null
+    }
+
+    private fun findEditableUnder(root: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        if (root == null) return null
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val n = queue.removeFirst()
+            if (n.isEditable && n.isVisibleToUser) return n
+            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
+        }
+        return null
     }
 }
