@@ -13,9 +13,26 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
+
+        // 🟢 YAHAN BASE_URL LAGAO
+        buildConfigField(
+            "String",
+            "BASE_URL",
+            "\"https://real-earn.silenthost.site\""
+        )
+
+        // Optional: WebSocket URL agar baad mein chahiye
+        buildConfigField(
+            "String",
+            "WS_URL",
+            "\"wss://real-earn.silenthost.site\""
+        )
     }
 
     buildTypes {
+        debug {
+            isMinifyEnabled = false
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -36,6 +53,13 @@ android {
 
     buildFeatures {
         viewBinding = true
+        buildConfig = true   // 🟢 ZAROORI — BuildConfig class generate karne ke liye
+    }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
     }
 }
 
