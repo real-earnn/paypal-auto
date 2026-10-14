@@ -12,6 +12,8 @@ object PayPalAutomation {
         countryName: String,
         countryIso: String,
         dialingCode: String,
+        autoFlightMode: Boolean,
+        flightPosition: Int,
         onNumberStart: suspend (String) -> Unit,
         onNumberSuccess: suspend (String) -> Unit,
         onNumberFail: suspend (String) -> Unit
@@ -28,67 +30,68 @@ object PayPalAutomation {
             onNumberStart(num)
             AutomationState.log("▶ Trying: $num")
 
-            // ── 1. Clear PayPal data (also kills Settings) ──
+            // 1. Clear PayPal data
             PayPalClearData.clear(service)
             delay(1000)
 
-            // ── 2. Airplane ON → OFF ──
-            AirplaneModeController.setAirplaneMode(service, true, 2500)
-            AirplaneModeController.setAirplaneMode(service, false, 2000)
+            // 2. Auto Flight toggle — if enabled by user
+            if (autoFlightMode && flightPosition in 1..6) {
+                AirplaneModeController.toggleFlightCycle(service, flightPosition)
+            } else {
+                AutomationState.log("ℹ Flight mode skip (disabled)")
+            }
 
-            // ── 3. Launch PayPal ──
+            // 3. Launch PayPal
             if (!PayPalActions.launchPayPal(service)) {
                 onNumberFail(num); fail++
                 continue
             }
 
-            // ── 4. Wait for Get Started → click → wait for number screen ──
+            // 4. Wait for Get Started → number screen
             if (!PayPalActions.waitForNumberScreen(service, 15000)) {
                 AutomationState.log("✘ Number screen nahi aayi")
                 onNumberFail(num); fail++
-                cleanupAndNext(service)
+                cleanupAndNext(service, autoFlightMode, flightPosition)
                 continue
             }
 
-            // ── 5. Dismiss any popup (Gmail etc.) ──
+            // 5. Dismiss popups
             PayPalActions.dismissPopupsIfAny(service)
             delay(300)
 
-            // ── 6. Open country selector (click "US" at top-right) ──
+            // 6. Country selector
             if (!PayPalActions.openCountrySelector(service, 6000)) {
-                AutomationState.log("⚠ Country selector nahi khula")
+                AutomationState.log("⚠ Country selector fail")
                 onNumberFail(num); fail++
-                cleanupAndNext(service)
+                cleanupAndNext(service, autoFlightMode, flightPosition)
                 continue
             }
 
-            // ── 7. Search + select country ──
+            // 7. Select country
             if (!PayPalActions.selectCountry(service, countryName, countryIso)) {
                 AutomationState.log("✘ Country select fail")
                 onNumberFail(num); fail++
-                cleanupAndNext(service)
+                cleanupAndNext(service, autoFlightMode, flightPosition)
                 continue
             }
 
-            // ── 8. Wait for number screen to return ──
+            // 8. Wait for return
             delay(1500)
             PayPalActions.dismissPopupsIfAny(service)
             PayPalActions.waitForNumberScreen(service, 6000)
 
-            // ── 9. Fill number ──
+            // 9. Fill number
             if (!PayPalActions.fillNumber(service, num, dialingCode)) {
                 onNumberFail(num); fail++
-                cleanupAndNext(service)
+                cleanupAndNext(service, autoFlightMode, flightPosition)
                 continue
             }
 
-            // ── 10. Tap Continue ──
+            // 10. Continue
             PayPalActions.tapContinue(service)
 
-            // ── 11. Wait for result ──
-            val result = PayPalActions.waitForResult(service, 10000)
-
-            when (result) {
+            // 11. Result
+            when (PayPalActions.waitForResult(service, 10000)) {
                 PayPalActions.Result.OTP_SCREEN -> {
                     AutomationState.log("✔ OTP screen — SUCCESS: $num")
                     PayPalActions.tapResendTwice(service)
@@ -105,19 +108,24 @@ object PayPalAutomation {
                 }
             }
 
-            cleanupAndNext(service)
+            cleanupAndNext(service, autoFlightMode, flightPosition)
         }
 
         return Pair(success, fail)
     }
 
-    private suspend fun cleanupAndNext(service: AccessibilityService) {
+    private suspend fun cleanupAndNext(
+        service: AccessibilityService,
+        autoFlightMode: Boolean,
+        flightPosition: Int
+    ) {
         if (AutomationState.getStatus() == AutomationState.Status.STOPPING) return
         PayPalActions.closePayPal(service)
         delay(600)
         PayPalClearData.clear(service)
         delay(600)
-        AirplaneModeController.setAirplaneMode(service, true, 2500)
-        AirplaneModeController.setAirplaneMode(service, false, 2000)
+
+        // Note: we do NOT do flight again here — it happens at start of next loop
+        // unless user disabled it.
     }
 }
