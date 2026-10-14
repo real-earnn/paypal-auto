@@ -6,6 +6,8 @@ import com.real.earn.paypal.service.AutomationState
 
 object StepUtils {
 
+    const val POLL_MS = 60L   // aggressive — 60ms
+
     fun shouldStop(): Boolean =
         AutomationState.getStatus() == AutomationState.Status.STOPPING
 
@@ -14,58 +16,50 @@ object StepUtils {
         while (SystemClock.uptimeMillis() < end) {
             if (AutomationState.getStatus() == AutomationState.Status.STOPPING) return
             while (AutomationState.getStatus() == AutomationState.Status.PAUSED) {
-                try { Thread.sleep(200) } catch (_: InterruptedException) { return }
+                try { Thread.sleep(150) } catch (_: InterruptedException) { return }
             }
             val rem = end - SystemClock.uptimeMillis()
             if (rem <= 0) break
-            try { Thread.sleep(minOf(rem, 200)) } catch (_: InterruptedException) { return }
+            try { Thread.sleep(minOf(rem, POLL_MS)) } catch (_: InterruptedException) { return }
         }
     }
 
-    fun waitForPackage(
-        service: AccessibilityService,
-        packageKeyword: String,
-        timeoutMs: Long
-    ): Boolean {
-        val kw = packageKeyword.lowercase()
+    fun waitForPackage(service: AccessibilityService, keyword: String, timeoutMs: Long): Boolean {
+        val kw = keyword.lowercase()
         val end = SystemClock.uptimeMillis() + timeoutMs
         while (SystemClock.uptimeMillis() < end) {
             if (shouldStop()) return false
             val pkg = service.rootInActiveWindow?.packageName?.toString()?.lowercase() ?: ""
             if (pkg.contains(kw)) return true
-            sleepMs(250)
+            sleepMs(POLL_MS)
         }
         return false
     }
 
-    fun waitForPackageExit(
-        service: AccessibilityService,
-        packageKeyword: String,
-        timeoutMs: Long
-    ): Boolean {
-        val kw = packageKeyword.lowercase()
+    fun waitForPackageExit(service: AccessibilityService, keyword: String, timeoutMs: Long): Boolean {
+        val kw = keyword.lowercase()
         val end = SystemClock.uptimeMillis() + timeoutMs
         while (SystemClock.uptimeMillis() < end) {
             if (shouldStop()) return false
             val pkg = service.rootInActiveWindow?.packageName?.toString()?.lowercase() ?: ""
             if (!pkg.contains(kw)) return true
-            sleepMs(200)
+            sleepMs(POLL_MS)
         }
         return false
     }
 
-    fun isPackageForeground(service: AccessibilityService, packageKeyword: String): Boolean {
+    fun isPackageForeground(service: AccessibilityService, keyword: String): Boolean {
         val pkg = service.rootInActiveWindow?.packageName?.toString()?.lowercase() ?: ""
-        return pkg.contains(packageKeyword.lowercase())
+        return pkg.contains(keyword.lowercase())
     }
 
     fun waitForPackageOrText(
         service: AccessibilityService,
-        packageKeyword: String,
+        keyword: String,
         timeoutMs: Long,
         vararg texts: String
     ): Boolean {
-        val kw = packageKeyword.lowercase()
+        val kw = keyword.lowercase()
         val end = SystemClock.uptimeMillis() + timeoutMs
         while (SystemClock.uptimeMillis() < end) {
             if (shouldStop()) return false
@@ -75,7 +69,7 @@ object StepUtils {
                 if (pkg.contains(kw)) return true
                 if (texts.isNotEmpty() && NodeFinder.containsAny(root, *texts)) return true
             }
-            sleepMs(300)
+            sleepMs(POLL_MS)
         }
         return false
     }
