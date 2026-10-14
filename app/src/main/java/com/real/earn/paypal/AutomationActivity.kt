@@ -1,6 +1,5 @@
 package com.real.earn.paypal
 
-import android.content.Intent
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Lifecycle
@@ -27,28 +26,23 @@ class AutomationActivity : AppCompatActivity() {
         binding.btnBack.setOnClickListener { finish() }
 
         binding.btnPause.setOnClickListener {
-            val current = AutomationState.getStatus()
-            if (current == AutomationState.Status.PAUSED) {
-                AutomationService.resume(this)
-                binding.btnPause.text = "⏸ Pause"
-            } else if (current == AutomationState.Status.RUNNING) {
-                AutomationService.pause(this)
-                binding.btnPause.text = "▶ Resume"
+            when (AutomationState.getStatus()) {
+                AutomationState.Status.PAUSED -> AutomationService.resume(this)
+                AutomationState.Status.RUNNING -> AutomationService.pause(this)
+                else -> {}
             }
         }
 
         binding.btnStop.setOnClickListener {
-            AutomationService.stop(this)
+            AutomationService.stopAndClose(this)
         }
 
-        // Observe state
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
 
                 launch {
                     AutomationState.logs.collect { list ->
                         binding.tvLog.text = list.joinToString("\n")
-                        // Auto-scroll to bottom
                         binding.scrollLog.post {
                             binding.scrollLog.fullScroll(android.view.View.FOCUS_DOWN)
                         }
@@ -69,13 +63,22 @@ class AutomationActivity : AppCompatActivity() {
                         binding.tvHeader.text = when (st) {
                             AutomationState.Status.RUNNING -> "Automation Running"
                             AutomationState.Status.PAUSED -> "Automation Paused"
-                            AutomationState.Status.STOPPING -> "Stopping..."
+                            AutomationState.Status.STOPPING -> "Stopping…"
                             AutomationState.Status.STOPPED -> "Stopped"
                             AutomationState.Status.IDLE -> "Idle"
                         }
                         binding.btnPause.text = if (st == AutomationState.Status.PAUSED) "▶ Resume" else "⏸ Pause"
                         binding.btnPause.isEnabled = st == AutomationState.Status.RUNNING || st == AutomationState.Status.PAUSED
                         binding.btnStop.isEnabled = st == AutomationState.Status.RUNNING || st == AutomationState.Status.PAUSED
+                    }
+                }
+
+                launch {
+                    AutomationState.closeRequested.collect { close ->
+                        if (close) {
+                            AutomationState.resetClose()
+                            finish()
+                        }
                     }
                 }
             }
