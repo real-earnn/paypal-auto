@@ -1,7 +1,6 @@
 package com.real.earn.paypal
 
 import android.content.Intent
-import android.graphics.Color
 import android.os.Bundle
 import android.widget.TextView
 import android.widget.Toast
@@ -24,13 +23,6 @@ class PermissionActivity : AppCompatActivity() {
     private var dialingCode: String = ""
     private var price: Double = 0.0
 
-    private val posChips by lazy {
-        listOf(
-            binding.pos1, binding.pos2, binding.pos3,
-            binding.pos4, binding.pos5, binding.pos6
-        )
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityPermissionBinding.inflate(layoutInflater)
@@ -51,49 +43,23 @@ class PermissionActivity : AppCompatActivity() {
         binding.rowOverlay.setOnClickListener { PermissionHelper.openOverlaySettings(this) }
         binding.rowBattery.setOnClickListener { PermissionHelper.openBatterySettings(this) }
 
-        // ── Auto Flight Mode toggle ──────────────────────────
+        // ── Auto Flight toggle ──
         binding.switchAutoFlight.isChecked = prefs.autoFlightMode
-        binding.layoutPosition.visibility =
-            if (prefs.autoFlightMode) android.view.View.VISIBLE else android.view.View.GONE
-
         binding.switchAutoFlight.setOnCheckedChangeListener { _, checked ->
             prefs.autoFlightMode = checked
-            binding.layoutPosition.visibility =
-                if (checked) android.view.View.VISIBLE else android.view.View.GONE
-            refreshStartButton()
         }
 
-        // ── Position chips ──────────────────────────────────
-        posChips.forEachIndexed { index, chip ->
-            chip.setOnClickListener {
-                selectPosition(index + 1)
-            }
-        }
-        // Restore previous selection
-        if (prefs.flightPosition in 1..6) {
-            selectPosition(prefs.flightPosition)
-        }
-
-        // ── Test button ─────────────────────────────────────
-        binding.btnTestFlight.setOnClickListener {
-            runFlightTest()
-        }
+        binding.btnTestFlight.setOnClickListener { runFlightTest() }
 
         binding.btnStart.setOnClickListener {
             if (!allGranted()) {
                 Toast.makeText(this, "Pehle saari permissions enable karo", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            if (prefs.autoFlightMode && prefs.flightPosition !in 1..6) {
-                Toast.makeText(this, "Flight position select karo (1-6)", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-
             startActivity(Intent(this, AutomationActivity::class.java).apply {
                 putExtra("service", serviceName)
                 putExtra("country", countryName)
             })
-
             AutomationService.start(
                 this,
                 service = serviceName,
@@ -102,8 +68,6 @@ class PermissionActivity : AppCompatActivity() {
                 dialingCode = dialingCode,
                 price = price
             )
-
-            Toast.makeText(this, "Automation start ho rahi hai…", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -112,40 +76,15 @@ class PermissionActivity : AppCompatActivity() {
         refreshUi()
     }
 
-    // ── UI refreshers ─────────────────────────────────────
-
-    private fun selectPosition(pos: Int) {
-        prefs.flightPosition = pos
-        posChips.forEachIndexed { idx, chip ->
-            val selected = (idx + 1) == pos
-            chip.setBackgroundResource(
-                if (selected) R.drawable.bg_input else R.drawable.bg_input
-            )
-            chip.setTextColor(
-                if (selected) Color.parseColor("#0070BA") else Color.parseColor("#E6EDF3")
-            )
-            chip.alpha = if (selected) 1f else 0.6f
-        }
-        binding.tvSelectedPos.text = "Selected: Position $pos"
-        binding.tvTestResult.text = ""
-        refreshStartButton()
-    }
-
     private fun refreshUi() {
-        val a11y = PermissionHelper.isAccessibilityEnabled(this)
-        val overlay = PermissionHelper.isOverlayGranted(this)
-        val battery = PermissionHelper.isBatteryOptimizationIgnored(this)
-
-        setRowState(binding.tvAccessibilityState, a11y)
-        setRowState(binding.tvOverlayState, overlay)
-        setRowState(binding.tvBatteryState, battery)
-
+        setRowState(binding.tvAccessibilityState, PermissionHelper.isAccessibilityEnabled(this))
+        setRowState(binding.tvOverlayState, PermissionHelper.isOverlayGranted(this))
+        setRowState(binding.tvBatteryState, PermissionHelper.isBatteryOptimizationIgnored(this))
         refreshStartButton()
     }
 
     private fun refreshStartButton() {
-        val ok = allGranted() &&
-                (!prefs.autoFlightMode || prefs.flightPosition in 1..6)
+        val ok = allGranted()
         binding.btnStart.isEnabled = ok
         binding.btnStart.alpha = if (ok) 1f else 0.5f
     }
@@ -167,28 +106,22 @@ class PermissionActivity : AppCompatActivity() {
     }
 
     private fun runFlightTest() {
-        val pos = prefs.flightPosition
-        if (pos !in 1..6) {
-            Toast.makeText(this, "Pehle position select karo", Toast.LENGTH_SHORT).show()
-            return
-        }
-
         val svc = PayPalAccessibilityService.instance
         if (svc == null) {
             Toast.makeText(this, "Accessibility service ON nahi hai", Toast.LENGTH_LONG).show()
             return
         }
 
-        binding.tvTestResult.text = "Testing position $pos…"
+        binding.tvTestResult.text = "Testing…"
         binding.btnTestFlight.isEnabled = false
 
         Thread {
-            val ok = AirplaneModeController.testPosition(svc, pos)
+            val ok = AirplaneModeController.toggleCycle(svc)
             runOnUiThread {
                 binding.btnTestFlight.isEnabled = true
                 binding.tvTestResult.text =
                     if (ok) "✔ Test passed — Flight toggled ON/OFF"
-                    else "✘ Test fail — position check karo"
+                    else "✘ Test fail — logs check karo"
                 binding.tvTestResult.setTextColor(
                     if (ok) getColor(R.color.success_green) else getColor(R.color.error_red)
                 )
