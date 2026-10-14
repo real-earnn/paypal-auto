@@ -30,6 +30,7 @@ class AutomationService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var loopJob: Job? = null
+    private var statusWatchJob: Job? = null
     private var overlay: OverlayManager? = null
 
     private var serviceName: String = ""
@@ -44,6 +45,7 @@ class AutomationService : Service() {
         private const val ACTION_PAUSE = "com.real.earn.paypal.PAUSE"
         private const val ACTION_RESUME = "com.real.earn.paypal.RESUME"
         private const val ACTION_STOP = "com.real.earn.paypal.STOP"
+        private const val ACTION_STOP_AND_CLOSE = "com.real.earn.paypal.STOP_AND_CLOSE"
 
         fun start(context: Context, service: String, country: String, countryCode: String, dialingCode: String, price: Double) {
             val i = Intent(context, AutomationService::class.java).apply {
@@ -64,6 +66,8 @@ class AutomationService : Service() {
             Intent(context, AutomationService::class.java).setAction(ACTION_RESUME))
         fun stop(context: Context) = context.startService(
             Intent(context, AutomationService::class.java).setAction(ACTION_STOP))
+        fun stopAndClose(context: Context) = context.startService(
+            Intent(context, AutomationService::class.java).setAction(ACTION_STOP_AND_CLOSE))
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -83,25 +87,30 @@ class AutomationService : Service() {
                 showOverlay()
                 startLoop()
             }
-            ACTION_PAUSE -> {
-                if (AutomationState.getStatus() == AutomationState.Status.RUNNING) {
-                    AutomationState.setStatus(AutomationState.Status.PAUSED)
-                    AutomationState.log("⏸ Paused")
-                    overlay?.setPauseText("▶ Resume")
-                    updateNotification("Paused")
-                }
-            }
-            ACTION_RESUME -> {
-                if (AutomationState.getStatus() == AutomationState.Status.PAUSED) {
-                    AutomationState.setStatus(AutomationState.Status.RUNNING)
-                    AutomationState.log("▶ Resumed")
-                    overlay?.setPauseText("⏸ Pause")
-                    updateNotification("Running")
-                }
-            }
-            ACTION_STOP -> stopAutomation()
+            ACTION_PAUSE -> doPause()
+            ACTION_RESUME -> doResume()
+            ACTION_STOP -> stopAutomation(closeActivity = false)
+            ACTION_STOP_AND_CLOSE -> stopAutomation(closeActivity = true)
         }
         return START_STICKY
+    }
+
+    private fun doPause() {
+        if (AutomationState.getStatus() == AutomationState.Status.RUNNING) {
+            AutomationState.setStatus(AutomationState.Status.PAUSED)
+            AutomationState.log("⏸ Paused")
+            overlay?.setPaused(true)
+            updateNotification("Paused")
+        }
+    }
+
+    private fun doResume() {
+        if (AutomationState.getStatus() == AutomationState.Status.PAUSED) {
+            AutomationState.setStatus(AutomationState.Status.RUNNING)
+            AutomationState.log("▶ Resumed")
+            overlay?.setPaused(false)
+            updateNotification("Running")
+        }
     }
 
     private fun startLoop() {
@@ -128,10 +137,14 @@ class AutomationService : Service() {
                 AutomationState.log(if (autoFlight) "✈ Auto Flight: ON" else "✈ Auto Flight: OFF")
 
                 while (AutomationState.getStatus() != AutomationState.Status.STOPPING) {
-                    AutomationState.log("📞 5 numbers fetch...")
+                    // honor paused state
+                    while (AutomationState.getStatus() == AutomationState.Status.PAUSED) delay(300)
+                    if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
+
+                    AutomationState.log("📞 Fetching 5 numbers...")
                     val nums = fetchNumbers(auth)
                     if (nums.isEmpty()) {
-                        AutomationState.log("⚠ Numbers nahi — 15s wait")
+                        AutomationState.log("⚠ No numbers — wait 15s")
                         delay(15000); continue
                     }
                     AutomationState.log("✔ ${nums.size} numbers")
@@ -164,7 +177,7 @@ class AutomationService : Service() {
 
                     AutomationState.log("📊 Batch: Success=$s Fail=$f")
                     if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
-                    delay(1500)
+                    delay(800)
                 }
 
                 AutomationState.log("⏹ Loop exit")
@@ -201,7 +214,7 @@ class AutomationService : Service() {
         } catch (_: Exception) {}
     }
 
-    private fun stopAutomation() {
+    private fun stopAutomation(closeActivity: Boolean) {
         AutomationState.setStatus(AutomationState.Status.STOPPING)
         AutomationState.log("⏹ Stopping…")
         loopJob?.cancel(); loopJob = null
@@ -209,6 +222,11 @@ class AutomationService : Service() {
         AutomationState.log("⏹ Stopped")
         updateNotification("Stopped")
         overlay?.hide(); overlay = null
+
+        if (closeActivity) {
+            AutomationState.requestClose()
+        }
+
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -216,13 +234,17 @@ class AutomationService : Service() {
     private fun showOverlay() {
         if (overlay != null) return
         overlay = OverlayManager(this).apply {
-            onPause = {
-                val cur = AutomationState.getStatus()
-                if (cur == AutomationState.Status.PAUSED) resume(applicationContext)
-                else if (cur == AutomationState.Status.RUNNING) pause(applicationContext)
+            setPaused(false)
+            onToggle = {
+                when (AutomationState.getStatus()) {
+                    AutomationState.Status.RUNNING -> doPause()
+                    AutomationState.Status.PAUSED -> doResume()
+                    else -> {}
+                }
             }
-            onStop = { stop(applicationContext) }
-            onStopAndClose = { stop(applicationContext) }
+            onClose = {
+                stopAutomation(closeActivity = true)
+            }
             show()
         }
     }
@@ -249,7 +271,7 @@ class AutomationService : Service() {
     }
 
     override fun onDestroy() {
-        loopJob?.cancel(); scope.cancel()
+        loopJob?.cancel(); statusWatchJob?.cancel(); scope.cancel()
         overlay?.hide(); overlay = null
         super.onDestroy()
     }
