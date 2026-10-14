@@ -63,6 +63,35 @@ data class LogoutResponse(
     @SerializedName("message") val message: String? = null
 )
 
+// ── Services List ─────────────────────────────────────────
+data class ServicesResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("services") val services: List<ServiceItem> = emptyList()
+)
+
+data class ServiceItem(
+    @SerializedName("name") val name: String,
+    @SerializedName("icon_id") val iconId: String = "",
+    @SerializedName("countries") val countries: List<CountryItem> = emptyList(),
+    @SerializedName("is_unpaid") val isUnpaid: Boolean = false
+)
+
+data class CountryItem(
+    @SerializedName("name") val name: String,
+    @SerializedName("code") val code: String = "",
+    @SerializedName("dialing_code") val dialingCode: String = "",
+    @SerializedName("count") val count: Int = 0,
+    @SerializedName("price") val price: Double = 0.0,
+    @SerializedName("file") val file: String = ""
+)
+
+data class CountriesResponse(
+    @SerializedName("success") val success: Boolean,
+    @SerializedName("service") val service: String = "",
+    @SerializedName("is_unpaid") val isUnpaid: Boolean = false,
+    @SerializedName("countries") val countries: List<CountryItem> = emptyList()
+)
+
 // ── Error body (for error parsing) ────────────────────────
 data class ErrorBody(
     @SerializedName("success") val success: Boolean = false,
