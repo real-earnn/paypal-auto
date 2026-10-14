@@ -30,20 +30,20 @@ object PayPalAutomation {
             AutomationState.log("─────────────")
             AutomationState.log("▶ NUMBER: $num")
 
-            // ① Flight ON → 1s → OFF → HOME
+            // ① Flight
             if (autoFlightMode) {
                 AirplaneModeController.strictToggle(service)
-                delay(700)
+                if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
             }
 
             // ② Clear data
             val ok1 = PayPalClearData.strictClear(service)
+            if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
             if (!ok1) {
-                AutomationState.log("✘ Clear failed — skip")
+                AutomationState.log("✘ Clear failed — skip number")
                 onNumberFail(num); fail++
                 continue
             }
-            delay(700)
 
             // ③ Launch
             if (!PayPalActions.launch(service)) {
@@ -60,11 +60,11 @@ object PayPalAutomation {
                 continue
             }
 
-            // Small settle + dismiss any popup before US click
-            delay(500)
+            // Small settle
+            StepUtils.sleepMs(500)
             PayPalActions.dismissPopupsIfAny(service)
 
-            // ⑤ Click US button
+            // ⑤ US button
             if (!PayPalActions.clickUsButton(service, 8000)) {
                 AutomationState.log("✘ US button fail")
                 onNumberFail(num); fail++
@@ -72,7 +72,7 @@ object PayPalAutomation {
                 continue
             }
 
-            // ⑥ Search + select country
+            // ⑥ Country search
             if (!PayPalActions.typeAndSelectCountry(service, countryName, countryIso)) {
                 AutomationState.log("✘ Country select fail")
                 onNumberFail(num); fail++
@@ -81,12 +81,12 @@ object PayPalAutomation {
             }
             AutomationState.log("✔ Country set: $countryIso")
 
-            // ⑦ After country select — wait for Gmail popup, close it
+            // ⑦ Wait for Gmail popup → close
             AutomationState.log("ℹ Waiting for Gmail popup…")
             PayPalActions.waitAndClosePopup(service, 6000)
-            delay(800)
+            StepUtils.sleepMs(800)
 
-            // ⑧ Type number
+            // ⑧ Number
             if (!PayPalActions.typeNumber(service, num, dialingCode)) {
                 AutomationState.log("✘ Number type fail")
                 onNumberFail(num); fail++
@@ -121,7 +121,6 @@ object PayPalAutomation {
                 }
             }
 
-            // Close PayPal before next iteration
             PayPalActions.closePayPal(service)
             delay(800)
         }
