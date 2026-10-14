@@ -37,8 +37,7 @@ object PayPalAutomation {
                 }
                 if (!ok) {
                     AutomationState.log("✘ [ABORT] Flight failed")
-                    onNumberFail(num)
-                    fail++
+                    onNumberFail(num); fail++
                     continue
                 }
             }
@@ -50,8 +49,7 @@ object PayPalAutomation {
             }
             if (!clearOk) {
                 AutomationState.log("✘ [ABORT] Clear data failed")
-                onNumberFail(num)
-                fail++
+                onNumberFail(num); fail++
                 continue
             }
             StepUtils.sleepMs(1200)
@@ -62,36 +60,22 @@ object PayPalAutomation {
             }
             if (!launchOk) {
                 AutomationState.log("✘ [ABORT] Launch failed")
-                onNumberFail(num)
-                fail++
+                onNumberFail(num); fail++
                 continue
             }
             StepUtils.sleepMs(1000)
 
-            // ④ Number screen
-            val numScreenOk = StepUtils.retryStep("Number screen") {
-                PayPalActions.handleGetStartedAndWaitNumber(service, 8000)
-            }
-            if (!numScreenOk) {
-                AutomationState.log("✘ [ABORT] Number screen timeout")
-                onNumberFail(num)
-                fail++
-                PayPalActions.closePayPal(service)
-                continue
-            }
-            StepUtils.sleepMs(800)
+            // ④ Get Started (agar aaye) — number screen ka wait nahi karenge
+            PayPalActions.tapGetStarted(service, 8000)
+            StepUtils.sleepMs(1500)
 
-            PayPalActions.dismissPopupsIfAny(service)
-            StepUtils.sleepMs(500)
-
-            // ⑤ US button
+            // ⑤ US button (yahan tak popup dismiss hota rahega)
             val usOk = StepUtils.retryStep("US button") {
-                PayPalActions.clickUsButton(service, 5000)
+                PayPalActions.clickUsButton(service, 10000)
             }
             if (!usOk) {
                 AutomationState.log("✘ [ABORT] US button fail")
-                onNumberFail(num)
-                fail++
+                onNumberFail(num); fail++
                 PayPalActions.closePayPal(service)
                 continue
             }
@@ -103,16 +87,15 @@ object PayPalAutomation {
             }
             if (!countryOk) {
                 AutomationState.log("✘ [ABORT] Country select fail")
-                onNumberFail(num)
-                fail++
+                onNumberFail(num); fail++
                 PayPalActions.closePayPal(service)
                 continue
             }
             AutomationState.log("✔ Country: $countryIso")
-            StepUtils.sleepMs(800)
+            StepUtils.sleepMs(1200)
 
-            // ⑦ Gmail popup
-            PayPalActions.waitAndClosePopup(service, 4000)
+            // ⑦ Gmail popup (after country select)
+            PayPalActions.waitAndClosePopup(service, 5000)
             StepUtils.sleepMs(700)
 
             // ⑧ Number
@@ -121,8 +104,7 @@ object PayPalAutomation {
             }
             if (!numTypeOk) {
                 AutomationState.log("✘ [ABORT] Number type fail")
-                onNumberFail(num)
-                fail++
+                onNumberFail(num); fail++
                 PayPalActions.closePayPal(service)
                 continue
             }
@@ -134,15 +116,14 @@ object PayPalAutomation {
             }
             if (!contOk) {
                 AutomationState.log("✘ [ABORT] Continue not found")
-                onNumberFail(num)
-                fail++
+                onNumberFail(num); fail++
                 PayPalActions.closePayPal(service)
                 continue
             }
             AutomationState.log("ℹ Continue — waiting result…")
 
             // ⑩ Result
-            when (PayPalActions.checkResult(service, 8000)) {
+            when (PayPalActions.checkResult(service, 10000)) {
                 PayPalActions.Result.OTP_SCREEN -> {
                     AutomationState.log("✔ SUCCESS")
                     PayPalActions.tapResendTwice(service)
@@ -151,13 +132,11 @@ object PayPalAutomation {
                 }
                 PayPalActions.Result.ERROR -> {
                     AutomationState.log("✘ Red error")
-                    onNumberFail(num)
-                    fail++
+                    onNumberFail(num); fail++
                 }
                 PayPalActions.Result.TIMEOUT -> {
                     AutomationState.log("⏱ Timeout")
-                    onNumberFail(num)
-                    fail++
+                    onNumberFail(num); fail++
                 }
             }
 
