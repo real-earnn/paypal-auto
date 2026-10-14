@@ -6,7 +6,7 @@ import com.real.earn.paypal.service.AutomationState
 
 object StepUtils {
 
-    const val POLL_MS = 60L   // aggressive — 60ms
+    const val POLL_MS = 60L
 
     fun shouldStop(): Boolean =
         AutomationState.getStatus() == AutomationState.Status.STOPPING
@@ -22,6 +22,30 @@ object StepUtils {
             if (rem <= 0) break
             try { Thread.sleep(minOf(rem, POLL_MS)) } catch (_: InterruptedException) { return }
         }
+    }
+
+    /**
+     * Run a step up to 3 times with progressive delay: 1s, 3s, 5s.
+     * Logs each retry. Returns true on first success.
+     */
+    fun retryStep(stepName: String, block: () -> Boolean): Boolean {
+        val delays = longArrayOf(1000L, 3000L, 5000L)
+        var lastError = ""
+
+        for (attempt in 0 until 3) {
+            if (shouldStop()) return false
+            if (attempt > 0) {
+                AutomationState.log("ℹ Retry #$attempt for $stepName (wait ${delays[attempt]}ms)")
+                sleepMs(delays[attempt])
+            }
+            try {
+                if (block()) return true
+            } catch (e: Exception) {
+                lastError = e.message ?: "unknown"
+            }
+        }
+        AutomationState.log("✘ $stepName failed after 3 attempts ${if (lastError.isNotEmpty()) "($lastError)" else ""}")
+        return false
     }
 
     fun waitForPackage(service: AccessibilityService, keyword: String, timeoutMs: Long): Boolean {
