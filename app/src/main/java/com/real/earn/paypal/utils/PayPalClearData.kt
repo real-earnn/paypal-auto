@@ -15,77 +15,67 @@ object PayPalClearData {
         return try {
             AutomationState.log("🧹 Clear data…")
 
-            // ① Go HOME first and settle
+            // HOME first — let system settle
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-            StepUtils.sleepMs(1200)
+            StepUtils.sleepMs(1500)
 
-            // ② Open App Info (with retry inside a loop — actually try twice)
-            var appInfoOpened = false
-            repeat(3) { attempt ->
-                if (StepUtils.shouldStop()) return false
-                if (attempt > 0) {
-                    AutomationState.log("ℹ App Info retry #$attempt")
-                    service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-                    StepUtils.sleepMs(1500)
-                }
-                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                    data = Uri.parse("package:$PAYPAL_PKG")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                }
-                try { service.startActivity(intent) } catch (_: Exception) {}
-
-                if (StepUtils.waitForPackage(service, "settings", 3000) ||
-                    StepUtils.waitForPackage(service, "android", 1500)) {
-                    // Verify we're actually on App Info page — check for "Storage" or package name
-                    StepUtils.sleepMs(1000)
-                    val root = service.rootInActiveWindow
-                    if (root != null &&
-                        (NodeFinder.containsAny(root, "Storage", "Force stop", "Uninstall", "App info") ||
-                         NodeFinder.containsAny(root, PAYPAL_PKG))
-                    ) {
-                        appInfoOpened = true
-                    }
-                }
-                if (appInfoOpened) return@repeat
+            // ═══ Open App Info — with proper wait ═══
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:$PAYPAL_PKG")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
+            try { service.startActivity(intent) } catch (_: Exception) {}
 
-            if (!appInfoOpened) {
-                AutomationState.log("✘ App Info not opened after retries")
+            // Wait for Settings package
+            if (!StepUtils.waitForPackage(service, "settings", 5000) &&
+                !StepUtils.waitForPackage(service, "android", 2000)) {
+                AutomationState.log("✘ App Info not opened")
                 exitHome(service); return false
             }
-            AutomationState.log("✔ App Info open")
-            StepUtils.sleepMs(800)
 
-            // ③ Tap Storage (retry)
-            if (!StepUtils.retryStep("Storage row",
-                    { tapWhen(service, 2500,
-                        "Storage & cache", "Storage and cache", "Storage", "Memory") })) {
+            // Wait for "Storage" text
+            if (!waitFor(service, 4000, "Storage & cache", "Storage and cache", "Storage", "Memory")) {
                 AutomationState.log("✘ Storage row not found")
                 exitHome(service); return false
             }
-            AutomationState.log("✔ Storage tapped")
+
+            // Tap Storage
+            if (!tap(service, "Storage & cache", "Storage and cache", "Storage", "Memory")) {
+                AutomationState.log("✘ Storage tap fail")
+                exitHome(service); return false
+            }
             StepUtils.sleepMs(1000)
 
-            // ④ Tap Clear storage (retry)
-            if (!StepUtils.retryStep("Clear row",
-                    { tapWhen(service, 2500,
-                        "Clear storage", "Clear data", "Clear all data", "Delete data") })) {
+            // Wait for "Clear storage"
+            if (!waitFor(service, 3000, "Clear storage", "Clear data", "Clear all data", "Delete data")) {
                 AutomationState.log("✘ Clear row not found")
                 exitHome(service); return false
             }
-            AutomationState.log("✔ Clear tapped")
-            StepUtils.sleepMs(1000)
 
-            // ⑤ Confirm popup (optional)
-            if (findWithin(service, 1500, "Delete", "Clear", "OK", "Yes", "Confirm", "Erase")) {
-                tapWhen(service, 1000, "Delete", "Clear", "OK", "Yes", "Confirm", "Erase")
+            // Tap Clear
+            if (!tap(service, "Clear storage", "Clear data", "Clear all data", "Delete data")) {
+                AutomationState.log("✘ Clear tap fail")
+                exitHome(service); return false
+            }
+            StepUtils.sleepMs(600)
+
+            // Optional confirm popup
+            if (waitFor(service, 1500, "Delete", "Clear", "OK", "Yes", "Confirm", "Erase")) {
+                tap(service, "Delete", "Clear", "OK", "Yes", "Confirm", "Erase")
                 AutomationState.log("ℹ Confirm popup handled")
                 StepUtils.sleepMs(1500)
             } else {
                 AutomationState.log("ℹ No popup — already cleared")
             }
 
-            exitHome(service)
+            // ═══ Quick 2x BACK → HOME ═══
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            StepUtils.sleepMs(300)
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            StepUtils.sleepMs(400)
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+            StepUtils.sleepMs(500)
+
             AutomationState.log("✔ Clear data done")
             true
         } catch (e: Exception) {
@@ -95,24 +85,7 @@ object PayPalClearData {
         }
     }
 
-    private fun tapWhen(service: AccessibilityService, timeoutMs: Long, vararg texts: String): Boolean {
-        val end = SystemClock.uptimeMillis() + timeoutMs
-        while (SystemClock.uptimeMillis() < end) {
-            if (StepUtils.shouldStop()) return false
-            val root = service.rootInActiveWindow
-            if (root != null) {
-                val node = NodeFinder.findByText(root, *texts)
-                    ?: NodeFinder.findByTextContains(root, *texts)
-                if (node != null) {
-                    if (NodeFinder.click(node)) return true
-                }
-            }
-            StepUtils.sleepMs(StepUtils.POLL_MS)
-        }
-        return false
-    }
-
-    private fun findWithin(service: AccessibilityService, timeoutMs: Long, vararg texts: String): Boolean {
+    private fun waitFor(service: AccessibilityService, timeoutMs: Long, vararg texts: String): Boolean {
         val end = SystemClock.uptimeMillis() + timeoutMs
         while (SystemClock.uptimeMillis() < end) {
             if (StepUtils.shouldStop()) return false
@@ -127,14 +100,22 @@ object PayPalClearData {
         return false
     }
 
+    private fun tap(service: AccessibilityService, vararg texts: String): Boolean {
+        val root = service.rootInActiveWindow ?: return false
+        val node = NodeFinder.findByText(root, *texts)
+            ?: NodeFinder.findByTextContains(root, *texts)
+            ?: return false
+        return NodeFinder.click(node)
+    }
+
     private fun exitHome(service: AccessibilityService) {
         try {
             repeat(3) {
                 service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                StepUtils.sleepMs(400)
+                StepUtils.sleepMs(300)
             }
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-            StepUtils.sleepMs(800)
+            StepUtils.sleepMs(600)
         } catch (_: Exception) {}
     }
 }
