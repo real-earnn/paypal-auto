@@ -5,8 +5,10 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 
 /**
- * PayPal Accessibility Service — Phase 5/6 mein yahan automation logic aayega.
- * Abhi sirf skeleton hai taake manifest valid rahe.
+ * PayPal Accessibility Service — singleton holder + hook for automation.
+ *
+ * Phase 5A: singleton + basic hooks.
+ * Phase 5B: full PayPal automation methods aayenge yahan.
  */
 class PayPalAccessibilityService : AccessibilityService() {
 
@@ -16,16 +18,19 @@ class PayPalAccessibilityService : AccessibilityService() {
         @Volatile
         var instance: PayPalAccessibilityService? = null
             private set
+
+        fun isConnected(): Boolean = instance != null
     }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
         Log.d(TAG, "Accessibility service connected")
+        AutomationState.log("🔌 Accessibility service ready")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Phase 5/6 mein yahan event-driven logic aayega
+        // Phase 5B mein event-driven detection aayega (optional)
     }
 
     override fun onInterrupt() {
@@ -34,6 +39,7 @@ class PayPalAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         instance = null
+        Log.d(TAG, "Accessibility service destroyed")
         super.onDestroy()
     }
 }
