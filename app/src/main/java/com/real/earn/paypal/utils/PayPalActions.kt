@@ -11,7 +11,6 @@ object PayPalActions {
 
     const val PAYPAL_PKG = "com.paypal.android.p2pmobile"
 
-    // ── Launch PayPal, wait until foreground ──
     fun launch(service: AccessibilityService): Boolean {
         return try {
             val intent = service.packageManager.getLaunchIntentForPackage(PAYPAL_PKG)
@@ -23,11 +22,20 @@ object PayPalActions {
             )
             service.startActivity(intent)
 
-            if (!StepUtils.waitForPackage(service, "paypal", 6000)) {
-                AutomationState.log("✘ PayPal not foreground")
+            val ok = StepUtils.waitForPackageOrText(
+                service,
+                "paypal",
+                8000,
+                "Get Started",
+                "email or number",
+                "Email or phone number",
+                "Let's start"
+            )
+            if (!ok) {
+                AutomationState.log("✘ PayPal not detected")
                 return false
             }
-            StepUtils.sleepMs(800)
+            StepUtils.sleepMs(900)
             true
         } catch (e: Exception) {
             AutomationState.log("✘ Launch: ${e.message}")
@@ -35,7 +43,6 @@ object PayPalActions {
         }
     }
 
-    // ── Wait Get Started → tap → number screen ──
     fun handleGetStartedAndWaitNumber(service: AccessibilityService, timeoutMs: Long = 15000): Boolean {
         val end = SystemClock.uptimeMillis() + timeoutMs
         var clicked = false
@@ -43,7 +50,6 @@ object PayPalActions {
 
         while (SystemClock.uptimeMillis() < end) {
             if (StepUtils.shouldStop()) return false
-
             val root = service.rootInActiveWindow
             if (root == null) {
                 StepUtils.sleepMs(300)
@@ -75,7 +81,6 @@ object PayPalActions {
         return false
     }
 
-    // ── Click US button ──
     fun clickUsButton(service: AccessibilityService, timeoutMs: Long = 8000): Boolean {
         val codes = listOf(
             "US", "GB", "PK", "IN", "MY", "BD", "ID", "EG", "SA", "AE",
@@ -85,8 +90,6 @@ object PayPalActions {
         val end = SystemClock.uptimeMillis() + timeoutMs
         while (SystemClock.uptimeMillis() < end) {
             if (StepUtils.shouldStop()) return false
-
-            // Close Gmail popup if appears mid-wait
             dismissPopupsIfAny(service)
 
             val root = service.rootInActiveWindow
@@ -95,13 +98,10 @@ object PayPalActions {
                     AutomationState.log("ℹ Country dialog open")
                     return true
                 }
-
                 val rootR = Rect(); root.getBoundsInScreen(rootR)
-
                 for (code in codes) {
                     val node = NodeFinder.findByText(root, code) ?: continue
                     if (!NodeFinder.isVisible(node)) continue
-
                     val r = Rect(); node.getBoundsInScreen(r)
                     val inTop = r.centerY() < rootR.top + rootR.height() * 0.28
                     val inRight = r.centerX() > rootR.left + rootR.width() * 0.55
@@ -133,7 +133,6 @@ object PayPalActions {
         return false
     }
 
-    // ── Type country + select result ──
     fun typeAndSelectCountry(
         service: AccessibilityService,
         countryName: String,
@@ -145,10 +144,8 @@ object PayPalActions {
             AutomationState.log("✘ Search field not found")
             return false
         }
-
         NodeFinder.click(search)
         StepUtils.sleepMs(500)
-
         NodeFinder.setText(search, countryName)
         AutomationState.log("ℹ Typed: $countryName")
         StepUtils.sleepMs(1500)
