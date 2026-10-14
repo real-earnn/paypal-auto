@@ -20,10 +20,15 @@ interface ApiService {
     @POST("/api/app/logout")
     suspend fun logout(): Response<LogoutResponse>
 
-    // Phase 4
     @GET("/api/app/services")
     suspend fun getServices(): Response<ServicesResponse>
 
     @GET("/api/app/countries")
     suspend fun getCountries(@Query("service") service: String): Response<CountriesResponse>
+
+    @POST("/api/app/get-number")
+    suspend fun getNumbers(@Body body: GetNumberBody): Response<GetNumberResponse>
+
+    @POST("/api/app/release-number")
+    suspend fun releaseNumbers(@Body body: ReleaseNumberBody): Response<ReleaseNumberResponse>
 }
