@@ -42,7 +42,7 @@ object PayPalAutomation {
                 }
             }
 
-            // ② Clear data (with 3 retries)
+            // ② Clear data
             val clearOk = StepUtils.retryStep("Clear data") {
                 PayPalClearData.strictClear(service)
             }
@@ -63,21 +63,19 @@ object PayPalAutomation {
                 continue
             }
 
-            // ④ Get Started — click instantly
-            PayPalActions.tapGetStarted(service, 10000)
+            // ④ Get Started → 5s settle
+            PayPalActions.tapGetStarted(service, 12000)
 
-            // ⑤ US button — poll & hardcoded tap
-            val usOk = StepUtils.retryStep("US button") {
-                PayPalActions.clickUsButton(service, 8000)
-            }
+            // ⑤ US button — 5 internal attempts (NO retryStep wrapper!)
+            val usOk = PayPalActions.clickUsButton(service)
             if (!usOk) {
-                AutomationState.log("✘ [ABORT] US button")
+                AutomationState.log("✘ [ABORT] US button (5 attempts failed)")
                 onNumberFail(num); fail++
                 PayPalActions.closePayPal(service)
                 continue
             }
 
-            // ⑥ Country select — by text "Search"
+            // ⑥ Country select
             val countryOk = StepUtils.retryStep("Country select") {
                 PayPalActions.typeAndSelectCountry(service, countryName, countryIso)
             }
@@ -89,7 +87,7 @@ object PayPalAutomation {
             }
             AutomationState.log("✔ Country: $countryIso")
 
-            // ⑦ Number type — by text "phone number"
+            // ⑦ Number type
             val numTypeOk = StepUtils.retryStep("Number type") {
                 PayPalActions.typeNumber(service, num, dialingCode)
             }
