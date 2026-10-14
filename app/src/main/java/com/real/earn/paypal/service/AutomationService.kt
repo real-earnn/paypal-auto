@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.real.earn.paypal.App
 import com.real.earn.paypal.AutomationActivity
@@ -31,6 +32,7 @@ class AutomationService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var loopJob: Job? = null
     private var overlay: OverlayManager? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     private var serviceName: String = ""
     private var countryName: String = ""
@@ -74,6 +76,27 @@ class AutomationService : Service() {
     override fun onCreate() {
         super.onCreate()
         startForeground(NOTIF_ID, buildNotification("Initializing…"))
+        acquireWakeLock()
+    }
+
+    private fun acquireWakeLock() {
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "RealEarnPayPal::AutomationWakeLock"
+            ).apply {
+                setReferenceCounted(false)
+                acquire(2 * 60 * 60 * 1000L)   // 2 hours max
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun releaseWakeLock() {
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+        } catch (_: Exception) {}
+        wakeLock = null
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -179,13 +202,24 @@ class AutomationService : Service() {
                 }
 
                 AutomationState.log("⏹ Loop exit")
-                AutomationState.setStatus(AutomationState.Status.STOPPED)
-                updateNotification("Stopped")
             } catch (e: Exception) {
                 AutomationState.log("✘ Loop error: ${e.message}")
+            } finally {
                 AutomationState.setStatus(AutomationState.Status.STOPPED)
-                updateNotification("Error")
+                cleanupAfterStop()
             }
+        }
+    }
+
+    private fun cleanupAfterStop() {
+        scope.launch {
+            try {
+                updateNotification("Stopped")
+                overlay?.hide(); overlay = null
+                releaseWakeLock()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            } catch (_: Exception) {}
         }
     }
 
@@ -212,21 +246,37 @@ class AutomationService : Service() {
         } catch (_: Exception) {}
     }
 
+    /**
+     * Stop: set STOPPING, let loop exit naturally, then cleanup.
+     * Don't cancel loop immediately — it must finish its sleepMs.
+     */
     private fun stopAutomation(closeActivity: Boolean) {
+        val cur = AutomationState.getStatus()
+        if (cur == AutomationState.Status.STOPPING || cur == AutomationState.Status.STOPPED) return
+
         AutomationState.setStatus(AutomationState.Status.STOPPING)
         AutomationState.log("⏹ Stopping…")
-        loopJob?.cancel(); loopJob = null
-        AutomationState.setStatus(AutomationState.Status.STOPPED)
-        AutomationState.log("⏹ Stopped")
-        updateNotification("Stopped")
-        overlay?.hide(); overlay = null
 
-        if (closeActivity) {
-            AutomationState.requestClose()
+        // Watchdog: after 6 seconds, force cleanup
+        scope.launch {
+            var waited = 0L
+            while (loopJob?.isActive == true && waited < 6000) {
+                delay(200)
+                waited += 200
+            }
+            loopJob?.cancel()
+            loopJob = null
+
+            if (AutomationState.getStatus() != AutomationState.Status.STOPPED) {
+                AutomationState.setStatus(AutomationState.Status.STOPPED)
+                AutomationState.log("⏹ Stopped (forced)")
+                cleanupAfterStop()
+            }
+
+            if (closeActivity) {
+                AutomationState.requestClose()
+            }
         }
-
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
     }
 
     private fun showOverlay() {
@@ -271,6 +321,7 @@ class AutomationService : Service() {
     override fun onDestroy() {
         loopJob?.cancel(); scope.cancel()
         overlay?.hide(); overlay = null
+        releaseWakeLock()
         super.onDestroy()
     }
 }
