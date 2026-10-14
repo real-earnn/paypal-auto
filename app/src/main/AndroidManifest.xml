@@ -15,6 +15,7 @@
         tools:ignore="QueryAllPackagesPermission" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- ============ PAYPAL PACKAGE VISIBILITY (Android 11+) ============ -->
     <queries>
@@ -56,6 +57,22 @@
 
         <activity
             android:name=".DashboardActivity"
+            android:exported="false"
+            android:theme="@style/Theme.RealEarnPayPal" />
+
+        <!-- ============ PHASE 4 — SERVICE / COUNTRY / PERMISSION ============ -->
+        <activity
+            android:name=".ServiceSelectActivity"
+            android:exported="false"
+            android:theme="@style/Theme.RealEarnPayPal" />
+
+        <activity
+            android:name=".CountrySelectActivity"
+            android:exported="false"
+            android:theme="@style/Theme.RealEarnPayPal" />
+
+        <activity
+            android:name=".PermissionActivity"
             android:exported="false"
             android:theme="@style/Theme.RealEarnPayPal" />
 
