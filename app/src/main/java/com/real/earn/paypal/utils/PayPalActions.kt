@@ -2,16 +2,11 @@ package com.real.earn.paypal.utils
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
-import android.util.Log
+import android.view.accessibility.AccessibilityNodeInfo
 import com.real.earn.paypal.service.AutomationState
 
-/**
- * All individual PayPal screen actions: launch, dismiss popups,
- * country select, number entry, resend detection.
- */
 object PayPalActions {
 
-    private const val TAG = "PayPalActions"
     const val PAYPAL_PKG = "com.paypal.android.p2pmobile"
 
     // ── Launch PayPal ─────────────────────────────────────
@@ -19,10 +14,14 @@ object PayPalActions {
         return try {
             val intent = service.packageManager.getLaunchIntentForPackage(PAYPAL_PKG)
             if (intent == null) {
-                AutomationState.log("✘ PayPal app installed nahi hai")
+                AutomationState.log("✘ PayPal installed nahi hai")
                 return false
             }
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            intent.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_CLEAR_TASK
+            )
             service.startActivity(intent)
             Thread.sleep(1500)
             true
@@ -32,104 +31,121 @@ object PayPalActions {
         }
     }
 
-    // ── Handle Get Started / Welcome screen ───────────────
-    fun handleGetStartedIfPresent(service: AccessibilityService, timeoutMs: Long = 8000): Boolean {
+    // ── Wait for number screen (Get Started → number screen) ──
+    /**
+     * Handles:
+     *   - Wait for PayPal to launch
+     *   - If "Get Started" → tap it, wait
+     *   - Then wait for number screen with "email or number" text
+     *   - Ensure number input field is present
+     */
+    fun waitForNumberScreen(service: AccessibilityService, timeoutMs: Long = 15000): Boolean {
         val end = System.currentTimeMillis() + timeoutMs
-        while (System.currentTimeMillis() < end) {
-            val root = service.rootInActiveWindow ?: run { Thread.sleep(400); return@run null }
-            if (root != null) {
-                // Number screen?
-                val hasNumberScreen = NodeFinder.containsAny(
-                    root,
-                    "Let's start with your email or number",
-                    "Email or phone number",
-                    "email or number"
-                )
-                if (hasNumberScreen) return true
+        var getStartedClicked = false
+        var numberScreenSeenAt = 0L
 
-                // Get Started?
-                if (NodeFinder.containsAny(root, "Get Started")) {
-                    NodeFinder.clickAny(root, "Get Started")
-                    Thread.sleep(2000)
-                    return true
+        while (System.currentTimeMillis() < end) {
+            val root = service.rootInActiveWindow
+            if (root == null) {
+                Thread.sleep(400)
+                continue
+            }
+
+            // 1. Get Started button — click once
+            if (!getStartedClicked && NodeFinder.containsAny(root, "Get Started")) {
+                if (NodeFinder.clickAny(root, "Get Started")) {
+                    AutomationState.log("ℹ Get Started tapped")
+                    getStartedClicked = true
+                    Thread.sleep(2500) // wait for transition
+                    continue
                 }
             }
+
+            // 2. Number screen — check that both text AND input exist
+            val hasNumberText = NodeFinder.containsAny(
+                root,
+                "email or number",
+                "Email or phone number",
+                "Let's start"
+            )
+            if (hasNumberText) {
+                val input = NodeFinder.findEditText(root)
+                if (input != null) {
+                    if (numberScreenSeenAt == 0L) {
+                        numberScreenSeenAt = System.currentTimeMillis()
+                    }
+                    // Wait another 1.5s to ensure screen is stable
+                    if (System.currentTimeMillis() - numberScreenSeenAt > 1500) {
+                        AutomationState.log("✔ Number screen ready")
+                        return true
+                    }
+                }
+            }
+
             Thread.sleep(400)
         }
         return false
     }
 
-    // ── Wait for Continue button loader to stop ───────────
-    fun waitForContinueReady(service: AccessibilityService, timeoutMs: Long = 8000): Boolean {
-        val end = System.currentTimeMillis() + timeoutMs
-        while (System.currentTimeMillis() < end) {
-            val root = service.rootInActiveWindow ?: run { Thread.sleep(400); return@run null }
-            if (root != null) {
-                val continueNode = NodeFinder.findByText(root, "Continue")
-                if (continueNode != null && continueNode.isEnabled) {
-                    // Loader is gone — Continue is clickable
-                    return true
-                }
-            }
-            Thread.sleep(400)
-        }
-        return false
-    }
-
-    // ── Dismiss Gmail / any popup (X button) ──────────────
+    // ── Dismiss popups ────────────────────────────────────
     fun dismissPopupsIfAny(service: AccessibilityService): Boolean {
         val root = service.rootInActiveWindow ?: return false
         val closeTexts = arrayOf(
-            "Close", "Cancel", "Dismiss", "X", "✕", "✖", "×", "No thanks", "Not now"
+            "Close", "Cancel", "Dismiss", "X", "✕", "✖", "×",
+            "No thanks", "Not now", "Skip"
         )
-
-        // Text based
         NodeFinder.findByText(root, *closeTexts)?.let {
             if (NodeFinder.click(it)) {
                 AutomationState.log("ℹ Popup dismissed")
-                Thread.sleep(800)
+                Thread.sleep(700)
                 return true
             }
         }
-
-        // Description based
-        for (text in closeTexts) {
-            val node = NodeFinder.findByTextContains(root, text)
-            if (node != null && NodeFinder.click(node)) {
+        for (t in closeTexts) {
+            val n = NodeFinder.findByTextContains(root, t)
+            if (n != null && NodeFinder.click(n)) {
                 AutomationState.log("ℹ Popup dismissed (desc)")
-                Thread.sleep(800)
+                Thread.sleep(700)
                 return true
             }
         }
         return false
     }
 
-    // ── Open country selector (top-right) ─────────────────
-    fun openCountrySelector(service: AccessibilityService): Boolean {
-        val root = service.rootInActiveWindow ?: return false
-
-        // Country code shown as "US", "PK", etc. — top right
-        val commonCodes = arrayOf(
-            "US", "PK", "MY", "GB", "IN", "BD", "ID", "EG", "SA", "AE",
-            "TR", "RU", "VN", "TH", "PH", "NG", "KE", "GH", "ZA"
-        )
-        for (code in commonCodes) {
-            val node = NodeFinder.findByText(root, code)
-            if (node != null && NodeFinder.isVisible(node)) {
-                if (NodeFinder.click(node)) {
+    // ── Click country selector (top-right corner, shows "US" by default) ──
+    fun openCountrySelector(service: AccessibilityService, timeoutMs: Long = 6000): Boolean {
+        val end = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < end) {
+            val root = service.rootInActiveWindow
+            if (root != null) {
+                // Try to find 2-letter country code near top-right corner
+                if (tryClickCountryCode(root)) {
                     AutomationState.log("ℹ Country selector opened")
-                    Thread.sleep(1200)
+                    Thread.sleep(1500)
                     return true
                 }
             }
+            Thread.sleep(400)
         }
+        return false
+    }
 
-        // Fallback: content description contains "country"
-        val node = NodeFinder.findByTextContains(root, "country", "residence")
-        if (node != null && NodeFinder.click(node)) {
-            AutomationState.log("ℹ Country selector opened (desc)")
-            Thread.sleep(1200)
-            return true
+    private fun tryClickCountryCode(root: AccessibilityNodeInfo): Boolean {
+        // Common country codes PayPal shows
+        val codes = listOf(
+            "US", "GB", "PK", "IN", "MY", "BD", "ID", "EG", "SA", "AE",
+            "NG", "KE", "PH", "VN", "TH", "TR", "RU", "BR", "MX", "AR",
+            "UA", "ZA", "GH", "CM", "SN"
+        )
+        for (code in codes) {
+            val node = NodeFinder.findByText(root, code)
+            if (node != null && NodeFinder.isVisible(node)) {
+                // Make sure the parent is clickable (it's usually a small button)
+                val clickable = NodeFinder.findClickableParent(node) ?: node
+                if (clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    return true
+                }
+            }
         }
         return false
     }
@@ -141,31 +157,54 @@ object PayPalActions {
         countryIso: String
     ): Boolean {
         try {
-            // Find search field
-            val root = service.rootInActiveWindow ?: return false
-            val search = NodeFinder.findEditText(root) ?: run {
+            // Wait for search field to appear
+            Thread.sleep(1500)
+
+            val root = service.rootInActiveWindow
+            val search = NodeFinder.findEditText(root)
+            if (search == null) {
                 AutomationState.log("✘ Search field nahi mila")
                 return false
             }
 
+            // Click search field first to focus
+            NodeFinder.click(search)
+            Thread.sleep(500)
+
+            // Type country name
             if (!NodeFinder.setText(search, countryName)) {
-                // Try typing via clipboard paste not possible; try ACTION_SET_TEXT again
                 NodeFinder.setText(search, countryName)
             }
-            Thread.sleep(1200)
+            AutomationState.log("ℹ Typed country: $countryName")
+            Thread.sleep(1800)
 
-            // Find matching result — must match BOTH name and ISO code
-            val r2 = service.rootInActiveWindow ?: return false
-            val matches = findCountryResult(r2, countryName, countryIso)
-            if (matches != null) {
-                NodeFinder.click(matches)
-                AutomationState.log("✔ Country selected: $countryName ($countryIso)")
-                Thread.sleep(1500)
-                return true
+            // Find matching result
+            val r2 = service.rootInActiveWindow
+            val match = findCountryResult(r2, countryName, countryIso)
+            if (match == null) {
+                AutomationState.log("✘ Result nahi mila: $countryName ($countryIso)")
+                return false
             }
+            if (!NodeFinder.click(match)) {
+                AutomationState.log("✘ Result click fail")
+                return false
+            }
+            AutomationState.log("✔ Country selected: $countryName")
+            Thread.sleep(2200)
 
-            AutomationState.log("✘ Country result nahi mila")
-            return false
+            // Verify: check that country ISO now appears in the screen
+            if (countryIso.isNotEmpty()) {
+                val verifyRoot = service.rootInActiveWindow
+                if (verifyRoot != null) {
+                    val seen = NodeFinder.containsAny(verifyRoot, countryIso)
+                    if (seen) {
+                        AutomationState.log("✔ Verified: $countryIso shown")
+                    } else {
+                        AutomationState.log("⚠ $countryIso verify — proceeding anyway")
+                    }
+                }
+            }
+            return true
         } catch (e: Exception) {
             AutomationState.log("✘ selectCountry error: ${e.message}")
             return false
@@ -173,25 +212,25 @@ object PayPalActions {
     }
 
     private fun findCountryResult(
-        root: android.view.accessibility.AccessibilityNodeInfo,
+        root: AccessibilityNodeInfo,
         countryName: String,
         countryIso: String
-    ): android.view.accessibility.AccessibilityNodeInfo? {
-        // Look for text like "Pakistan (PK)" or line with country name
-        // then verify the ISO in parentheses matches.
-        val queue = ArrayDeque<android.view.accessibility.AccessibilityNodeInfo>()
+    ): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         while (queue.isNotEmpty()) {
             val n = queue.removeFirst()
             val t = n.text?.toString() ?: ""
+
             if (t.contains(countryName, ignoreCase = true)) {
-                // Check ISO match if present
-                val hasIso = t.contains("($countryIso)", ignoreCase = true)
-                    || t.contains(countryIso, ignoreCase = true)
-                if (hasIso || countryIso.isBlank()) {
+                // Verify ISO match if we have one
+                if (countryIso.isBlank() ||
+                    t.contains("($countryIso)", ignoreCase = true)
+                ) {
                     return NodeFinder.findClickableParent(n) ?: n
                 }
             }
+
             for (i in 0 until n.childCount) {
                 n.getChild(i)?.let { queue.add(it) }
             }
@@ -199,22 +238,28 @@ object PayPalActions {
         return null
     }
 
-    // ── Fill phone number (national, without dialing code) ──
-    fun fillNumber(service: AccessibilityService, fullNumber: String, dialingCode: String): Boolean {
+    // ── Fill phone number ─────────────────────────────────
+    fun fillNumber(
+        service: AccessibilityService,
+        fullNumber: String,
+        dialingCode: String
+    ): Boolean {
         try {
-            // Strip "+" and country code
             var national = fullNumber.trim().removePrefix("+")
             if (dialingCode.isNotEmpty() && national.startsWith(dialingCode)) {
                 national = national.substring(dialingCode.length)
             }
-            national = national.trim()
+            national = national.trim().replace(" ", "").replace("-", "")
 
             val root = service.rootInActiveWindow ?: return false
-            val edit = NodeFinder.findEditText(root) ?: run {
-                AutomationState.log("✘ Number input field nahi mila")
+            val edit = NodeFinder.findEditText(root)
+            if (edit == null) {
+                AutomationState.log("✘ Number field nahi mila")
                 return false
             }
 
+            NodeFinder.click(edit)
+            Thread.sleep(300)
             if (!NodeFinder.setText(edit, national)) {
                 NodeFinder.setText(edit, national)
             }
@@ -238,37 +283,30 @@ object PayPalActions {
         return false
     }
 
-    // ── Detect result screen ──────────────────────────────
-    enum class Result { OTP_SCREEN, ERROR, TIMEOUT, UNKNOWN }
+    // ── Wait for result ───────────────────────────────────
+    enum class Result { OTP_SCREEN, ERROR, TIMEOUT }
 
     fun waitForResult(service: AccessibilityService, timeoutMs: Long = 10000): Result {
         val end = System.currentTimeMillis() + timeoutMs
-        var firstError = false
+        var errorSeen = false
         while (System.currentTimeMillis() < end) {
-            val root = service.rootInActiveWindow ?: run { Thread.sleep(400); return@run null }
+            val root = service.rootInActiveWindow
             if (root != null) {
-                // OTP screen — "Resend Code" present
                 if (NodeFinder.containsAny(root, "Resend Code", "Resend code", "Resend")) {
                     return Result.OTP_SCREEN
                 }
-
-                // Red error indicators
-                if (!firstError && NodeFinder.containsAny(
+                if (!errorSeen && NodeFinder.containsAny(
                         root,
-                        "Something went wrong",
-                        "can't be used", "cannot be used",
-                        "not valid", "invalid",
-                        "try again", "Try again",
-                        "error", "Error"
+                        "Something went wrong", "can't be used", "not valid",
+                        "invalid", "try again", "Try again"
                     )
                 ) {
-                    firstError = true
-                    // Give a bit more time — maybe screen changes
+                    errorSeen = true
                 }
             }
             Thread.sleep(400)
         }
-        return if (firstError) Result.ERROR else Result.TIMEOUT
+        return if (errorSeen) Result.ERROR else Result.TIMEOUT
     }
 
     // ── Resend code 2x ────────────────────────────────────
@@ -276,21 +314,19 @@ object PayPalActions {
         repeat(2) { attempt ->
             val root = service.rootInActiveWindow
             val node = NodeFinder.findByText(root, "Resend Code", "Resend code", "Resend")
-            if (node != null) {
-                NodeFinder.click(node)
+            if (node != null && NodeFinder.click(node)) {
                 AutomationState.log("ℹ Resend tapped (${attempt + 1}/2)")
             } else {
-                AutomationState.log("ℹ Resend button nahi mila (${attempt + 1}/2)")
+                AutomationState.log("ℹ Resend not found (${attempt + 1}/2)")
             }
             Thread.sleep(5000)
         }
     }
 
-    // ── Close PayPal app (swipe from recents) ─────────────
     fun closePayPal(service: AccessibilityService) {
         try {
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-            Thread.sleep(500)
-        } catch (_: Exception) { }
+            Thread.sleep(400)
+        } catch (_: Exception) {}
     }
 }
