@@ -15,7 +15,7 @@ object PayPalActions {
     fun launch(service: AccessibilityService): Boolean {
         return try {
             val intent = service.packageManager.getLaunchIntentForPackage(PAYPAL_PKG)
-                ?: return false
+            if (intent == null) return false
             intent.addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_ACTIVITY_CLEAR_TOP or
@@ -40,37 +40,41 @@ object PayPalActions {
         }
     }
 
-    // ── Wait Get Started → tap → number screen ──
+    // ── Wait Get Started → tap → number screen (NO continue-in-lambda) ──
     fun handleGetStartedAndWaitNumber(service: AccessibilityService, timeoutMs: Long = 15000): Boolean {
         val end = SystemClock.uptimeMillis() + timeoutMs
         var clicked = false
         var stableAt = 0L
 
         while (SystemClock.uptimeMillis() < end) {
-            val root = service.rootInActiveWindow ?: run { sleepMs(300); continue }
-
-            // Get Started (once)
-            if (!clicked && NodeFinder.containsAny(root, "Get Started")) {
-                if (NodeFinder.clickAny(root, "Get Started")) {
-                    AutomationState.log("ℹ Get Started tapped")
-                    clicked = true
-                    sleepMs(2500)
-                    continue
+            val root = service.rootInActiveWindow
+            if (root == null) {
+                sleepMs(300)
+            } else {
+                // Get Started (once)
+                if (!clicked && NodeFinder.containsAny(root, "Get Started")) {
+                    if (NodeFinder.clickAny(root, "Get Started")) {
+                        AutomationState.log("ℹ Get Started tapped")
+                        clicked = true
+                        sleepMs(2500)
+                        continue
+                    }
                 }
+
+                // Number screen: has text + EditText
+                val hasText = NodeFinder.containsAny(root, "email or number", "Email or phone number")
+                val hasEdit = NodeFinder.findEditText(root) != null
+                if (hasText && hasEdit) {
+                    if (stableAt == 0L) stableAt = SystemClock.uptimeMillis()
+                    if (SystemClock.uptimeMillis() - stableAt > 1200) {
+                        AutomationState.log("✔ On number screen")
+                        return true
+                    }
+                } else {
+                    stableAt = 0L
+                }
+                sleepMs(300)
             }
-
-            // Number screen: has text + EditText
-            val hasText = NodeFinder.containsAny(root, "email or number", "Email or phone number")
-            val hasEdit = NodeFinder.findEditText(root) != null
-            if (hasText && hasEdit) {
-                if (stableAt == 0L) stableAt = SystemClock.uptimeMillis()
-                if (SystemClock.uptimeMillis() - stableAt > 1200) {
-                    AutomationState.log("✔ On number screen")
-                    return true
-                }
-            } else stableAt = 0L
-
-            sleepMs(300)
         }
         return false
     }
@@ -84,12 +88,12 @@ object PayPalActions {
         )
         val end = SystemClock.uptimeMillis() + timeoutMs
         while (SystemClock.uptimeMillis() < end) {
-            // Close Gmail popup if it appears mid-wait
+            // Close Gmail popup if appears mid-wait
             dismissPopupsIfAny(service)
 
             val root = service.rootInActiveWindow
             if (root != null) {
-                // If dialog already open → done
+                // Already open?
                 if (NodeFinder.containsAny(root, "Country of residence", "Country/region")) {
                     AutomationState.log("ℹ Country dialog open")
                     return true
@@ -98,7 +102,8 @@ object PayPalActions {
                 val rootR = Rect(); root.getBoundsInScreen(rootR)
 
                 for (code in codes) {
-                    val node = NodeFinder.findByText(root, code) ?: continue
+                    val node = NodeFinder.findByText(root, code)
+                    if (node == null) continue
                     if (!NodeFinder.isVisible(node)) continue
 
                     val r = Rect(); node.getBoundsInScreen(r)
@@ -109,7 +114,6 @@ object PayPalActions {
                     val clickable = NodeFinder.findClickableParent(node) ?: node
                     if (clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
                         AutomationState.log("ℹ US button clicked ($code)")
-                        // Wait for search dialog to appear
                         if (waitForDialog(service, 3000)) return true
                     }
                 }
@@ -145,16 +149,13 @@ object PayPalActions {
             return false
         }
 
-        // Click search field
         NodeFinder.click(search)
         sleepMs(500)
 
-        // Type country name
         NodeFinder.setText(search, countryName)
         AutomationState.log("ℹ Typed: $countryName")
         sleepMs(1500)
 
-        // Find result and click
         val end = SystemClock.uptimeMillis() + 4000
         while (SystemClock.uptimeMillis() < end) {
             val r = service.rootInActiveWindow
@@ -213,7 +214,7 @@ object PayPalActions {
         return false
     }
 
-    // ── Type number into EditText ──
+    // ── Type number ──
     fun typeNumber(service: AccessibilityService, fullNumber: String, dialingCode: String): Boolean {
         var national = fullNumber.trim().removePrefix("+")
         if (dialingCode.isNotEmpty() && national.startsWith(dialingCode)) {
