@@ -124,15 +124,8 @@ class AutomationService : Service() {
 
                 val auth = AuthManager(applicationContext)
                 val prefs = AppPrefs(applicationContext)
-
                 val autoFlight = prefs.autoFlightMode
-                val flightPos = prefs.flightPosition
-
-                if (autoFlight && flightPos in 1..6) {
-                    AutomationState.log("✈ Auto Flight: ON (pos $flightPos)")
-                } else {
-                    AutomationState.log("✈ Auto Flight: OFF")
-                }
+                AutomationState.log(if (autoFlight) "✈ Auto Flight: ON" else "✈ Auto Flight: OFF")
 
                 while (AutomationState.getStatus() != AutomationState.Status.STOPPING) {
                     AutomationState.log("📞 5 numbers fetch...")
@@ -150,7 +143,6 @@ class AutomationService : Service() {
                         countryIso = countryCodeIso,
                         dialingCode = dialingCode,
                         autoFlightMode = autoFlight,
-                        flightPosition = flightPos,
                         onNumberStart = { num ->
                             AutomationState.updateStats {
                                 it.copy(
