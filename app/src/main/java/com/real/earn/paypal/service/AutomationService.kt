@@ -11,8 +11,12 @@ import androidx.core.app.NotificationCompat
 import com.real.earn.paypal.App
 import com.real.earn.paypal.AutomationActivity
 import com.real.earn.paypal.R
-import com.real.earn.paypal.utils.AirplaneModeController
+import com.real.earn.paypal.api.ApiClient
+import com.real.earn.paypal.api.GetNumberBody
+import com.real.earn.paypal.api.ReleaseNumberBody
+import com.real.earn.paypal.auth.AuthManager
 import com.real.earn.paypal.utils.OverlayManager
+import com.real.earn.paypal.utils.PayPalAutomation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -27,12 +31,10 @@ class AutomationService : Service() {
     private var loopJob: Job? = null
     private var overlay: OverlayManager? = null
 
-    // Params
     private var serviceName: String = ""
     private var countryName: String = ""
-    private var countryCode: String = ""
+    private var countryCodeIso: String = ""
     private var dialingCode: String = ""
-    private var price: Double = 0.0
 
     companion object {
         private const val NOTIF_ID = 1001
@@ -84,9 +86,8 @@ class AutomationService : Service() {
             ACTION_START -> {
                 serviceName = intent.getStringExtra("service") ?: ""
                 countryName = intent.getStringExtra("country") ?: ""
-                countryCode = intent.getStringExtra("countryCode") ?: ""
+                countryCodeIso = intent.getStringExtra("countryCode") ?: ""
                 dialingCode = intent.getStringExtra("dialingCode") ?: ""
-                price = intent.getDoubleExtra("price", 0.0)
 
                 showOverlay()
                 startLoop()
@@ -108,7 +109,7 @@ class AutomationService : Service() {
                 }
             }
             ACTION_STOP -> {
-                stopAutomation(closeActivity = false)
+                stopAutomation()
             }
         }
         return START_STICKY
@@ -124,43 +125,107 @@ class AutomationService : Service() {
 
         loopJob = scope.launch {
             try {
-                // ⬇️ PHASE 5B MEIN YAHAN ASLI LOOP AAYEGA
-                // Filhal skeleton: sirf logs dikhata hai
                 val a11y = PayPalAccessibilityService.instance
                 if (a11y == null) {
-                    AutomationState.log("✘ Accessibility service ON nahi hai")
+                    AutomationState.log("✘ Accessibility service OFF hai — settings se ON karo")
                     AutomationState.setStatus(AutomationState.Status.STOPPED)
+                    updateNotification("Stopped — a11y OFF")
                     return@launch
                 }
-
                 AutomationState.log("✔ Accessibility service connected")
 
-                // Demo loop — 5 iterations, 2 sec each
-                for (i in 1..5) {
+                val authManager = AuthManager(applicationContext)
+
+                // Main outer loop — keep going until user stops
+                while (AutomationState.getStatus() != AutomationState.Status.STOPPING) {
+
+                    // Fetch 5 numbers
+                    AutomationState.log("📞 Backend se 5 numbers maang raha hun...")
+                    val numbers = fetchNumbers(authManager)
+                    if (numbers.isEmpty()) {
+                        AutomationState.log("⚠ Numbers nahi mile — 15 sec wait")
+                        delay(15000)
+                        continue
+                    }
+
+                    AutomationState.log("✔ ${numbers.size} numbers mile")
+
+                    // Run automation batch
+                    val (success, fail) = PayPalAutomation.runBatch(
+                        service = a11y,
+                        numbers = numbers,
+                        countryName = countryName,
+                        countryIso = countryCodeIso,
+                        dialingCode = dialingCode,
+                        onNumberStart = { num ->
+                            AutomationState.updateStats {
+                                it.copy(
+                                    totalAttempts = it.totalAttempts + 1,
+                                    currentService = serviceName,
+                                    currentCountry = countryName,
+                                    currentNumber = num
+                                )
+                            }
+                        },
+                        onNumberSuccess = { _ ->
+                            AutomationState.updateStats {
+                                it.copy(successCount = it.successCount + 1)
+                            }
+                        },
+                        onNumberFail = { num ->
+                            AutomationState.updateStats {
+                                it.copy(failCount = it.failCount + 1)
+                            }
+                            // Release failed number to backend
+                            releaseNumbers(authManager, listOf(num), "otp_failed")
+                        }
+                    )
+
+                    AutomationState.log("📊 Batch done — Success: $success, Fail: $fail")
+
+                    // If user stops mid-batch, break
                     if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
-                    waitIfPaused()
-                    AutomationState.updateStats { it.copy(totalAttempts = it.totalAttempts + 1, currentNumber = "+92 300 000 000$i") }
-                    AutomationState.log("• Demo step $i")
-                    delay(2000)
+
+                    delay(1500)
                 }
 
-                AutomationState.log("✅ Demo loop complete")
+                AutomationState.log("⏹ Loop exit")
                 AutomationState.setStatus(AutomationState.Status.STOPPED)
                 updateNotification("Stopped")
+
             } catch (e: Exception) {
                 AutomationState.log("✘ Loop error: ${e.message}")
                 AutomationState.setStatus(AutomationState.Status.STOPPED)
+                updateNotification("Error")
             }
         }
     }
 
-    private suspend fun waitIfPaused() {
-        while (AutomationState.getStatus() == AutomationState.Status.PAUSED) {
-            delay(500)
+    private suspend fun fetchNumbers(auth: AuthManager): List<String> {
+        return try {
+            val res = ApiClient.service(auth).getNumbers(
+                GetNumberBody(service = serviceName, country = countryName, count = 5)
+            )
+            if (res.isSuccessful && res.body()?.success == true) {
+                res.body()?.numbers ?: emptyList()
+            } else {
+                val code = res.code()
+                AutomationState.log("✘ getNumber fail (HTTP $code)")
+                emptyList()
+            }
+        } catch (e: Exception) {
+            AutomationState.log("✘ getNumber error: ${e.message}")
+            emptyList()
         }
     }
 
-    private fun stopAutomation(closeActivity: Boolean) {
+    private suspend fun releaseNumbers(auth: AuthManager, nums: List<String>, reason: String) {
+        try {
+            ApiClient.service(auth).releaseNumbers(ReleaseNumberBody(numbers = nums, reason = reason))
+        } catch (_: Exception) { }
+    }
+
+    private fun stopAutomation() {
         AutomationState.setStatus(AutomationState.Status.STOPPING)
         AutomationState.log("⏹ Stopping…")
         loopJob?.cancel()
@@ -173,10 +238,6 @@ class AutomationService : Service() {
 
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
-
-        if (closeActivity) {
-            // no-op
-        }
     }
 
     private fun showOverlay() {
@@ -184,18 +245,15 @@ class AutomationService : Service() {
         overlay = OverlayManager(this).apply {
             onPause = {
                 val cur = AutomationState.getStatus()
-                if (cur == AutomationState.Status.PAUSED) {
-                    resume(applicationContext)
-                } else if (cur == AutomationState.Status.RUNNING) {
-                    pause(applicationContext)
-                }
+                if (cur == AutomationState.Status.PAUSED) resume(applicationContext)
+                else if (cur == AutomationState.Status.RUNNING) pause(applicationContext)
             }
-            onStop = {
-                stop(applicationContext)
-            }
+            onStop = { stop(applicationContext) }
             onStopAndClose = {
                 stop(applicationContext)
-                // Activity close handled by Activity itself observing status
+                val i = Intent(applicationContext, AutomationActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                // Not launching — just stop
             }
             show()
         }
@@ -203,8 +261,7 @@ class AutomationService : Service() {
 
     private fun buildNotification(text: String): Notification {
         val pi = PendingIntent.getActivity(
-            this,
-            0,
+            this, 0,
             Intent(this, AutomationActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
