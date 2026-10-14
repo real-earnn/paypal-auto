@@ -30,7 +30,6 @@ class AutomationService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var loopJob: Job? = null
-    private var statusWatchJob: Job? = null
     private var overlay: OverlayManager? = null
 
     private var serviceName: String = ""
@@ -99,7 +98,7 @@ class AutomationService : Service() {
         if (AutomationState.getStatus() == AutomationState.Status.RUNNING) {
             AutomationState.setStatus(AutomationState.Status.PAUSED)
             AutomationState.log("⏸ Paused")
-            overlay?.setPaused(true)
+            overlay?.updatePausedVisuals(true)
             updateNotification("Paused")
         }
     }
@@ -108,7 +107,7 @@ class AutomationService : Service() {
         if (AutomationState.getStatus() == AutomationState.Status.PAUSED) {
             AutomationState.setStatus(AutomationState.Status.RUNNING)
             AutomationState.log("▶ Resumed")
-            overlay?.setPaused(false)
+            overlay?.updatePausedVisuals(false)
             updateNotification("Running")
         }
     }
@@ -137,7 +136,6 @@ class AutomationService : Service() {
                 AutomationState.log(if (autoFlight) "✈ Auto Flight: ON" else "✈ Auto Flight: OFF")
 
                 while (AutomationState.getStatus() != AutomationState.Status.STOPPING) {
-                    // honor paused state
                     while (AutomationState.getStatus() == AutomationState.Status.PAUSED) delay(300)
                     if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
 
@@ -234,7 +232,7 @@ class AutomationService : Service() {
     private fun showOverlay() {
         if (overlay != null) return
         overlay = OverlayManager(this).apply {
-            setPaused(false)
+            updatePausedVisuals(false)
             onToggle = {
                 when (AutomationState.getStatus()) {
                     AutomationState.Status.RUNNING -> doPause()
@@ -271,7 +269,7 @@ class AutomationService : Service() {
     }
 
     override fun onDestroy() {
-        loopJob?.cancel(); statusWatchJob?.cancel(); scope.cancel()
+        loopJob?.cancel(); scope.cancel()
         overlay?.hide(); overlay = null
         super.onDestroy()
     }
