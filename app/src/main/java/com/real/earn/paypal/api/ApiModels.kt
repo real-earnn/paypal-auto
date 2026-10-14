@@ -2,14 +2,6 @@ package com.real.earn.paypal.api
 
 import com.google.gson.annotations.SerializedName
 
-// ── Generic Response Wrapper ──────────────────────────────
-data class ApiResponse<T>(
-    @SerializedName("success") val success: Boolean,
-    @SerializedName("error") val error: String? = null,
-    @SerializedName("message") val message: String? = null,
-    @SerializedName("data") val data: T? = null
-)
-
 // ── Auth: Request Code ────────────────────────────────────
 data class RequestCodeBody(
     @SerializedName("telegram_id") val telegramId: Long? = null,
@@ -50,7 +42,7 @@ data class UserInfo(
     @SerializedName("currency") val currency: String = "PKR"
 )
 
-// ── Me Response (protected) ───────────────────────────────
+// ── Me Response ───────────────────────────────────────────
 data class MeResponse(
     @SerializedName("success") val success: Boolean,
     @SerializedName("user") val user: UserInfo? = null,
@@ -65,19 +57,23 @@ data class LogoutResponse(
 
 // ── Services List ─────────────────────────────────────────
 data class ServicesResponse(
-    @SerializedName("success") val success: Boolean,
-    @SerializedName("services") val services: List<ServiceItem> = emptyList()
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("services") val services: List<ServiceItem>? = null
 )
 
 data class ServiceItem(
-    @SerializedName("name") val name: String,
+    @SerializedName("name") val name: String = "",
     @SerializedName("icon_id") val iconId: String = "",
-    @SerializedName("countries") val countries: List<CountryItem> = emptyList(),
+    @SerializedName("countries") val countries: List<CountryItem>? = null,   // 🟢 nullable
     @SerializedName("is_unpaid") val isUnpaid: Boolean = false
-)
+) {
+    // Convenience: return non-null list
+    val countriesSafe: List<CountryItem>
+        get() = countries ?: emptyList()
+}
 
 data class CountryItem(
-    @SerializedName("name") val name: String,
+    @SerializedName("name") val name: String = "",
     @SerializedName("code") val code: String = "",
     @SerializedName("dialing_code") val dialingCode: String = "",
     @SerializedName("count") val count: Int = 0,
@@ -86,15 +82,8 @@ data class CountryItem(
 )
 
 data class CountriesResponse(
-    @SerializedName("success") val success: Boolean,
+    @SerializedName("success") val success: Boolean = false,
     @SerializedName("service") val service: String = "",
     @SerializedName("is_unpaid") val isUnpaid: Boolean = false,
-    @SerializedName("countries") val countries: List<CountryItem> = emptyList()
-)
-
-// ── Error body (for error parsing) ────────────────────────
-data class ErrorBody(
-    @SerializedName("success") val success: Boolean = false,
-    @SerializedName("error") val error: String? = null,
-    @SerializedName("message") val message: String? = null
+    @SerializedName("countries") val countries: List<CountryItem>? = null
 )
