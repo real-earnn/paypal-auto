@@ -23,72 +23,71 @@ object PayPalAutomation {
 
         for (num in numbers) {
             if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
-            while (AutomationState.getStatus() == AutomationState.Status.PAUSED) delay(500)
+            while (AutomationState.getStatus() == AutomationState.Status.PAUSED) delay(300)
             if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
 
             onNumberStart(num)
             AutomationState.log("─────────────")
-            AutomationState.log("▶ NUMBER: $num")
+            AutomationState.log("▶ $num")
 
             // ① Flight
             if (autoFlightMode) {
-                AirplaneModeController.strictToggle(service)
-                if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
+                val ok = AirplaneModeController.strictToggle(service)
+                if (!ok) {
+                    AutomationState.log("✘ [ABORT] Flight failed")
+                    onNumberFail(num); fail++
+                    continue
+                }
             }
 
-            // ② Clear data
-            val ok1 = PayPalClearData.strictClear(service)
-            if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
-            if (!ok1) {
-                AutomationState.log("✘ Clear failed — skip number")
+            // ② Clear
+            if (!PayPalClearData.strictClear(service)) {
+                AutomationState.log("✘ [ABORT] Clear data failed")
                 onNumberFail(num); fail++
                 continue
             }
 
             // ③ Launch
             if (!PayPalActions.launch(service)) {
-                AutomationState.log("✘ Launch failed")
+                AutomationState.log("✘ [ABORT] Launch failed")
                 onNumberFail(num); fail++
                 continue
             }
 
-            // ④ Get Started → number screen
-            if (!PayPalActions.handleGetStartedAndWaitNumber(service, 15000)) {
-                AutomationState.log("✘ Number screen not ready")
+            // ④ Number screen
+            if (!PayPalActions.handleGetStartedAndWaitNumber(service, 10000)) {
+                AutomationState.log("✘ [ABORT] Number screen timeout")
                 onNumberFail(num); fail++
                 PayPalActions.closePayPal(service)
                 continue
             }
 
-            // Small settle
-            StepUtils.sleepMs(500)
+            // quick popup dismiss
             PayPalActions.dismissPopupsIfAny(service)
 
             // ⑤ US button
-            if (!PayPalActions.clickUsButton(service, 8000)) {
-                AutomationState.log("✘ US button fail")
+            if (!PayPalActions.clickUsButton(service, 6000)) {
+                AutomationState.log("✘ [ABORT] US button fail")
                 onNumberFail(num); fail++
                 PayPalActions.closePayPal(service)
                 continue
             }
 
-            // ⑥ Country search
+            // ⑥ Country
             if (!PayPalActions.typeAndSelectCountry(service, countryName, countryIso)) {
-                AutomationState.log("✘ Country select fail")
+                AutomationState.log("✘ [ABORT] Country select fail")
                 onNumberFail(num); fail++
                 PayPalActions.closePayPal(service)
                 continue
             }
-            AutomationState.log("✔ Country set: $countryIso")
+            AutomationState.log("✔ Country: $countryIso")
 
-            // ⑦ Wait for Gmail popup → close
-            AutomationState.log("ℹ Waiting for Gmail popup…")
-            PayPalActions.waitAndClosePopup(service, 6000)
-            StepUtils.sleepMs(800)
+            // ⑦ Gmail popup after country
+            PayPalActions.waitAndClosePopup(service, 4000)
 
             // ⑧ Number
             if (!PayPalActions.typeNumber(service, num, dialingCode)) {
-                AutomationState.log("✘ Number type fail")
+                AutomationState.log("✘ [ABORT] Number type fail")
                 onNumberFail(num); fail++
                 PayPalActions.closePayPal(service)
                 continue
@@ -96,33 +95,33 @@ object PayPalAutomation {
 
             // ⑨ Continue
             if (!PayPalActions.tapContinue(service)) {
-                AutomationState.log("✘ Continue fail")
+                AutomationState.log("✘ [ABORT] Continue not found")
                 onNumberFail(num); fail++
                 PayPalActions.closePayPal(service)
                 continue
             }
-            AutomationState.log("✔ Continue — waiting result…")
+            AutomationState.log("ℹ Continue — waiting result…")
 
             // ⑩ Result
-            when (PayPalActions.checkResult(service, 10000)) {
+            when (PayPalActions.checkResult(service, 8000)) {
                 PayPalActions.Result.OTP_SCREEN -> {
-                    AutomationState.log("✔ OTP SCREEN — SUCCESS")
+                    AutomationState.log("✔ SUCCESS")
                     PayPalActions.tapResendTwice(service)
                     onNumberSuccess(num)
                     success++
                 }
                 PayPalActions.Result.ERROR -> {
-                    AutomationState.log("✘ RED ERROR — FAIL")
+                    AutomationState.log("✘ Red error")
                     onNumberFail(num); fail++
                 }
                 PayPalActions.Result.TIMEOUT -> {
-                    AutomationState.log("⏱ TIMEOUT — FAIL")
+                    AutomationState.log("⏱ Timeout")
                     onNumberFail(num); fail++
                 }
             }
 
             PayPalActions.closePayPal(service)
-            delay(800)
+            delay(400)
         }
 
         return Pair(success, fail)
