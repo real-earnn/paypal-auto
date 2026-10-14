@@ -11,7 +11,6 @@ import com.real.earn.paypal.service.PayPalAccessibilityService
 
 object PermissionHelper {
 
-    // ── Accessibility ─────────────────────────────────────
     fun isAccessibilityEnabled(context: Context): Boolean {
         val expected = ComponentName(context, PayPalAccessibilityService::class.java)
         val enabled = Settings.Secure.getString(
@@ -29,25 +28,23 @@ object PermissionHelper {
     }
 
     fun openAccessibilitySettings(context: Context) {
-        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
+        context.startActivity(
+            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
     }
 
-    // ── Overlay (Draw over other apps) ────────────────────
-    fun isOverlayGranted(context: Context): Boolean {
-        return Settings.canDrawOverlays(context)
-    }
+    fun isOverlayGranted(context: Context): Boolean = Settings.canDrawOverlays(context)
 
     fun openOverlaySettings(context: Context) {
-        val intent = Intent(
-            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-            Uri.parse("package:" + context.packageName)
-        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
+        context.startActivity(
+            Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:" + context.packageName)
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
     }
 
-    // ── Battery Optimization ──────────────────────────────
     fun isBatteryOptimizationIgnored(context: Context): Boolean {
         val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         return pm.isIgnoringBatteryOptimizations(context.packageName)
@@ -55,38 +52,16 @@ object PermissionHelper {
 
     fun openBatterySettings(context: Context) {
         try {
-            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-                .setData(Uri.parse("package:" + context.packageName))
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
+            context.startActivity(
+                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                    .setData(Uri.parse("package:" + context.packageName))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
         } catch (e: Exception) {
-            val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
-        }
-    }
-
-    // ── Default Assistant (for Airplane Mode via VoiceInteractionService) ──
-    fun isAssistantDefault(context: Context): Boolean {
-        // No public API to detect reliably; return false so user is prompted
-        // once. Real check happens at runtime when we try to toggle airplane mode.
-        return false
-    }
-
-    fun openAssistantSettings(context: Context) {
-        // Try the most common assistant settings intents
-        val candidates = listOf(
-            Intent("android.settings.VOICE_INPUT_SETTINGS"),
-            Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS),
-            Intent("android.settings.MANAGE_DEFAULT_APPS_SETTINGS"),
-            Intent(Settings.ACTION_SETTINGS)
-        )
-        for (i in candidates) {
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            try {
-                context.startActivity(i)
-                return
-            } catch (_: Exception) { }
+            context.startActivity(
+                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
         }
     }
 }
