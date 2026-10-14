@@ -23,7 +23,7 @@ class OverlayManager(private val context: Context) {
     var onToggle: (() -> Unit)? = null
     var onClose: (() -> Unit)? = null
 
-    var isPaused = false
+    private var paused: Boolean = false
 
     @SuppressLint("ClickableViewAccessibility")
     fun show() {
@@ -58,7 +58,6 @@ class OverlayManager(private val context: Context) {
         btnToggle?.setOnClickListener { onToggle?.invoke() }
         btnClose?.setOnClickListener { onClose?.invoke() }
 
-        // Drag support (only on the panel, not on buttons)
         overlayView?.setOnTouchListener(object : View.OnTouchListener {
             private var initialX = 0
             private var initialY = 0
@@ -108,10 +107,13 @@ class OverlayManager(private val context: Context) {
         btnClose = null
     }
 
-    /** Paused → show Play icon; Running → show Pause icon */
-    fun setPaused(paused: Boolean) {
-        isPaused = paused
-        btnToggle?.setImageResource(if (paused) R.drawable.ic_play else R.drawable.ic_pause)
-        btnToggle?.contentDescription = if (paused) "Resume" else "Pause"
+    /**
+     * Updates icon + description based on paused state.
+     * Named "updatePausedVisuals" to avoid clash with property setter.
+     */
+    fun updatePausedVisuals(isPaused: Boolean) {
+        paused = isPaused
+        btnToggle?.setImageResource(if (isPaused) R.drawable.ic_play else R.drawable.ic_pause)
+        btnToggle?.contentDescription = if (isPaused) "Resume" else "Pause"
     }
 }
