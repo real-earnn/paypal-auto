@@ -12,21 +12,24 @@ object PayPalClearData {
     const val PAYPAL_PKG = "com.paypal.android.p2pmobile"
 
     fun strictClear(service: AccessibilityService): Boolean {
-        return try {
+        try {
             AutomationState.log("🧹 Clear data…")
 
-            // ① Force HOME first — clear any stale Settings/PayPal
+            // HOME first, let screen settle
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-            StepUtils.sleepMs(1000)
+            StepUtils.sleepMs(900)
 
-            // ② Try up to 4 times to open App Info cleanly
-            var appInfoReady = false
-            for (attempt in 1..4) {
+            // ═══ Up to 3 attempts to reach App Info ═══
+            for (attempt in 1..3) {
                 if (StepUtils.shouldStop()) return false
 
-                AutomationState.log("ℹ App Info open attempt #$attempt")
+                if (attempt > 1) {
+                    AutomationState.log("ℹ App Info retry #$attempt")
+                    service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                    StepUtils.sleepMs(1000)
+                }
 
-                // Force a clean open
+                // Fire intent
                 try {
                     val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                         data = Uri.parse("package:$PAYPAL_PKG")
@@ -37,97 +40,76 @@ object PayPalClearData {
                         )
                     }
                     service.startActivity(intent)
-                } catch (e: Exception) {
-                    AutomationState.log("⚠ startActivity err: ${e.message}")
+                } catch (_: Exception) {}
+
+                // Wait for Settings package
+                if (!StepUtils.waitForPackage(service, "settings", 3500) &&
+                    !StepUtils.waitForPackage(service, "android", 1500)) {
+                    AutomationState.log("  ⚠ Settings not foreground")
+                    continue
                 }
 
-                // Wait for real App Info signal (not just Settings package)
-                // Look for "Storage" / "Force stop" / "Uninstall" — those are unique to App Info
-                if (waitFor(service, 4000,
-                        "Storage", "Storage & cache", "Memory",
-                        "Force stop", "Uninstall", "App info")) {
-                    appInfoReady = true
-                    AutomationState.log("✔ App Info ready")
-                    break
+                // Let content render
+                StepUtils.sleepMs(1300)
+
+                // Verify App Info content visible
+                val root = service.rootInActiveWindow
+                if (root == null) {
+                    AutomationState.log("  ⚠ root null")
+                    continue
                 }
 
-                // Not ready — HOME and retry
-                AutomationState.log("⚠ App Info not fully loaded — retrying")
-                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-                StepUtils.sleepMs(1200)
-            }
+                val hasAppInfoContent = NodeFinder.containsAny(
+                    root,
+                    "Storage", "Storage & cache", "Memory",
+                    "Force stop", "Uninstall", "App info"
+                )
+                if (!hasAppInfoContent) {
+                    AutomationState.log("  ⚠ App Info content not ready")
+                    continue
+                }
 
-            if (!appInfoReady) {
-                AutomationState.log("✘ App Info failed after 4 attempts")
+                AutomationState.log("✔ App Info ready (attempt $attempt)")
+                StepUtils.sleepMs(500)
+
+                // ── Tap Storage ──
+                if (!tapWhen(service, 3000,
+                        "Storage & cache", "Storage and cache", "Storage", "Memory")) {
+                    AutomationState.log("  ⚠ Storage row not found")
+                    continue
+                }
+                StepUtils.sleepMs(1000)
+
+                // ── Tap Clear data ──
+                if (!tapWhen(service, 3000,
+                        "Clear storage", "Clear data", "Clear all data", "Delete data")) {
+                    AutomationState.log("  ⚠ Clear row not found")
+                    continue
+                }
+                StepUtils.sleepMs(800)
+
+                // ── Confirm popup (optional) ──
+                if (findWithin(service, 1800, "Delete", "Clear", "OK", "Yes", "Confirm", "Erase")) {
+                    tapWhen(service, 1200, "Delete", "Clear", "OK", "Yes", "Confirm", "Erase")
+                    AutomationState.log("  ℹ Confirm popup handled")
+                    StepUtils.sleepMs(1500)
+                } else {
+                    AutomationState.log("  ℹ No popup — already cleared")
+                }
+
                 exitHome(service)
-                return false
+                AutomationState.log("✔ Clear data done")
+                return true
             }
 
-            StepUtils.sleepMs(600)
-
-            // ③ Tap Storage (retry 3x)
-            if (!StepUtils.retryStep("Storage row") {
-                    tapWhen(service, 3000,
-                        "Storage & cache", "Storage and cache", "Storage", "Memory")
-                }) {
-                AutomationState.log("✘ Storage row not found")
-                exitHome(service); return false
-            }
-            AutomationState.log("✔ Storage tapped")
-            StepUtils.sleepMs(1000)
-
-            // ④ Tap Clear storage (retry 3x)
-            if (!StepUtils.retryStep("Clear row") {
-                    tapWhen(service, 3000,
-                        "Clear storage", "Clear data", "Clear all data", "Delete data")
-                }) {
-                AutomationState.log("✘ Clear row not found")
-                exitHome(service); return false
-            }
-            AutomationState.log("✔ Clear tapped")
-            StepUtils.sleepMs(1000)
-
-            // ⑤ Confirm popup (optional)
-            if (findWithin(service, 1800, "Delete", "Clear", "OK", "Yes", "Confirm", "Erase")) {
-                tapWhen(service, 1200, "Delete", "Clear", "OK", "Yes", "Confirm", "Erase")
-                AutomationState.log("ℹ Confirm popup handled")
-                StepUtils.sleepMs(1500)
-            } else {
-                AutomationState.log("ℹ No popup — already cleared")
-            }
-
-            // ⑥ Exit + Home
+            AutomationState.log("✘ Clear data failed after 3 attempts")
             exitHome(service)
-            AutomationState.log("✔ Clear data done")
-            true
+            return false
         } catch (e: Exception) {
             AutomationState.log("✘ Clear error: ${e.message}")
             exitHome(service)
-            false
+            return false
         }
-    }
-
-    private fun waitFor(
-        service: AccessibilityService,
-        timeoutMs: Long,
-        vararg texts: String
-    ): Boolean {
-        val end = SystemClock.uptimeMillis() + timeoutMs
-        while (SystemClock.uptimeMillis() < end) {
-            if (StepUtils.shouldStop()) return false
-            val root = service.rootInActiveWindow
-            if (root != null) {
-                val pkg = root.packageName?.toString() ?: ""
-                // Make sure we're in Settings-like package
-                if (pkg.contains("settings") || pkg.contains("android") || pkg.contains("com.android")) {
-                    val node = NodeFinder.findByText(root, *texts)
-                        ?: NodeFinder.findByTextContains(root, *texts)
-                    if (node != null) return true
-                }
-            }
-            StepUtils.sleepMs(StepUtils.POLL_MS)
-        }
-        return false
     }
 
     private fun tapWhen(
@@ -142,9 +124,7 @@ object PayPalClearData {
             if (root != null) {
                 val node = NodeFinder.findByText(root, *texts)
                     ?: NodeFinder.findByTextContains(root, *texts)
-                if (node != null) {
-                    if (NodeFinder.click(node)) return true
-                }
+                if (node != null && NodeFinder.click(node)) return true
             }
             StepUtils.sleepMs(StepUtils.POLL_MS)
         }
