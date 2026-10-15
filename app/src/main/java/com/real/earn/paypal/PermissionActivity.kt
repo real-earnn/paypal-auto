@@ -1,6 +1,9 @@
 package com.real.earn.paypal
 
+import android.app.Activity
 import android.content.Intent
+import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Bundle
 import android.widget.TextView
 import android.widget.Toast
@@ -23,6 +26,10 @@ class PermissionActivity : AppCompatActivity() {
     private var dialingCode: String = ""
     private var price: Double = 0.0
 
+    companion object {
+        private const val REQ_RINGTONE = 5001
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityPermissionBinding.inflate(layoutInflater)
@@ -43,13 +50,23 @@ class PermissionActivity : AppCompatActivity() {
         binding.rowOverlay.setOnClickListener { PermissionHelper.openOverlaySettings(this) }
         binding.rowBattery.setOnClickListener { PermissionHelper.openBatterySettings(this) }
 
-        // ── Auto Flight toggle ──
+        // ── Auto Flight Mode ──
         binding.switchAutoFlight.isChecked = prefs.autoFlightMode
         binding.switchAutoFlight.setOnCheckedChangeListener { _, checked ->
             prefs.autoFlightMode = checked
         }
 
-        binding.btnTestFlight.setOnClickListener { runFlightTest() }
+        // ── Captcha Auto Alarm ──
+        binding.switchCaptchaAlarm.isChecked = prefs.captchaAlarmEnabled
+        binding.switchCaptchaAlarm.setOnCheckedChangeListener { _, checked ->
+            prefs.captchaAlarmEnabled = checked
+            updateSoundLabel()
+        }
+
+        // ── Choose Sound ──
+        binding.btnChooseSound.setOnClickListener { openRingtonePicker() }
+
+        updateSoundLabel()
 
         binding.btnStart.setOnClickListener {
             if (!allGranted()) {
@@ -105,27 +122,87 @@ class PermissionActivity : AppCompatActivity() {
                 PermissionHelper.isBatteryOptimizationIgnored(this)
     }
 
+    private fun updateSoundLabel() {
+        if (!prefs.captchaAlarmEnabled) {
+            binding.tvSelectedSound.text = "Alarm disabled"
+            binding.btnChooseSound.isEnabled = false
+            binding.btnChooseSound.alpha = 0.5f
+            return
+        }
+        binding.btnChooseSound.isEnabled = true
+        binding.btnChooseSound.alpha = 1f
+
+        val uri = prefs.captchaAlarmUri
+        if (uri.isNullOrEmpty()) {
+            binding.tvSelectedSound.text = "Default system alarm"
+        } else {
+            val name = try {
+                val r = RingtoneManager.getRingtone(this, Uri.parse(uri))
+                r?.getTitle(this) ?: "Custom sound"
+            } catch (_: Exception) { "Custom sound" }
+            binding.tvSelectedSound.text = "Selected: $name"
+        }
+    }
+
+    private fun openRingtonePicker() {
+        try {
+            val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                putExtra(
+                    RingtoneManager.EXTRA_RINGTONE_TYPE,
+                    RingtoneManager.TYPE_ALARM or
+                            RingtoneManager.TYPE_NOTIFICATION or
+                            RingtoneManager.TYPE_RINGTONE
+                )
+                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+                putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Select Captcha Alarm Sound")
+
+                val existing = prefs.captchaAlarmUri
+                if (!existing.isNullOrEmpty()) {
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, Uri.parse(existing))
+                } else {
+                    putExtra(
+                        RingtoneManager.EXTRA_RINGTONE_DEFAULT_URI,
+                        RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                    )
+                }
+            }
+            startActivityForResult(intent, REQ_RINGTONE)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Ringtone picker not available: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_RINGTONE && resultCode == Activity.RESULT_OK) {
+            val uri = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI) as? Uri
+            }
+
+            if (uri != null) {
+                prefs.captchaAlarmUri = uri.toString()
+                Toast.makeText(this, "Alarm sound saved", Toast.LENGTH_SHORT).show()
+            } else {
+                // User picked "Default" or silent
+                prefs.captchaAlarmUri = null
+                Toast.makeText(this, "Default alarm set", Toast.LENGTH_SHORT).show()
+            }
+            updateSoundLabel()
+        }
+    }
+
     private fun runFlightTest() {
         val svc = PayPalAccessibilityService.instance
         if (svc == null) {
             Toast.makeText(this, "Accessibility service ON nahi hai", Toast.LENGTH_LONG).show()
             return
         }
-
-        binding.tvTestResult.text = "Testing…"
-        binding.btnTestFlight.isEnabled = false
-
         Thread {
-            val ok = AirplaneModeController.toggleCycle(svc)
-            runOnUiThread {
-                binding.btnTestFlight.isEnabled = true
-                binding.tvTestResult.text =
-                    if (ok) "✔ Test passed — Flight toggled ON/OFF"
-                    else "✘ Test fail — logs check karo"
-                binding.tvTestResult.setTextColor(
-                    if (ok) getColor(R.color.success_green) else getColor(R.color.error_red)
-                )
-            }
+            AirplaneModeController.toggleCycle(svc)
         }.start()
     }
 }
