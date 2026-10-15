@@ -39,6 +39,7 @@
             android:textColor="@color/text_dim"
             android:textSize="13sp" />
 
+        <!-- 1. Accessibility -->
         <LinearLayout
             android:id="@+id/rowAccessibility"
             android:layout_width="match_parent"
@@ -75,6 +76,7 @@
                 android:textStyle="bold" />
         </LinearLayout>
 
+        <!-- 2. Overlay -->
         <LinearLayout
             android:id="@+id/rowOverlay"
             android:layout_width="match_parent"
@@ -111,6 +113,7 @@
                 android:textStyle="bold" />
         </LinearLayout>
 
+        <!-- 3. Battery -->
         <LinearLayout
             android:id="@+id/rowBattery"
             android:layout_width="match_parent"
@@ -147,6 +150,7 @@
                 android:textStyle="bold" />
         </LinearLayout>
 
+        <!-- 4. Auto Flight Mode -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -190,28 +194,76 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content" />
             </LinearLayout>
+        </LinearLayout>
+
+        <!-- 5. Captcha Auto Alarm -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:background="@color/bg_card"
+            android:orientation="vertical"
+            android:padding="14dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="5. Captcha Auto Alarm"
+                        android:textColor="@color/text_light"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Picture captcha aaye to alarm bajega (aap solve karein)"
+                        android:textColor="@color/text_dim"
+                        android:textSize="11sp" />
+
+                </LinearLayout>
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/switchCaptchaAlarm"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
 
             <Button
-                android:id="@+id/btnTestFlight"
+                android:id="@+id/btnChooseSound"
                 android:layout_width="match_parent"
                 android:layout_height="44dp"
                 android:layout_marginTop="10dp"
                 android:backgroundTint="@color/paypal_blue_dark"
-                android:text="🧪 Test Flight Toggle"
+                android:text="🎵 Choose Alarm Sound"
                 android:textColor="@color/white"
                 android:textSize="13sp"
                 android:textStyle="bold" />
 
             <TextView
-                android:id="@+id/tvTestResult"
+                android:id="@+id/tvSelectedSound"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:text=""
+                android:text="Default system alarm"
                 android:textColor="@color/text_dim"
                 android:textSize="11sp" />
+
         </LinearLayout>
 
+        <!-- Start button -->
         <Button
             android:id="@+id/btnStart"
             android:layout_width="match_parent"
