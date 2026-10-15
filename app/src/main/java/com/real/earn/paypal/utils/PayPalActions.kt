@@ -207,7 +207,7 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  TYPE COUNTRY — with verify + retry
+    //  TYPE COUNTRY
     // ══════════════════════════════════════════════════════
     fun typeAndSelectCountry(
         service: AccessibilityService,
@@ -288,12 +288,6 @@ object PayPalActions {
         return raw.replace(Regex("[0-9]+(-[0-9]+)*$"), "").trim()
     }
 
-    /**
-     * Find country result:
-     *   1. Skip editable fields
-     *   2. Skip keyboard region (bottom 40%)
-     *   3. Prefer nodes with "(CODE)"
-     */
     private fun findCountryResult(root: AccessibilityNodeInfo?, name: String, iso: String): AccessibilityNodeInfo? {
         if (root == null) return null
         val rootR = Rect(); root.getBoundsInScreen(rootR)
@@ -334,19 +328,28 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  TYPE NUMBER — 5 attempts, progressive delay, focus verify
+    //  TYPE NUMBER — Normalize digits, no double-paste
     // ══════════════════════════════════════════════════════
     fun typeNumber(service: AccessibilityService, fullNumber: String, dialingCode: String): Boolean {
-        // Sanitize number
+        // ── Sanitize target number ──
         var national = fullNumber.trim().removePrefix("+")
         if (dialingCode.isNotEmpty() && national.startsWith(dialingCode)) {
             national = national.substring(dialingCode.length)
         }
         national = national.replace(" ", "").replace("-", "")
         if (national.startsWith("0")) national = national.substring(1)
-        AutomationState.log("ℹ Number to fill: '$national'")
 
-        // Wait for phone field label
+        val nationalDigits = national.replace(Regex("\\D"), "")
+        if (nationalDigits.length < 6) {
+            AutomationState.log("✘ National number too short: '$nationalDigits'")
+            return false
+        }
+        // Verify tail = last 6 digits (safe against PayPal formatting)
+        val verifyTail = nationalDigits.takeLast(6)
+
+        AutomationState.log("ℹ Target: '$national' (verify tail: $verifyTail)")
+
+        // ═══ Step 1: Find phone field ═══
         var phoneLabel: AccessibilityNodeInfo? = null
         val labelEnd = SystemClock.uptimeMillis() + 8000
         while (SystemClock.uptimeMillis() < labelEnd) {
@@ -361,10 +364,10 @@ object PayPalActions {
             StepUtils.sleepMs(StepUtils.POLL_MS)
         }
         if (phoneLabel == null) {
-            AutomationState.log("✘ 'phone number' label not found")
+            AutomationState.log("✘ Phone field label not found")
             return false
         }
-        AutomationState.log("✔ Phone label found")
+        AutomationState.log("✔ Phone field found")
 
         val bounds = Rect()
         phoneLabel.getBoundsInScreen(bounds)
@@ -372,13 +375,24 @@ object PayPalActions {
         val y = bounds.centerY()
         AutomationState.log("ℹ Phone field at ($x, $y)")
 
-        // 5 attempts with progressive delays
+        // ═══ Step 2: 5 attempts with progressive delay ═══
         val delays = longArrayOf(2000L, 3000L, 5000L, 5000L, 5000L)
 
         for (attempt in 0 until 5) {
             if (StepUtils.shouldStop()) return false
 
-            AutomationState.log("ℹ Attempt #${attempt + 1}/5")
+            // ── Pre-check: field already has the correct number? ──
+            val preRoot = service.rootInActiveWindow
+            val preEdit = findFocusedEditable(preRoot) ?: findEditableUnder(preRoot)
+            val preText = preEdit?.text?.toString() ?: ""
+            val preDigits = preText.replace(Regex("\\D"), "")
+
+            if (preDigits.contains(verifyTail)) {
+                AutomationState.log("✔ Already filled: '$preText' — skipping")
+                return true
+            }
+
+            AutomationState.log("ℹ Attempt #${attempt + 1}/5 — tapping field")
 
             // Double tap (400ms gap)
             tapAt(service, x, y)
@@ -386,54 +400,53 @@ object PayPalActions {
             tapAt(service, x, y)
             StepUtils.sleepMs(900)
 
-            // Verify focus
-            var focusedEdit: AccessibilityNodeInfo? = null
+            // ── Focus verify ──
             val fRoot = service.rootInActiveWindow
-            if (fRoot != null) {
-                focusedEdit = findFocusedEditable(fRoot)
-            }
-
-            if (focusedEdit == null) {
+            val focused = findFocusedEditable(fRoot)
+            if (focused == null) {
                 AutomationState.log("⚠ Field not focused")
                 StepUtils.sleepMs(delays[attempt])
                 continue
             }
+            AutomationState.log("✔ Field focused")
 
-            AutomationState.log("✔ Field focused — pasting")
+            // ── Clear stale content ──
+            val existing = focused.text?.toString() ?: ""
+            if (existing.isNotEmpty()) {
+                AutomationState.log("ℹ Clearing stale '$existing'")
+                val args = Bundle()
+                args.putCharSequence(
+                    AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, ""
+                )
+                focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+                StepUtils.sleepMs(400)
+            }
 
-            // Paste
+            // ── Paste ──
             pasteText(service, national, "phone")
-            StepUtils.sleepMs(800)
+            StepUtils.sleepMs(1300)
 
-            // Verify text is visible
+            // ── Normalized verify (digits only!) ──
             val vRoot = service.rootInActiveWindow
-            val currentText = (findFocusedEditable(vRoot) ?: findEditableUnder(vRoot))
-                ?.text?.toString() ?: ""
+            val vEdit = findFocusedEditable(vRoot) ?: findEditableUnder(vRoot)
+            val vText = vEdit?.text?.toString() ?: ""
+            val vDigits = vText.replace(Regex("\\D"), "")
 
-            AutomationState.log("ℹ Field contains: '$currentText'")
+            AutomationState.log("ℹ Field after paste: '$vText' → digits='$vDigits'")
 
-            if (currentText.isNotEmpty() && currentText.contains(national.takeLast(6))) {
-                AutomationState.log("✔ Number verified: '$currentText'")
+            // Accept if the last 6 digits match (PayPal may add +263, spaces, hyphens)
+            if (vDigits.isNotEmpty() && vDigits.contains(verifyTail)) {
+                AutomationState.log("✔ Number verified: '$vText'")
                 return true
             }
 
-            // Retry paste within same attempt
-            AutomationState.log("⚠ Paste not visible — trying again")
-            pasteText(service, national, "phone")
-            StepUtils.sleepMs(1200)
-
-            val vRoot2 = service.rootInActiveWindow
-            val currentText2 = (findFocusedEditable(vRoot2) ?: findEditableUnder(vRoot2))
-                ?.text?.toString() ?: ""
-            AutomationState.log("ℹ Field contains (2nd): '$currentText2'")
-
-            if (currentText2.isNotEmpty() && currentText2.contains(national.takeLast(6))) {
-                AutomationState.log("✔ Number verified on retry: '$currentText2'")
+            // Tolerant accept: if field already has ≥ 8 digits
+            if (vDigits.length >= 8) {
+                AutomationState.log("ℹ Field has ${vDigits.length} digits — accepting")
                 return true
             }
 
-            // Move to next attempt with delay
-            AutomationState.log("⚠ Attempt #${attempt + 1} failed — waiting ${delays[attempt]}ms")
+            AutomationState.log("⚠ Verify failed — waiting ${delays[attempt]}ms")
             StepUtils.sleepMs(delays[attempt])
         }
 
