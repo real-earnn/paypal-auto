@@ -2,9 +2,13 @@ package com.real.earn.paypal.utils
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.graphics.Path
 import android.graphics.Rect
+import android.os.Bundle
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityNodeInfo
 import com.real.earn.paypal.service.AutomationState
@@ -110,9 +114,8 @@ object PayPalActions {
                             AutomationState.log("✔ Dialog opened via US tap")
                             return true
                         } else {
-                            AutomationState.log("⚠ Tap done but dialog not visible — retrying")
+                            AutomationState.log("⚠ Tap done but dialog not visible — retry")
                             StepUtils.sleepMs(800)
-                            // retry same spot once
                             tapNode(service, usNode)
                             StepUtils.sleepMs(2000)
                             val r3 = service.rootInActiveWindow
@@ -122,52 +125,33 @@ object PayPalActions {
                             }
                         }
                     } else {
-                        AutomationState.log("⚠ US tap failed (bounds invalid?)")
+                        AutomationState.log("⚠ US tap failed")
                     }
                 }
             }
-
             StepUtils.sleepMs(500)
         }
-
         AutomationState.log("✘ US button not found in ${timeoutMs}ms")
         return false
     }
 
-    /**
-     * 🎯 Taps a node. Tries in order:
-     *   1. node.performAction(CLICK)
-     *   2. clickable parent
-     *   3. GESTURE TAP at node's screen bounds center (most reliable)
-     */
     private fun tapNode(service: AccessibilityService, node: AccessibilityNodeInfo): Boolean {
-        // 1. Direct click
-        if (node.isClickable) {
-            if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                AutomationState.log("  ↳ click: direct")
-                return true
-            }
+        if (node.isClickable && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            AutomationState.log("  ↳ click: direct")
+            return true
         }
-
-        // 2. Clickable parent
         val parent = NodeFinder.findClickableParent(node)
-        if (parent != null) {
-            if (parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                AutomationState.log("  ↳ click: parent")
-                return true
-            }
+        if (parent != null && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            AutomationState.log("  ↳ click: parent")
+            return true
         }
-
-        // 3. Gesture tap at bounds center
         val bounds = Rect()
         node.getBoundsInScreen(bounds)
         if (bounds.width() > 0 && bounds.height() > 0) {
-            val x = bounds.centerX()
-            val y = bounds.centerY()
+            val x = bounds.centerX(); val y = bounds.centerY()
             AutomationState.log("  ↳ tap at ($x, $y)")
             return tapAt(service, x, y)
         }
-
         AutomationState.log("  ↳ tap: bounds invalid")
         return false
     }
@@ -197,17 +181,13 @@ object PayPalActions {
         while (queue.isNotEmpty()) {
             val n = queue.removeFirst()
             if (!n.isVisibleToUser) continue
-
             val t = n.text?.toString()?.trim() ?: ""
             val d = n.contentDescription?.toString()?.trim() ?: ""
-            val combined = "$t $d".trim()
-
-            if (matchesUS(combined)) {
+            if (matchesUS("$t $d".trim())) {
                 val r = Rect(); n.getBoundsInScreen(r)
                 AutomationState.log("ℹ US match: T='$t' D='$d' bounds=${r.centerX()},${r.centerY()}")
                 return n
             }
-
             for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
         }
         return null
@@ -256,14 +236,12 @@ object PayPalActions {
             return false
         }
 
-        // Tap the search field (bounds-based)
         tapNode(service, searchNode)
         AutomationState.log("ℹ Search tapped")
         StepUtils.sleepMs(700)
 
-        var inputField = findEditableUnder(service.rootInActiveWindow) ?: searchNode
-        NodeFinder.setText(inputField, countryName)
-        AutomationState.log("ℹ Typed: $countryName")
+        // Use clipboard+paste for search too (safer)
+        pasteText(service, countryName, "search")
         StepUtils.sleepMs(1800)
 
         val end = SystemClock.uptimeMillis() + 4500
@@ -304,7 +282,7 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  TYPE NUMBER
+    //  TYPE NUMBER — DOUBLE TAP + CLIPBOARD PASTE
     // ══════════════════════════════════════════════════════
     fun typeNumber(service: AccessibilityService, fullNumber: String, dialingCode: String): Boolean {
         var national = fullNumber.trim().removePrefix("+")
@@ -312,9 +290,11 @@ object PayPalActions {
             national = national.substring(dialingCode.length)
         }
         national = national.replace(" ", "").replace("-", "")
+        AutomationState.log("ℹ Preparing number: $national")
 
         StepUtils.sleepMs(1500)
 
+        // ═══ 1. Find phone number field ═══
         var phoneLabel: AccessibilityNodeInfo? = null
         val end = SystemClock.uptimeMillis() + 5000
         while (SystemClock.uptimeMillis() < end) {
@@ -322,24 +302,95 @@ object PayPalActions {
             val root = service.rootInActiveWindow
             if (root != null) {
                 phoneLabel = findByTextContains(root, "phone number")
+                    ?: findByTextContains(root, "email or number")
+                    ?: findByTextContains(root, "Email or phone")
                 if (phoneLabel != null) break
             }
             StepUtils.sleepMs(StepUtils.POLL_MS)
         }
 
         if (phoneLabel == null) {
-            AutomationState.log("✘ 'phone number' not found")
+            AutomationState.log("✘ 'phone number' field not found")
             return false
         }
 
-        tapNode(service, phoneLabel)
-        StepUtils.sleepMs(600)
+        // ═══ 2. Get bounds & DOUBLE TAP to focus ═══
+        val bounds = Rect()
+        phoneLabel.getBoundsInScreen(bounds)
+        val x = bounds.centerX()
+        val y = bounds.centerY()
+        AutomationState.log("ℹ Phone field at ($x, $y) — double tap")
 
-        val inputField = findEditableUnder(service.rootInActiveWindow) ?: phoneLabel
-        NodeFinder.setText(inputField, national)
-        AutomationState.log("ℹ Number typed: $national")
+        // First tap
+        tapAt(service, x, y)
+        StepUtils.sleepMs(250)
+        // Second tap (double tap → focus + maybe select all)
+        tapAt(service, x, y)
+        StepUtils.sleepMs(700)
+
+        // ═══ 3. Copy to clipboard & paste ═══
+        pasteText(service, national, "phone")
+
         StepUtils.sleepMs(800)
+
+        // ═══ 4. Verify text was entered ═══
+        val verifyRoot = service.rootInActiveWindow
+        if (verifyRoot != null) {
+            val edit = findEditableUnder(verifyRoot)
+            val entered = edit?.text?.toString() ?: ""
+            AutomationState.log("ℹ Field now contains: '$entered'")
+        }
+
         return true
+    }
+
+    /**
+     * Puts text in clipboard, then triggers PASTE action on focused editable node.
+     * Fallback: tries ACTION_SET_TEXT with Bundle.
+     */
+    private fun pasteText(service: AccessibilityService, text: String, label: String) {
+        // ── 1. Clipboard copy ──
+        try {
+            val cm = service.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cm.setPrimaryClip(ClipData.newPlainText(label, text))
+            AutomationState.log("ℹ Clipboard set: '$text'")
+        } catch (e: Exception) {
+            AutomationState.log("✘ Clipboard fail: ${e.message}")
+        }
+
+        StepUtils.sleepMs(200)
+
+        // ── 2. Find focused editable node ──
+        val root = service.rootInActiveWindow
+        val edit = findEditableUnder(root)
+
+        if (edit != null) {
+            // Focus the node first
+            edit.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+
+            // Try ACTION_PASTE
+            val pasteOk = edit.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+            if (pasteOk) {
+                AutomationState.log("✔ Pasted via ACTION_PASTE")
+                return
+            }
+
+            // Fallback: ACTION_SET_TEXT with Bundle
+            val args = Bundle()
+            args.putCharSequence(
+                AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                text
+            )
+            val setOk = edit.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+            if (setOk) {
+                AutomationState.log("✔ Set text via ACTION_SET_TEXT")
+                return
+            }
+
+            AutomationState.log("⚠ Both paste & setText failed")
+        } else {
+            AutomationState.log("⚠ No editable node — clipboard has '$text', manual paste needed")
+        }
     }
 
     // ══════════════════════════════════════════════════════
