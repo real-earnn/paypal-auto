@@ -105,7 +105,7 @@ object PayPalActions {
 
                 val usNode = findUsNode(root)
                 if (usNode != null) {
-                    AutomationState.log("ℹ US found — tapping via bounds")
+                    AutomationState.log("ℹ US found — tapping")
                     val clicked = tapNode(service, usNode)
                     if (clicked) {
                         StepUtils.sleepMs(2000)
@@ -124,14 +124,12 @@ object PayPalActions {
                                 return true
                             }
                         }
-                    } else {
-                        AutomationState.log("⚠ US tap failed")
                     }
                 }
             }
             StepUtils.sleepMs(500)
         }
-        AutomationState.log("✘ US button not found in ${timeoutMs}ms")
+        AutomationState.log("✘ US button not found")
         return false
     }
 
@@ -209,7 +207,7 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  TYPE COUNTRY
+    //  TYPE COUNTRY — with verify + retry
     // ══════════════════════════════════════════════════════
     fun typeAndSelectCountry(
         service: AccessibilityService,
@@ -219,6 +217,7 @@ object PayPalActions {
         val countryName = cleanCountryName(countryNameRaw)
         AutomationState.log("ℹ Country: $countryName (from $countryNameRaw)")
 
+        // 1. Find and tap "Search"
         var searchNode: AccessibilityNodeInfo? = null
         val sEnd = SystemClock.uptimeMillis() + 5000
         while (SystemClock.uptimeMillis() < sEnd) {
@@ -240,23 +239,53 @@ object PayPalActions {
         AutomationState.log("ℹ Search tapped")
         StepUtils.sleepMs(700)
 
-        // Use clipboard+paste for search too (safer)
+        // 2. Paste country name
         pasteText(service, countryName, "search")
+        AutomationState.log("ℹ Paste done — waiting for result")
         StepUtils.sleepMs(1800)
 
-        val end = SystemClock.uptimeMillis() + 4500
-        while (SystemClock.uptimeMillis() < end) {
+        // 3. Find + click result — with retry (max 3 attempts)
+        var attempt = 0
+        while (attempt < 3) {
+            attempt++
             if (StepUtils.shouldStop()) return false
-            val r = service.rootInActiveWindow
-            val match = findCountryResult(r, countryName, countryIso)
-            if (match != null && tapNode(service, match)) {
-                AutomationState.log("✔ Country clicked: $countryName")
-                StepUtils.sleepMs(1500)
+
+            val root = service.rootInActiveWindow
+            if (root == null) {
+                StepUtils.sleepMs(800)
+                continue
+            }
+
+            val match = findCountryResult(root, countryName, countryIso)
+            if (match == null) {
+                AutomationState.log("⚠ Result not found (attempt $attempt)")
+                StepUtils.sleepMs(1000)
+                continue
+            }
+
+            AutomationState.log("ℹ Clicking result (attempt $attempt)")
+            tapNode(service, match)
+            StepUtils.sleepMs(2000)
+
+            // 4. Verify: dialog closed? (Search text no longer visible)
+            val after = service.rootInActiveWindow
+            if (after == null) {
+                // Screen unclear — treat as success
+                AutomationState.log("✔ Dialog seems closed")
                 return true
             }
-            StepUtils.sleepMs(StepUtils.POLL_MS)
+            val stillOpen = findByTextEquals(after, "Search") != null
+            if (!stillOpen) {
+                AutomationState.log("✔ Country selected, dialog closed")
+                StepUtils.sleepMs(1200)
+                return true
+            }
+
+            AutomationState.log("⚠ Dialog still open — retry click")
+            StepUtils.sleepMs(500)
         }
-        AutomationState.log("✘ Country result not found")
+
+        AutomationState.log("✘ Country selection failed after 3 attempts")
         return false
     }
 
@@ -264,21 +293,54 @@ object PayPalActions {
         return raw.replace(Regex("[0-9]+(-[0-9]+)*$"), "").trim()
     }
 
+    /**
+     * 🎯 Find country result with 3 rules:
+     *   1. Skip editable fields (search input)
+     *   2. Skip keyboard region (bottom 40% of screen)
+     *   3. Prefer nodes with "(CODE)" pattern
+     */
     private fun findCountryResult(root: AccessibilityNodeInfo?, name: String, iso: String): AccessibilityNodeInfo? {
         if (root == null) return null
+        val rootR = Rect(); root.getBoundsInScreen(rootR)
+        val keyboardTop = rootR.top + (rootR.height() * 0.60).toInt()
+
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
+        var fallback: AccessibilityNodeInfo? = null
+
         while (queue.isNotEmpty()) {
             val n = queue.removeFirst()
+
+            // Rule 1: skip editable
+            if (n.isEditable) continue
+
             val t = n.text?.toString() ?: ""
-            if (t.contains(name, true) &&
-                (iso.isBlank() || t.contains("($iso)", true))
-            ) {
+            if (!t.contains(name, ignoreCase = true)) {
+                // still descend to children
+                for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
+                continue
+            }
+
+            // Rule 2: skip keyboard region
+            val r = Rect(); n.getBoundsInScreen(r)
+            if (r.top > keyboardTop) continue
+
+            // Rule 3: prefer "(code)" pattern
+            val hasCodePattern = t.contains("(", false) && t.contains(")", false)
+            if (hasCodePattern) {
+                AutomationState.log("✔ Best match: '$t'")
                 return NodeFinder.findClickableParent(n) ?: n
             }
+
+            // Fallback candidate (name matched but no brackets)
+            if (fallback == null) {
+                fallback = NodeFinder.findClickableParent(n) ?: n
+                AutomationState.log("ℹ Fallback candidate: '$t'")
+            }
+
             for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
         }
-        return null
+        return fallback
     }
 
     // ══════════════════════════════════════════════════════
@@ -294,7 +356,6 @@ object PayPalActions {
 
         StepUtils.sleepMs(1500)
 
-        // ═══ 1. Find phone number field ═══
         var phoneLabel: AccessibilityNodeInfo? = null
         val end = SystemClock.uptimeMillis() + 5000
         while (SystemClock.uptimeMillis() < end) {
@@ -314,42 +375,30 @@ object PayPalActions {
             return false
         }
 
-        // ═══ 2. Get bounds & DOUBLE TAP to focus ═══
         val bounds = Rect()
         phoneLabel.getBoundsInScreen(bounds)
         val x = bounds.centerX()
         val y = bounds.centerY()
         AutomationState.log("ℹ Phone field at ($x, $y) — double tap")
 
-        // First tap
         tapAt(service, x, y)
         StepUtils.sleepMs(250)
-        // Second tap (double tap → focus + maybe select all)
         tapAt(service, x, y)
         StepUtils.sleepMs(700)
 
-        // ═══ 3. Copy to clipboard & paste ═══
         pasteText(service, national, "phone")
-
         StepUtils.sleepMs(800)
 
-        // ═══ 4. Verify text was entered ═══
         val verifyRoot = service.rootInActiveWindow
         if (verifyRoot != null) {
             val edit = findEditableUnder(verifyRoot)
             val entered = edit?.text?.toString() ?: ""
             AutomationState.log("ℹ Field now contains: '$entered'")
         }
-
         return true
     }
 
-    /**
-     * Puts text in clipboard, then triggers PASTE action on focused editable node.
-     * Fallback: tries ACTION_SET_TEXT with Bundle.
-     */
     private fun pasteText(service: AccessibilityService, text: String, label: String) {
-        // ── 1. Clipboard copy ──
         try {
             val cm = service.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             cm.setPrimaryClip(ClipData.newPlainText(label, text))
@@ -360,22 +409,18 @@ object PayPalActions {
 
         StepUtils.sleepMs(200)
 
-        // ── 2. Find focused editable node ──
         val root = service.rootInActiveWindow
         val edit = findEditableUnder(root)
 
         if (edit != null) {
-            // Focus the node first
             edit.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
 
-            // Try ACTION_PASTE
             val pasteOk = edit.performAction(AccessibilityNodeInfo.ACTION_PASTE)
             if (pasteOk) {
                 AutomationState.log("✔ Pasted via ACTION_PASTE")
                 return
             }
 
-            // Fallback: ACTION_SET_TEXT with Bundle
             val args = Bundle()
             args.putCharSequence(
                 AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
@@ -389,7 +434,7 @@ object PayPalActions {
 
             AutomationState.log("⚠ Both paste & setText failed")
         } else {
-            AutomationState.log("⚠ No editable node — clipboard has '$text', manual paste needed")
+            AutomationState.log("⚠ No editable node")
         }
     }
 
