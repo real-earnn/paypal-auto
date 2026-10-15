@@ -1,7 +1,9 @@
 package com.real.earn.paypal.utils
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
 import android.content.Context
+import android.graphics.Path
 import android.graphics.Rect
 import android.os.SystemClock
 import android.provider.Settings
@@ -17,9 +19,8 @@ object AirplaneModeController {
             if (isAirplaneModeOn(service)) {
                 AutomationState.log("ℹ Flight was ON — normalizing")
                 if (openQsAndWaitTile(service, 2000)) {
-                    dumpScreenText(service, "Normalize-OFF-before-click")
                     clickTile(service)
-                    waitAirplaneState(service, false, 2000)
+                    waitAirplaneState(service, false, 2500)
                 }
                 service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
                 StepUtils.waitForPackageExit(service, "systemui", 1500)
@@ -28,22 +29,26 @@ object AirplaneModeController {
             AutomationState.log("✈ Flight ON")
             if (!openQsAndWaitTile(service, 2500)) {
                 AutomationState.log("✘ QS tile not found")
-                dumpScreenText(service, "QS-not-open-FAIL")
                 goHome(service); return false
             }
-
-            // 🟢 DUMP entire screen text BEFORE clicking
-            dumpScreenText(service, "Before-ON-click")
 
             if (!clickTile(service)) {
                 AutomationState.log("✘ ON click fail")
-                dumpScreenText(service, "ON-click-FAIL")
                 goHome(service); return false
             }
             if (!waitAirplaneState(service, true, 3000)) {
-                AutomationState.log("✘ ON not confirmed")
-                dumpScreenText(service, "ON-not-confirmed")
-                goHome(service); return false
+                AutomationState.log("✘ ON not confirmed (first try) — re-tapping")
+                // 🟢 Second attempt: re-open QS if closed, tap again
+                if (!isQsOpen(service)) {
+                    service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS)
+                    StepUtils.waitForPackage(service, "systemui", 1500)
+                    StepUtils.sleepMs(600)
+                }
+                clickTile(service)
+                if (!waitAirplaneState(service, true, 3000)) {
+                    AutomationState.log("✘ ON not confirmed (after retry)")
+                    goHome(service); return false
+                }
             }
             AutomationState.log("✔ Flight ON")
 
@@ -52,26 +57,30 @@ object AirplaneModeController {
             if (!isQsOpen(service)) {
                 service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS)
                 StepUtils.waitForPackage(service, "systemui", 1500)
-                StepUtils.sleepMs(500)
+                StepUtils.sleepMs(600)
             }
-
-            // 🟢 DUMP before OFF click (state changed now)
-            dumpScreenText(service, "Before-OFF-click")
 
             if (!clickTile(service)) {
                 service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS)
                 StepUtils.waitForPackage(service, "systemui", 1500)
-                StepUtils.sleepMs(500)
+                StepUtils.sleepMs(600)
                 if (!clickTile(service)) {
                     AutomationState.log("✘ OFF click fail")
-                    dumpScreenText(service, "OFF-click-FAIL")
                     goHome(service); return false
                 }
             }
             if (!waitAirplaneState(service, false, 3000)) {
-                AutomationState.log("✘ OFF not confirmed")
-                dumpScreenText(service, "OFF-not-confirmed")
-                goHome(service); return false
+                AutomationState.log("✘ OFF not confirmed (first try) — re-tapping")
+                if (!isQsOpen(service)) {
+                    service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS)
+                    StepUtils.waitForPackage(service, "systemui", 1500)
+                    StepUtils.sleepMs(600)
+                }
+                clickTile(service)
+                if (!waitAirplaneState(service, false, 3000)) {
+                    AutomationState.log("✘ OFF not confirmed (after retry)")
+                    goHome(service); return false
+                }
             }
             AutomationState.log("✔ Flight OFF")
 
@@ -101,9 +110,49 @@ object AirplaneModeController {
     private fun isQsOpen(service: AccessibilityService): Boolean =
         StepUtils.isPackageForeground(service, "systemui")
 
+    /**
+     * 🟢 FIXED: Uses GESTURE TAP on the tile's bounds (not performAction)
+     * This works even when clickable flag is on a wrong parent container.
+     */
     private fun clickTile(service: AccessibilityService): Boolean {
-        val tile = findTile(service) ?: return false
-        return NodeFinder.click(tile)
+        val pick = findTile(service) ?: return false
+
+        // Primary: gesture tap at tile's bounds center
+        val r = Rect()
+        pick.boundsNode.getBoundsInScreen(r)
+        if (r.width() > 0 && r.height() > 0) {
+            val x = r.centerX()
+            val y = r.centerY()
+            AutomationState.log("  ↳ TAP at ($x, $y) size=${r.width()}x${r.height()}")
+            if (tapAt(service, x, y)) return true
+        }
+
+        // Fallback: direct clickable action
+        if (pick.clickableNode != null &&
+            pick.clickableNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            AutomationState.log("  ↳ performAction CLICK (fallback)")
+            return true
+        }
+        return false
+    }
+
+    private fun tapAt(service: AccessibilityService, x: Int, y: Int): Boolean {
+        return try {
+            val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
+            val stroke = GestureDescription.StrokeDescription(path, 0, 60)
+            val gesture = GestureDescription.Builder().addStroke(stroke).build()
+            val latch = java.util.concurrent.CountDownLatch(1)
+            var ok = false
+            service.dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
+                override fun onCompleted(d: GestureDescription?) { ok = true; latch.countDown() }
+                override fun onCancelled(d: GestureDescription?) { ok = false; latch.countDown() }
+            }, null)
+            latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
+            ok
+        } catch (e: Exception) {
+            AutomationState.log("  ↳ tapAt err: ${e.message}")
+            false
+        }
     }
 
     private fun waitAirplaneState(service: AccessibilityService, desired: Boolean, timeoutMs: Long): Boolean {
@@ -116,70 +165,31 @@ object AirplaneModeController {
         return false
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  🟢 SCREEN TEXT DUMP — pura screen ka saara text log karo
-    // ══════════════════════════════════════════════════════════════════════════
-    private fun dumpScreenText(service: AccessibilityService, tag: String) {
-        val root = service.rootInActiveWindow ?: run {
-            AutomationState.log("═══ DUMP [$tag] — root null ═══")
-            return
-        }
+    // ══════════════════════════════════════════════════════════════════════
+    //  TILE PICKER — Score based, uses both original node and clickable
+    // ══════════════════════════════════════════════════════════════════════
+    data class TilePick(
+        val boundsNode: AccessibilityNodeInfo,   // for gesture tap bounds
+        val clickableNode: AccessibilityNodeInfo?,  // for performAction fallback
+        val score: Int,
+        val desc: String
+    )
 
-        val screenR = Rect(); root.getBoundsInScreen(screenR)
-        AutomationState.log("═══ DUMP [$tag] screen=${screenR.width()}x${screenR.height()} pkg=${root.packageName} ═══")
-
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        var count = 0
-        var lineCount = 0
-
-        while (queue.isNotEmpty() && count < 200) {
-            val n = queue.removeFirst()
-            count++
-
-            val t = n.text?.toString()?.trim() ?: ""
-            val d = n.contentDescription?.toString()?.trim() ?: ""
-            val id = n.viewIdResourceName?.substringAfterLast("/") ?: ""
-            val cls = n.className?.toString()?.substringAfterLast(".") ?: ""
-
-            // Only log nodes with text OR contentDescription (skip empty containers)
-            if (t.isNotEmpty() || d.isNotEmpty()) {
-                val r = Rect(); n.getBoundsInScreen(r)
-                val clickable = if (n.isClickable) "C" else "-"
-                val editable = if (n.isEditable) "E" else "-"
-                val vis = if (n.isVisibleToUser) "V" else "-"
-
-                val textShort = t.take(40).replace("\n", " ")
-                val descShort = d.take(40).replace("\n", " ")
-
-                AutomationState.log("  #$lineCount ${clickable}${editable}${vis} [${r.left},${r.top},${r.right},${r.bottom}] cls=$cls id=$id | T='$textShort' D='$descShort'")
-                lineCount++
-            }
-
-            for (i in 0 until n.childCount) {
-                n.getChild(i)?.let { queue.add(it) }
-            }
-        }
-        AutomationState.log("═══ END DUMP [$tag] — ${lineCount} nodes with text ═══")
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    //  SMART TILE PICKER — Score Based + Full Candidate Log
-    // ══════════════════════════════════════════════════════════════════════════
-    private fun findTile(service: AccessibilityService): AccessibilityNodeInfo? {
+    private fun findTile(service: AccessibilityService): TilePick? {
         val root = service.rootInActiveWindow ?: return null
 
+        val screenR = Rect(); root.getBoundsInScreen(screenR)
+        val screenArea = screenR.width() * screenR.height()
+
         data class Candidate(
-            val node: AccessibilityNodeInfo,
+            val originalNode: AccessibilityNodeInfo,
+            val clickableNode: AccessibilityNodeInfo?,
             val score: Int,
             val desc: String,
             val text: String,
             val id: String,
-            val y: Int
+            val rect: Rect
         )
-
-        val screenR = Rect(); root.getBoundsInScreen(screenR)
-        val screenArea = screenR.width() * screenR.height()
 
         val candidates = mutableListOf<Candidate>()
         val queue = ArrayDeque<AccessibilityNodeInfo>()
@@ -206,14 +216,14 @@ object AirplaneModeController {
 
                 var score = 0
 
-                // 1. Size check
+                // Big node (whole screen)?
                 val nodeArea = r.width() * r.height()
                 if (nodeArea > (screenArea * 0.6).toInt()) score += 30
 
-                // 2. Status bar position
+                // Status bar?
                 if (r.top < 150) score += 20
 
-                // 3. Match quality
+                // Match quality
                 when {
                     descL == "airplane mode" || descL == "flight mode" -> score += 0
                     textL == "airplane mode" || textL == "flight mode" -> score += 2
@@ -222,9 +232,9 @@ object AirplaneModeController {
                     else -> score += 8
                 }
 
-                // 4. Conflicting context
-                val siblingTexts = getParentAndSiblingTexts(n)
-                val combined = (descL + " " + textL + " " + siblingTexts).lowercase()
+                // Only ADJACENT siblings (not the whole panel)
+                val adjacent = getAdjacentSiblingTexts(n)
+                val combined = (descL + " " + textL + " " + adjacent).lowercase()
 
                 if (combined.contains("mobile data")) score += 15
                 if (combined.contains("wi-fi") || combined.contains("wifi")) score += 15
@@ -232,10 +242,12 @@ object AirplaneModeController {
                 if (combined.contains("bluetooth")) score += 10
                 if (combined.contains("hotspot")) score += 10
 
-                val clickable = if (n.isClickable) n else (findClickableAncestor(n) ?: n)
-                candidates.add(Candidate(clickable, score, desc, text, id, r.top))
+                // Find smallest reasonable clickable ancestor (tile-sized)
+                val clickable = findSmallestClickableTile(n)
 
-                // Don't descend — we matched this one
+                candidates.add(Candidate(n, clickable, score, desc, text, id, r))
+
+                // Don't descend
                 continue
             }
 
@@ -247,43 +259,72 @@ object AirplaneModeController {
             return null
         }
 
-        // Sort by score ascending
         val sorted = candidates.sortedBy { it.score }
 
         AutomationState.log("═══ TILE CANDIDATES (${sorted.size}) ═══")
         sorted.forEachIndexed { i, c ->
-            val d = c.desc.take(45).ifEmpty { "—" }
-            val t = c.text.take(25).ifEmpty { "—" }
-            val idShort = c.id.substringAfterLast("/").take(25).ifEmpty { "—" }
-            AutomationState.log("  [${i}] score=${c.score} y=${c.y} id='$idShort' T='$t' D='$d'")
+            val d = c.desc.take(35).ifEmpty { "—" }
+            val t = c.text.take(20).ifEmpty { "—" }
+            val idShort = c.id.substringAfterLast("/").take(20).ifEmpty { "—" }
+            AutomationState.log("  [$i] sc=${c.score} y=${c.rect.top} ${c.rect.width()}x${c.rect.height()} id='$idShort' T='$t' D='$d'")
         }
 
         val picked = sorted.first()
-        AutomationState.log("✔ PICKED: score=${picked.score} y=${picked.y} D='${picked.desc.take(40)}'")
-        return picked.node
+
+        // Bounds node: prefer clickable if it has reasonable size, else original
+        val boundsNode = picked.clickableNode?.let { cn ->
+            val cr = Rect(); cn.getBoundsInScreen(cr)
+            if (cr.width() in 60..700 && cr.height() in 60..700) cn else picked.originalNode
+        } ?: picked.originalNode
+
+        AutomationState.log("✔ PICKED: sc=${picked.score} onNode=${boundsNode === picked.clickableNode} D='${picked.desc.take(30)}'")
+
+        return TilePick(boundsNode, picked.clickableNode, picked.score, picked.desc)
     }
 
-    private fun getParentAndSiblingTexts(node: AccessibilityNodeInfo): String {
+    /** Walk up ancestors, pick the smallest clickable with tile-sized bounds */
+    private fun findSmallestClickableTile(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        var cur: AccessibilityNodeInfo? = node
+        var best: AccessibilityNodeInfo? = null
+        var depth = 0
+        while (cur != null && depth < 8) {
+            if (cur.isClickable) {
+                val r = Rect(); cur.getBoundsInScreen(r)
+                val w = r.width(); val h = r.height()
+                // Tile-sized: 60..700
+                if (w in 60..700 && h in 60..700) {
+                    best = cur   // keep the smallest
+                }
+            }
+            cur = cur.parent
+            depth++
+        }
+        return best
+    }
+
+    /** Only adjacent siblings (within ~250px) — avoids pulling in whole QS panel */
+    private fun getAdjacentSiblingTexts(node: AccessibilityNodeInfo): String {
         val sb = StringBuilder()
         try {
             val parent = node.parent ?: return ""
+            val nr = Rect(); node.getBoundsInScreen(nr)
+
             for (i in 0 until parent.childCount) {
                 val sibling = parent.getChild(i) ?: continue
+                if (sibling === node) continue
+
+                val sr = Rect(); sibling.getBoundsInScreen(sr)
+                val dx = Math.abs(sr.centerX() - nr.centerX())
+                val dy = Math.abs(sr.centerY() - nr.centerY())
+
+                // Only nearby siblings
+                if (dx > 300 && dy > 300) continue
+
                 sibling.text?.toString()?.let { if (it.isNotEmpty()) sb.append(" ").append(it) }
                 sibling.contentDescription?.toString()?.let { if (it.isNotEmpty()) sb.append(" ").append(it) }
             }
         } catch (_: Exception) {}
         return sb.toString()
-    }
-
-    private fun findClickableAncestor(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        var cur = node.parent
-        var d = 0
-        while (cur != null && d < 6) {
-            if (cur.isClickable) return cur
-            cur = cur.parent; d++
-        }
-        return null
     }
 
     private fun goHome(service: AccessibilityService) {
