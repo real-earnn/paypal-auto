@@ -14,6 +14,7 @@ import com.real.earn.paypal.AutomationActivity
 import com.real.earn.paypal.R
 import com.real.earn.paypal.api.ApiClient
 import com.real.earn.paypal.api.GetNumberBody
+import com.real.earn.paypal.api.GetNumberByPrefixBody
 import com.real.earn.paypal.api.ReleaseNumberBody
 import com.real.earn.paypal.auth.AuthManager
 import com.real.earn.paypal.utils.AppPrefs
@@ -36,10 +37,14 @@ class AutomationService : Service() {
     private var overlay: OverlayManager? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
-    private var serviceName: String = ""
+    // 🟢 Mode: "service" | "auto" | "prefix"
+    private var mode: String = "service"
+    private var serviceName: String = "PayPal"
     private var countryName: String = ""
     private var countryCodeIso: String = ""
     private var dialingCode: String = ""
+    private var prefix: String = ""
+    private var file: String = ""
 
     companion object {
         private const val NOTIF_ID = 1001
@@ -50,13 +55,25 @@ class AutomationService : Service() {
         private const val ACTION_STOP = "com.real.earn.paypal.STOP"
         private const val ACTION_STOP_AND_CLOSE = "com.real.earn.paypal.STOP_AND_CLOSE"
 
-        fun start(context: Context, service: String, country: String, countryCode: String, dialingCode: String, price: Double) {
+        fun start(
+            context: Context,
+            mode: String,
+            service: String,
+            country: String = "",
+            countryCode: String = "",
+            dialingCode: String = "",
+            prefix: String = "",
+            file: String = ""
+        ) {
             val i = Intent(context, AutomationService::class.java).apply {
                 action = ACTION_START
+                putExtra("mode", mode)
                 putExtra("service", service)
                 putExtra("country", country)
                 putExtra("countryCode", countryCode)
                 putExtra("dialingCode", dialingCode)
+                putExtra("prefix", prefix)
+                putExtra("file", file)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(i)
@@ -102,10 +119,13 @@ class AutomationService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
-                serviceName = intent.getStringExtra("service") ?: ""
+                mode = intent.getStringExtra("mode") ?: "service"
+                serviceName = intent.getStringExtra("service") ?: "PayPal"
                 countryName = intent.getStringExtra("country") ?: ""
                 countryCodeIso = intent.getStringExtra("countryCode") ?: ""
                 dialingCode = intent.getStringExtra("dialingCode") ?: ""
+                prefix = intent.getStringExtra("prefix") ?: ""
+                file = intent.getStringExtra("file") ?: ""
                 showOverlay()
                 startLoop()
             }
@@ -140,7 +160,13 @@ class AutomationService : Service() {
 
         AutomationState.reset()
         AutomationState.setStatus(AutomationState.Status.RUNNING)
-        AutomationState.log("🚀 Automation: $serviceName / $countryName")
+
+        // 🟢 Mode-aware log
+        when (mode) {
+            "auto" -> AutomationState.log("🚀 Automation: $serviceName · Auto Prefix")
+            "prefix" -> AutomationState.log("🚀 Automation: $serviceName · $prefix / $file")
+            else -> AutomationState.log("🚀 Automation: $serviceName / $countryName")
+        }
         updateNotification("Running")
 
         loopJob = scope.launch {
@@ -155,7 +181,6 @@ class AutomationService : Service() {
                 }
                 AutomationState.log("✔ Accessibility connected")
 
-                // 🟢 Start both background watchers
                 PopupWatcher.start(scope, a11y)
                 popupWatcherOn = true
 
@@ -234,19 +259,77 @@ class AutomationService : Service() {
         }
     }
 
+    // ══════════════════════════════════════════════════════════════════════════
+    //  🟢 FETCH NUMBERS — mode-aware
+    // ══════════════════════════════════════════════════════════════════════════
     private suspend fun fetchNumbers(auth: AuthManager): List<String> {
         return try {
-            val res = ApiClient.service(auth).getNumbers(
-                GetNumberBody(service = serviceName, country = countryName, count = 5)
-            )
-            if (res.isSuccessful && res.body()?.success == true) {
-                res.body()?.numbers ?: emptyList()
-            } else {
-                AutomationState.log("✘ getNumber HTTP ${res.code()}")
-                emptyList()
+            when (mode) {
+
+                // ═══════ AUTO MODE ═══════
+                "auto" -> {
+                    val res = ApiClient.service(auth).getNumbersByPrefix(
+                        GetNumberByPrefixBody(
+                            service = serviceName,
+                            auto = true,
+                            count = 5
+                        )
+                    )
+                    if (res.isSuccessful && res.body()?.success == true) {
+                        val body = res.body()!!
+                        // Update country info from response
+                        countryCodeIso = body.countryCode
+                        dialingCode = body.dialingCode
+                        // countryName ke liye file name use karo (PayPal search ke liye)
+                        countryName = body.file.ifEmpty { "Unknown" }
+                        AutomationState.log("🎲 Auto pick: ${body.prefix} / ${body.file}")
+                        body.numbers ?: emptyList()
+                    } else {
+                        AutomationState.log("✘ getNumByPrefix(auto) HTTP ${res.code()}")
+                        emptyList()
+                    }
+                }
+
+                // ═══════ PREFIX MODE ═══════
+                "prefix" -> {
+                    val res = ApiClient.service(auth).getNumbersByPrefix(
+                        GetNumberByPrefixBody(
+                            service = serviceName,
+                            prefix = prefix,
+                            file = file,
+                            auto = false,
+                            count = 5
+                        )
+                    )
+                    if (res.isSuccessful && res.body()?.success == true) {
+                        val body = res.body()!!
+                        // Update country info from response
+                        countryCodeIso = body.countryCode
+                        dialingCode = body.dialingCode
+                        // countryName = file name (e.g. algeria11)
+                        countryName = body.file.ifEmpty { file }
+                        body.numbers ?: emptyList()
+                    } else {
+                        AutomationState.log("✘ getNumByPrefix HTTP ${res.code()}")
+                        emptyList()
+                    }
+                }
+
+                // ═══════ SERVICE MODE (default, old flow) ═══════
+                else -> {
+                    val res = ApiClient.service(auth).getNumbers(
+                        GetNumberBody(service = serviceName, country = countryName, count = 5)
+                    )
+                    if (res.isSuccessful && res.body()?.success == true) {
+                        res.body()?.numbers ?: emptyList()
+                    } else {
+                        AutomationState.log("✘ getNumber HTTP ${res.code()}")
+                        emptyList()
+                    }
+                }
             }
         } catch (e: Exception) {
-            AutomationState.log("✘ getNumber: ${e.message}")
+            AutomationState.log("✘ fetch error: ${e.message}")
             emptyList()
         }
     }
