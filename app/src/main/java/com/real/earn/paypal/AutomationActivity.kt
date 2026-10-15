@@ -20,14 +20,24 @@ class AutomationActivity : AppCompatActivity() {
         binding = ActivityAutomationBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        val service = intent.getStringExtra("service") ?: ""
+        // 🟢 Mode-aware subtitle
+        val mode = intent.getStringExtra("mode") ?: "service"
+        val service = intent.getStringExtra("service") ?: "PayPal"
         val country = intent.getStringExtra("country") ?: ""
-        binding.tvSubHeader.text = "$service · $country"
+        val prefix = intent.getStringExtra("prefix") ?: ""
+        val file = intent.getStringExtra("file") ?: ""
 
-        binding.btnBack.setOnClickListener {
-            // Do NOT stop — just hide activity, service keeps running
-            finish()
+        binding.tvSubHeader.text = when (mode) {
+            "auto" -> "$service · Auto Prefix"
+            "prefix" -> {
+                val p = if (prefix.isNotEmpty()) prefix else "?"
+                val f = if (file.isNotEmpty()) file else "?"
+                "$service · $p / $f"
+            }
+            else -> "$service · $country"
         }
+
+        binding.btnBack.setOnClickListener { finish() }
 
         binding.btnPause.setOnClickListener {
             when (AutomationState.getStatus()) {
@@ -38,7 +48,6 @@ class AutomationActivity : AppCompatActivity() {
         }
 
         binding.btnStop.setOnClickListener {
-            // "Stop" → stop + close both
             AutomationService.stopAndClose(this)
         }
 
