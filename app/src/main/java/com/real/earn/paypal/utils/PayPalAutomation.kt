@@ -108,31 +108,30 @@ object PayPalAutomation {
                 PayPalActions.closePayPal(service)
                 continue
             }
-            AutomationState.log("ℹ Continue tapped")
+            AutomationState.log("ℹ Continue tapped — waiting for captcha/next screen…")
 
-            // ⑨ Captcha handling — wait for human to solve if puzzle
-            val ok = handleCaptchaIfAny(service)
-            if (!ok) {
-                AutomationState.log("✘ [ABORT] Captcha not solved")
-                onNumberFail(num); fail++
-                PayPalActions.closePayPal(service)
-                continue
-            }
+            // ══════════════════════════════════════════════════════════════════
+            // ⑨ 🟢 UNIFIED WAIT: wait for captcha loading OR OTP screen OR error
+            //    - Up to 30s initial wait (captcha loading takes time)
+            //    - If captcha found → wait for solve (up to 120s)
+            //    - If OTP screen appears → SUCCESS
+            //    - If error → FAIL
+            // ══════════════════════════════════════════════════════════════════
+            val outcome = waitForOutcome(service)
 
-            // ⑩ Result
-            when (PayPalActions.checkResult(service, 10000)) {
-                PayPalActions.Result.OTP_SCREEN -> {
-                    AutomationState.log("✔ SUCCESS")
+            when (outcome) {
+                Outcome.OTP_SCREEN -> {
+                    AutomationState.log("✔ SUCCESS (OTP screen)")
                     PayPalActions.tapResendTwice(service)
                     onNumberSuccess(num)
                     success++
                 }
-                PayPalActions.Result.ERROR -> {
-                    AutomationState.log("✘ Red error")
+                Outcome.ERROR -> {
+                    AutomationState.log("✘ Red error — FAIL")
                     onNumberFail(num); fail++
                 }
-                PayPalActions.Result.TIMEOUT -> {
-                    AutomationState.log("⏱ Timeout")
+                Outcome.TIMEOUT -> {
+                    AutomationState.log("⏱ Timeout — FAIL")
                     onNumberFail(num); fail++
                 }
             }
@@ -145,72 +144,93 @@ object PayPalAutomation {
     }
 
     // ══════════════════════════════════════════════════════
-    //  CAPTCHA HANDLING
-    //  - Simple checkbox → watcher clicks, we wait
-    //  - Picture puzzle → alarm rings, WAIT for human (up to 120s)
+    //  OUTCOME HANDLER
     // ══════════════════════════════════════════════════════
-    private suspend fun handleCaptchaIfAny(service: AccessibilityService): Boolean {
-        StepUtils.sleepMs(1500)
+    private enum class Outcome { OTP_SCREEN, ERROR, TIMEOUT }
 
-        val root = service.rootInActiveWindow ?: return true
+    private suspend fun waitForOutcome(service: AccessibilityService): Outcome {
+        // ── Phase 1: wait up to 30s for either captcha OR result ──
+        val phase1End = System.currentTimeMillis() + 30_000
+        var captchaSeen = false
+        var captchaWaitStarted = 0L
 
-        val hasCaptcha = NodeFinder.containsAny(
-            root,
-            "I am human", "Security Challenge", "hCaptcha", "Verify you are human"
-        )
-        if (!hasCaptcha) {
-            AutomationState.log("ℹ No captcha present")
-            return true
+        while (System.currentTimeMillis() < phase1End) {
+            if (AutomationState.getStatus() == AutomationState.Status.STOPPING) return Outcome.TIMEOUT
+
+            StepUtils.sleepMs(600)
+
+            val root = service.rootInActiveWindow ?: continue
+
+            // ── Result signals first (fast path) ──
+            if (NodeFinder.containsAny(root, "Resend Code", "Resend code", "Resend")) {
+                return Outcome.OTP_SCREEN
+            }
+            if (NodeFinder.containsAny(root,
+                    "Something went wrong", "can't be used", "not valid",
+                    "invalid", "Enter a valid", "try again", "Try again")) {
+                return Outcome.ERROR
+            }
+
+            // ── Captcha detection ──
+            val isCaptcha = NodeFinder.containsAny(root,
+                "I am human", "Security Challenge", "hCaptcha",
+                "Verify you are human", "Verification", "Choose the", "Select all")
+
+            if (isCaptcha) {
+                if (!captchaSeen) {
+                    AutomationState.log("🛡️ Captcha appearing — waiting for solve…")
+                    captchaSeen = true
+                    captchaWaitStarted = System.currentTimeMillis()
+                }
+            }
+
+            // If captcha detected and it's gone now → solved
+            if (captchaSeen && !isCaptcha) {
+                AutomationState.log("✔ Captcha solved — checking result…")
+                StepUtils.sleepMs(2500)
+                // After captcha, wait up to 15s for result
+                return checkResultWithWait(service, 15000)
+            }
+
+            // If captcha still visible after 120s → give up
+            if (captchaSeen && System.currentTimeMillis() - captchaWaitStarted > 120_000) {
+                AutomationState.log("⚠ Captcha wait exceeded 120s")
+                return Outcome.TIMEOUT
+            }
         }
 
-        AutomationState.log("🛡️ Captcha detected — waiting for solve…")
+        // ── Phase 2: 30s passed, no result yet — check once more ──
+        if (captchaSeen) {
+            // Still waiting on captcha
+            AutomationState.log("⚠ Timeout waiting for captcha solve")
+            return Outcome.TIMEOUT
+        }
 
-        // Wait up to 120 seconds for solve (either by watcher or human)
-        val end = System.currentTimeMillis() + 120_000
-        var lastLogAt = 0L
-        var puzzleAnnounced = false
+        // No captcha and no result → try a final result check
+        AutomationState.log("⚠ No screen signal in 30s — final check")
+        return checkResultWithWait(service, 5000)
+    }
+
+    private suspend fun checkResultWithWait(service: AccessibilityService, timeoutMs: Long): Outcome {
+        val end = System.currentTimeMillis() + timeoutMs
+        var errorFlag = false
 
         while (System.currentTimeMillis() < end) {
-            if (AutomationState.getStatus() == AutomationState.Status.STOPPING) {
-                return false
+            if (AutomationState.getStatus() == AutomationState.Status.STOPPING) return Outcome.TIMEOUT
+
+            StepUtils.sleepMs(500)
+            val root = service.rootInActiveWindow ?: continue
+
+            if (NodeFinder.containsAny(root, "Resend Code", "Resend code", "Resend")) {
+                return Outcome.OTP_SCREEN
             }
-
-            StepUtils.sleepMs(800)
-
-            val cur = service.rootInActiveWindow ?: continue
-
-            // ── Puzzle active → log once ──
-            if (CaptchaWatcher.picturePuzzleDetected && !puzzleAnnounced) {
-                AutomationState.log("🛡️ Picture puzzle ON — waiting for HUMAN…")
-                puzzleAnnounced = true
-            }
-
-            // ── Captcha still present? ──
-            val still = NodeFinder.containsAny(
-                cur,
-                "I am human", "Security Challenge", "hCaptcha", "Verify you are human"
-            )
-
-            if (!still) {
-                AutomationState.log("✔ Captcha solved — continuing")
-                StepUtils.sleepMs(2500)   // let next screen load
-                return true
-            }
-
-            // Progress log every 10s
-            val elapsed = System.currentTimeMillis() - (end - 120_000)
-            if (elapsed - lastLogAt > 10000) {
-                val remaining = ((end - System.currentTimeMillis()) / 1000).toInt()
-                if (puzzleAnnounced) {
-                    AutomationState.log("🛡️ Still waiting for HUMAN to solve… (${remaining}s left)")
-                } else {
-                    AutomationState.log("🛡️ Still waiting for auto-solve… (${remaining}s left)")
-                }
-                lastLogAt = elapsed
+            if (!errorFlag && NodeFinder.containsAny(root,
+                    "Something went wrong", "can't be used", "not valid",
+                    "invalid", "Enter a valid", "try again", "Try again")) {
+                errorFlag = true
             }
         }
 
-        AutomationState.log("⚠ Captcha wait timed out (120s)")
-        return false
+        return if (errorFlag) Outcome.ERROR else Outcome.TIMEOUT
     }
 }
