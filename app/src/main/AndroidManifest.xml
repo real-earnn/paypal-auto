@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- ══════════════════════════════════════════════════════════
+         PERMISSIONS
+    ══════════════════════════════════════════════════════════ -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -16,10 +19,17 @@
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- ══════════════════════════════════════════════════════════
+         PACKAGE VISIBILITY (Android 11+)
+         PayPal app ko discover karne ke liye zaroori
+    ══════════════════════════════════════════════════════════ -->
     <queries>
         <package android:name="com.paypal.android.p2pmobile" />
     </queries>
 
+    <!-- ══════════════════════════════════════════════════════════
+         APPLICATION
+    ══════════════════════════════════════════════════════════ -->
     <application
         android:name=".App"
         android:allowBackup="false"
@@ -31,6 +41,9 @@
         android:usesCleartextTraffic="true"
         tools:targetApi="34">
 
+        <!-- ══════════════════════════════════════════════════════
+             ACTIVITY: Splash (LAUNCHER)
+        ══════════════════════════════════════════════════════ -->
         <activity
             android:name=".SplashActivity"
             android:exported="true"
@@ -40,6 +53,42 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- ══════════════════════════════════════════════════════
+             ACTIVITY: Authentication
+        ══════════════════════════════════════════════════════ -->
+        <activity
+            android:name=".LoginActivity"
+            android:exported="false"
+            android:theme="@style/Theme.RealEarnPayPal" />
+
+        <activity
+            android:name=".CodeVerifyActivity"
+            android:exported="false"
+            android:theme="@style/Theme.RealEarnPayPal" />
+
+        <!-- ══════════════════════════════════════════════════════
+             ACTIVITY: Dashboard
+        ══════════════════════════════════════════════════════ -->
+        <activity
+            android:name=".DashboardActivity"
+            android:exported="false"
+            android:theme="@style/Theme.RealEarnPayPal" />
+
+        <!-- ══════════════════════════════════════════════════════
+             ACTIVITY: Automation Flow (New 3-Mode System)
+             1. ServiceSelect  → 3 buttons (Select / Auto / Prefix)
+             2. ServiceBrowse  → Purani services list
+             3. PrefixInput    → Prefix search + file picker
+             4. CountrySelect  → Country list
+             5. Permission     → Permissions + Start button
+             6. Automation     → Running screen + logs
+        ══════════════════════════════════════════════════════ -->
+        <activity
+            android:name=".ServiceSelectActivity"
+            android:exported="false"
+            android:theme="@style/Theme.RealEarnPayPal" />
+
         <activity
             android:name=".ServiceBrowseActivity"
             android:exported="false"
@@ -49,15 +98,33 @@
             android:name=".PrefixInputActivity"
             android:exported="false"
             android:theme="@style/Theme.RealEarnPayPal" />
-        <activity android:name=".LoginActivity" android:exported="false" />
-        <activity android:name=".CodeVerifyActivity" android:exported="false" />
-        <activity android:name=".DashboardActivity" android:exported="false" />
-        <activity android:name=".ServiceSelectActivity" android:exported="false" />
-        <activity android:name=".CountrySelectActivity" android:exported="false" />
-        <activity android:name=".PermissionActivity" android:exported="false" />
-        <activity android:name=".AutomationActivity" android:exported="false" />
-        <activity android:name=".MainActivity" android:exported="false" />
 
+        <activity
+            android:name=".CountrySelectActivity"
+            android:exported="false"
+            android:theme="@style/Theme.RealEarnPayPal" />
+
+        <activity
+            android:name=".PermissionActivity"
+            android:exported="false"
+            android:theme="@style/Theme.RealEarnPayPal" />
+
+        <activity
+            android:name=".AutomationActivity"
+            android:exported="false"
+            android:theme="@style/Theme.RealEarnPayPal" />
+
+        <!-- ══════════════════════════════════════════════════════
+             ACTIVITY: Utility (no longer launcher)
+        ══════════════════════════════════════════════════════ -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:theme="@style/Theme.RealEarnPayPal" />
+
+        <!-- ══════════════════════════════════════════════════════
+             SERVICE: Voice Interaction (Assist App — Airplane Mode)
+        ══════════════════════════════════════════════════════ -->
         <service
             android:name=".voice.PayPalInteractionService"
             android:exported="true"
@@ -75,6 +142,9 @@
             android:exported="true"
             android:permission="android.permission.BIND_VOICE_INTERACTION" />
 
+        <!-- ══════════════════════════════════════════════════════
+             SERVICE: Accessibility (PayPal UI Automation)
+        ══════════════════════════════════════════════════════ -->
         <service
             android:name=".service.PayPalAccessibilityService"
             android:exported="true"
@@ -87,6 +157,9 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
+        <!-- ══════════════════════════════════════════════════════
+             SERVICE: Foreground Automation Loop
+        ══════════════════════════════════════════════════════ -->
         <service
             android:name=".service.AutomationService"
             android:exported="false"
