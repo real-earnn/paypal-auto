@@ -110,30 +110,13 @@ object PayPalAutomation {
             }
             AutomationState.log("ℹ Continue tapped")
 
-            // ══════════════════════════════════════════════════════
-            // ⑨ CAPTCHA HANDLING (after Continue)
-            //    - Wait to see if hCaptcha appears
-            //    - Let CaptchaWatcher solve "I am human"
-            //    - If picture puzzle appears → SKIP this number
-            //    - If solved → continue to result check
-            // ══════════════════════════════════════════════════════
-            val captchaResult = handleCaptchaIfAny(service)
-
-            when (captchaResult) {
-                CaptchaResult.PICTURE_PUZZLE -> {
-                    AutomationState.log("✘ [SKIP] Picture puzzle captcha — releasing number")
-                    onNumberFail(num); fail++
-                    PayPalActions.closePayPal(service)
-                    delay(800)
-                    continue
-                }
-                CaptchaResult.SOLVED -> {
-                    AutomationState.log("✔ Captcha solved — continuing")
-                    // Fall through to result check
-                }
-                CaptchaResult.NOT_PRESENT -> {
-                    // No captcha, proceed directly
-                }
+            // ⑨ Captcha handling — wait for human to solve if puzzle
+            val ok = handleCaptchaIfAny(service)
+            if (!ok) {
+                AutomationState.log("✘ [ABORT] Captcha not solved")
+                onNumberFail(num); fail++
+                PayPalActions.closePayPal(service)
+                continue
             }
 
             // ⑩ Result
@@ -162,94 +145,72 @@ object PayPalAutomation {
     }
 
     // ══════════════════════════════════════════════════════
-    //  CAPTCHA DETECTION + WAIT
+    //  CAPTCHA HANDLING
+    //  - Simple checkbox → watcher clicks, we wait
+    //  - Picture puzzle → alarm rings, WAIT for human (up to 120s)
     // ══════════════════════════════════════════════════════
-    private enum class CaptchaResult { NOT_PRESENT, SOLVED, PICTURE_PUZZLE }
-
-    private suspend fun handleCaptchaIfAny(service: AccessibilityService): CaptchaResult {
-        // 1. Give PayPal a moment to render the captcha screen
+    private suspend fun handleCaptchaIfAny(service: AccessibilityService): Boolean {
         StepUtils.sleepMs(1500)
 
-        // 2. Check if captcha appeared
-        val root = service.rootInActiveWindow
-        if (root == null) return CaptchaResult.NOT_PRESENT
+        val root = service.rootInActiveWindow ?: return true
 
         val hasCaptcha = NodeFinder.containsAny(
             root,
-            "I am human",
-            "Security Challenge",
-            "hCaptcha",
-            "Verify you are human",
-            "Verification"
+            "I am human", "Security Challenge", "hCaptcha", "Verify you are human"
         )
-        if (!hasCaptcha) return CaptchaResult.NOT_PRESENT
+        if (!hasCaptcha) {
+            AutomationState.log("ℹ No captcha present")
+            return true
+        }
 
-        AutomationState.log("🛡️ Captcha detected after Continue — waiting for solve…")
+        AutomationState.log("🛡️ Captcha detected — waiting for solve…")
 
-        // 3. Wait up to 15 seconds for CaptchaWatcher to solve
-        val end = System.currentTimeMillis() + 15000
-        var firstDetectTime = System.currentTimeMillis()
+        // Wait up to 120 seconds for solve (either by watcher or human)
+        val end = System.currentTimeMillis() + 120_000
+        var lastLogAt = 0L
+        var puzzleAnnounced = false
 
         while (System.currentTimeMillis() < end) {
             if (AutomationState.getStatus() == AutomationState.Status.STOPPING) {
-                return CaptchaResult.NOT_PRESENT
+                return false
             }
 
-            StepUtils.sleepMs(700)
+            StepUtils.sleepMs(800)
 
-            val currentRoot = service.rootInActiveWindow
-            if (currentRoot == null) continue
+            val cur = service.rootInActiveWindow ?: continue
 
-            // ── Check: Picture puzzle appeared? ──
-            if (isPicturePuzzle(currentRoot)) {
-                AutomationState.log("🛡️ Picture puzzle detected")
-                // Give 2 seconds in case checkbox auto-pass
-                StepUtils.sleepMs(2000)
-                val recheck = service.rootInActiveWindow
-                if (recheck != null && !isPicturePuzzle(recheck)) {
-                    // Auto-cleared — treat as solved
-                    AutomationState.log("✔ Puzzle auto-cleared")
-                    return CaptchaResult.SOLVED
-                }
-                return CaptchaResult.PICTURE_PUZZLE
+            // ── Puzzle active → log once ──
+            if (CaptchaWatcher.picturePuzzleDetected && !puzzleAnnounced) {
+                AutomationState.log("🛡️ Picture puzzle ON — waiting for HUMAN…")
+                puzzleAnnounced = true
             }
 
-            // ── Check: Captcha still present? ──
-            val stillCaptcha = NodeFinder.containsAny(
-                currentRoot,
-                "I am human",
-                "Security Challenge",
-                "hCaptcha"
+            // ── Captcha still present? ──
+            val still = NodeFinder.containsAny(
+                cur,
+                "I am human", "Security Challenge", "hCaptcha", "Verify you are human"
             )
-            if (!stillCaptcha) {
-                // Captcha gone — we're on the next screen
-                AutomationState.log("✔ Captcha gone — moving on")
-                // Extra settle for next screen to load
-                StepUtils.sleepMs(2500)
-                return CaptchaResult.SOLVED
+
+            if (!still) {
+                AutomationState.log("✔ Captcha solved — continuing")
+                StepUtils.sleepMs(2500)   // let next screen load
+                return true
             }
 
-            // Log progress every 3s
-            val elapsed = System.currentTimeMillis() - firstDetectTime
-            if (elapsed > 5000 && elapsed < 5300) {
-                AutomationState.log("🛡️ Still waiting for captcha solve…")
+            // Progress log every 10s
+            val elapsed = System.currentTimeMillis() - (end - 120_000)
+            if (elapsed - lastLogAt > 10000) {
+                val remaining = ((end - System.currentTimeMillis()) / 1000).toInt()
+                if (puzzleAnnounced) {
+                    AutomationState.log("🛡️ Still waiting for HUMAN to solve… (${remaining}s left)")
+                } else {
+                    AutomationState.log("🛡️ Still waiting for auto-solve… (${remaining}s left)")
+                }
+                lastLogAt = elapsed
             }
         }
 
-        // Timeout — couldn't solve
-        AutomationState.log("⚠ Captcha timeout (15s)")
-        return CaptchaResult.SOLVED   // give it a chance, let result check decide
-    }
-
-    /** Detect picture-puzzle captcha (drag-drop, image grid, rotate) */
-    private fun isPicturePuzzle(root: android.view.accessibility.AccessibilityNodeInfo): Boolean {
-        // Strong indicators of picture-based hCaptcha
-        val pictureMarkers = arrayOf(
-            "Drag the", "Select all", "Choose the",
-            "Please click", "Please drag", "Please select",
-            "Skip", "Refresh", "Audio",
-            "Challenge", "Click each"
-        )
-        return NodeFinder.containsAny(root, *pictureMarkers)
+        AutomationState.log("⚠ Captcha wait timed out (120s)")
+        return false
     }
 }
