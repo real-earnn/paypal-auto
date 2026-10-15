@@ -43,9 +43,7 @@ object PayPalAutomation {
             }
 
             // ② Clear data
-            val clearOk = StepUtils.retryStep("Clear data") {
-                PayPalClearData.strictClear(service)
-            }
+            val clearOk = PayPalClearData.strictClear(service)
             if (!clearOk) {
                 AutomationState.log("✘ [ABORT] Clear data")
                 onNumberFail(num); fail++
