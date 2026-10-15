@@ -17,6 +17,7 @@ import com.real.earn.paypal.api.GetNumberBody
 import com.real.earn.paypal.api.ReleaseNumberBody
 import com.real.earn.paypal.auth.AuthManager
 import com.real.earn.paypal.utils.AppPrefs
+import com.real.earn.paypal.utils.CaptchaWatcher
 import com.real.earn.paypal.utils.OverlayManager
 import com.real.earn.paypal.utils.PayPalAutomation
 import com.real.earn.paypal.utils.PopupWatcher
@@ -143,7 +144,8 @@ class AutomationService : Service() {
         updateNotification("Running")
 
         loopJob = scope.launch {
-            var watcherStarted = false
+            var popupWatcherOn = false
+            var captchaWatcherOn = false
             try {
                 val a11y = PayPalAccessibilityService.instance
                 if (a11y == null) {
@@ -153,9 +155,12 @@ class AutomationService : Service() {
                 }
                 AutomationState.log("✔ Accessibility connected")
 
-                // 🟢 Start background popup watcher
+                // 🟢 Start both background watchers
                 PopupWatcher.start(scope, a11y)
-                watcherStarted = true
+                popupWatcherOn = true
+
+                CaptchaWatcher.start(scope, a11y)
+                captchaWatcherOn = true
 
                 val auth = AuthManager(applicationContext)
                 val prefs = AppPrefs(applicationContext)
@@ -209,7 +214,8 @@ class AutomationService : Service() {
             } catch (e: Exception) {
                 AutomationState.log("✘ Loop error: ${e.message}")
             } finally {
-                if (watcherStarted) PopupWatcher.stop()
+                if (popupWatcherOn) PopupWatcher.stop()
+                if (captchaWatcherOn) CaptchaWatcher.stop()
                 AutomationState.setStatus(AutomationState.Status.STOPPED)
                 cleanupAfterStop()
             }
@@ -258,6 +264,7 @@ class AutomationService : Service() {
         AutomationState.setStatus(AutomationState.Status.STOPPING)
         AutomationState.log("⏹ Stopping…")
         PopupWatcher.stop()
+        CaptchaWatcher.stop()
 
         scope.launch {
             var waited = 0L
@@ -315,6 +322,7 @@ class AutomationService : Service() {
 
     override fun onDestroy() {
         PopupWatcher.stop()
+        CaptchaWatcher.stop()
         loopJob?.cancel(); scope.cancel()
         overlay?.hide(); overlay = null
         releaseWakeLock()
