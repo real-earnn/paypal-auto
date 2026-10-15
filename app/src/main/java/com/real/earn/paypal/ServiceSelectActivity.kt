@@ -6,8 +6,6 @@ import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.LinearLayoutManager
-import com.real.earn.paypal.adapter.ServiceAdapter
 import com.real.earn.paypal.api.ApiClient
 import com.real.earn.paypal.auth.AuthManager
 import com.real.earn.paypal.databinding.ActivityServiceSelectBinding
@@ -24,44 +22,66 @@ class ServiceSelectActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         authManager = AuthManager(this)
-        binding.recycler.layoutManager = LinearLayoutManager(this)
+
         binding.btnBack.setOnClickListener { finish() }
 
-        loadServices()
+        // ═══ TOP: Select Services ═══
+        binding.cardServices.setOnClickListener {
+            // Purana flow — ab alag activity nahi, isi activity ka hissa nahi.
+            // Chalo simple: ek naya Intent → ServiceListActivity? Nahi.
+            // Direct: is activity ka "old" version reload? Nahi.
+            // Simplest: dedicated button → ab ServiceSelect replaced hai, toh use
+            // cardServices ka kaam yahan hi krte hain — matlab Services list yahin
+            // dikhani hai. Lekin hum alag screen preserve karenge:
+            startActivity(Intent(this, ServiceBrowseActivity::class.java))
+        }
+
+        // ═══ AUTO MODE ═══
+        binding.cardAuto.setOnClickListener {
+            checkAutoPrefixesAndGo()
+        }
+
+        // ═══ SEARCH PREFIX MODE ═══
+        binding.cardPrefix.setOnClickListener {
+            startActivity(Intent(this, PrefixInputActivity::class.java))
+        }
     }
 
-    private fun loadServices() {
+    /**
+     * Auto mode click → pehle check karo admin ne prefix config kiya hai ya nahi.
+     * Agar list empty ho → Toast message.
+     * Warna → PermissionActivity with mode=auto
+     */
+    private fun checkAutoPrefixesAndGo() {
         binding.progressBar.visibility = View.VISIBLE
-        binding.tvEmpty.visibility = View.GONE
 
         lifecycleScope.launch {
             try {
-                val res = ApiClient.service(authManager).getServices()
+                val res = ApiClient.service(authManager).getPrefixesList()
+                binding.progressBar.visibility = View.GONE
+
                 if (res.isSuccessful && res.body()?.success == true) {
+                    val prefixes = res.body()?.prefixes ?: emptyList()
+                    val hasValid = prefixes.any { it.filesSafe.isNotEmpty() }
 
-                    val allServices = res.body()?.services ?: emptyList()
-
-                    // 🟢 Filter: sirf woh services jinki countries non-empty hain
-                    val services = allServices.filter { it.countriesSafe.isNotEmpty() }
-
-                    if (services.isEmpty()) {
-                        binding.tvEmpty.visibility = View.VISIBLE
-                        binding.tvEmpty.text = "Abhi koi service available nahi hai"
-                    } else {
-                        binding.recycler.adapter = ServiceAdapter(services) { s ->
-                            val i = Intent(this@ServiceSelectActivity, CountrySelectActivity::class.java)
-                            i.putExtra("service", s.name)
-                            i.putExtra("is_unpaid", s.isUnpaid)
-                            startActivity(i)
-                        }
+                    if (!hasValid) {
+                        Toast.makeText(
+                            this@ServiceSelectActivity,
+                            "Admin ne abhi koi prefix configure nahi kiya hai",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        return@launch
                     }
 
+                    // Go to PermissionActivity with mode=auto
+                    val intent = Intent(this@ServiceSelectActivity, PermissionActivity::class.java).apply {
+                        putExtra("mode", "auto")
+                        putExtra("service", "PayPal")
+                    }
+                    startActivity(intent)
+
                 } else if (res.code() == 401) {
-                    Toast.makeText(
-                        this@ServiceSelectActivity,
-                        "Session khatam. Login karo.",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    Toast.makeText(this@ServiceSelectActivity, "Session khatam. Login karo.", Toast.LENGTH_LONG).show()
                     authManager.clear()
                     startActivity(
                         Intent(this@ServiceSelectActivity, LoginActivity::class.java)
@@ -69,14 +89,19 @@ class ServiceSelectActivity : AppCompatActivity() {
                     )
                     finish()
                 } else {
-                    binding.tvEmpty.visibility = View.VISIBLE
-                    binding.tvEmpty.text = "Services load nahi hue (code ${res.code()})"
+                    Toast.makeText(
+                        this@ServiceSelectActivity,
+                        "Prefixes load nahi ho sake (code ${res.code()})",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             } catch (e: Exception) {
-                binding.tvEmpty.visibility = View.VISIBLE
-                binding.tvEmpty.text = "Network error: ${e.message}"
-            } finally {
                 binding.progressBar.visibility = View.GONE
+                Toast.makeText(
+                    this@ServiceSelectActivity,
+                    "Network error: ${e.message}",
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }
     }
