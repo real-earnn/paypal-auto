@@ -38,18 +38,18 @@ class OverlayManager(private val context: Context) {
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
+        // 🟢 BOTTOM-RIGHT CORNER, edge se bilkul chipka hua (no space)
         params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,   // 🟢 screen on
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = 20
-            y = 240
+            gravity = Gravity.BOTTOM or Gravity.END
+            x = 0
+            y = 0
         }
 
         overlayView = LayoutInflater.from(context).inflate(R.layout.overlay_controls, null)
@@ -81,8 +81,9 @@ class OverlayManager(private val context: Context) {
                         val dy = event.rawY - touchY
                         if (dx * dx + dy * dy > 150) isDragging = true
                         if (isDragging) {
-                            params?.x = initialX + dx.toInt()
-                            params?.y = initialY + dy.toInt()
+                            // BOTTOM | END gravity ke saath: x ulta chalta hai
+                            params?.x = initialX - dx.toInt()
+                            params?.y = initialY - dy.toInt()
                             overlayView?.let { windowManager?.updateViewLayout(it, params) }
                             return true
                         }
