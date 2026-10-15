@@ -20,11 +20,15 @@ class PermissionActivity : AppCompatActivity() {
     private lateinit var binding: ActivityPermissionBinding
     private lateinit var prefs: AppPrefs
 
-    private var serviceName: String = ""
+    // Mode-aware fields
+    private var mode: String = "service"   // "service" | "auto" | "prefix"
+    private var serviceName: String = "PayPal"
     private var countryName: String = ""
     private var countryCode: String = ""
     private var dialingCode: String = ""
     private var price: Double = 0.0
+    private var prefix: String = ""
+    private var file: String = ""
 
     companion object {
         private const val REQ_RINGTONE = 5001
@@ -37,35 +41,42 @@ class PermissionActivity : AppCompatActivity() {
 
         prefs = AppPrefs(this)
 
-        serviceName = intent.getStringExtra("service") ?: ""
+        // 🟢 Read mode + all possible extras
+        mode = intent.getStringExtra("mode") ?: "service"
+        serviceName = intent.getStringExtra("service") ?: "PayPal"
         countryName = intent.getStringExtra("country") ?: ""
         countryCode = intent.getStringExtra("country_code") ?: ""
         dialingCode = intent.getStringExtra("dialing_code") ?: ""
         price = intent.getDoubleExtra("price", 0.0)
+        prefix = intent.getStringExtra("prefix") ?: ""
+        file = intent.getStringExtra("file") ?: ""
 
-        binding.tvTitle.text = "$serviceName — $countryName"
+        // 🟢 Display title based on mode
+        binding.tvTitle.text = when (mode) {
+            "auto" -> "$serviceName — Auto Prefix"
+            "prefix" -> "$serviceName — $prefix ($file)"
+            else -> "$serviceName — $countryName"
+        }
 
         binding.btnBack.setOnClickListener { finish() }
         binding.rowAccessibility.setOnClickListener { PermissionHelper.openAccessibilitySettings(this) }
         binding.rowOverlay.setOnClickListener { PermissionHelper.openOverlaySettings(this) }
         binding.rowBattery.setOnClickListener { PermissionHelper.openBatterySettings(this) }
 
-        // ── Auto Flight Mode ──
+        // Auto Flight toggle
         binding.switchAutoFlight.isChecked = prefs.autoFlightMode
         binding.switchAutoFlight.setOnCheckedChangeListener { _, checked ->
             prefs.autoFlightMode = checked
         }
 
-        // ── Captcha Auto Alarm ──
+        // Captcha alarm
         binding.switchCaptchaAlarm.isChecked = prefs.captchaAlarmEnabled
         binding.switchCaptchaAlarm.setOnCheckedChangeListener { _, checked ->
             prefs.captchaAlarmEnabled = checked
             updateSoundLabel()
         }
 
-        // ── Choose Sound ──
         binding.btnChooseSound.setOnClickListener { openRingtonePicker() }
-
         updateSoundLabel()
 
         binding.btnStart.setOnClickListener {
@@ -73,19 +84,32 @@ class PermissionActivity : AppCompatActivity() {
                 Toast.makeText(this, "Pehle saari permissions enable karo", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            startActivity(Intent(this, AutomationActivity::class.java).apply {
-                putExtra("service", serviceName)
-                putExtra("country", countryName)
-            })
-            AutomationService.start(
-                this,
-                service = serviceName,
-                country = countryName,
-                countryCode = countryCode,
-                dialingCode = dialingCode,
-                price = price
-            )
+            startAutomation()
         }
+    }
+
+    private fun startAutomation() {
+        // 🟢 Pass mode-aware extras to AutomationActivity
+        val actIntent = Intent(this, AutomationActivity::class.java).apply {
+            putExtra("mode", mode)
+            putExtra("service", serviceName)
+            putExtra("country", countryName)
+            putExtra("prefix", prefix)
+            putExtra("file", file)
+        }
+        startActivity(actIntent)
+
+        // 🟢 Start service with mode-aware extras
+        AutomationService.start(
+            context = this,
+            mode = mode,
+            service = serviceName,
+            country = countryName,
+            countryCode = countryCode,
+            dialingCode = dialingCode,
+            prefix = prefix,
+            file = file
+        )
     }
 
     override fun onResume() {
@@ -187,7 +211,6 @@ class PermissionActivity : AppCompatActivity() {
                 prefs.captchaAlarmUri = uri.toString()
                 Toast.makeText(this, "Alarm sound saved", Toast.LENGTH_SHORT).show()
             } else {
-                // User picked "Default" or silent
                 prefs.captchaAlarmUri = null
                 Toast.makeText(this, "Default alarm set", Toast.LENGTH_SHORT).show()
             }
