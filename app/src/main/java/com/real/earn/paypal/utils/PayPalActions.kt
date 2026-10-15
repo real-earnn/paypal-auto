@@ -217,7 +217,6 @@ object PayPalActions {
         val countryName = cleanCountryName(countryNameRaw)
         AutomationState.log("ℹ Country: $countryName (from $countryNameRaw)")
 
-        // 1. Find and tap "Search"
         var searchNode: AccessibilityNodeInfo? = null
         val sEnd = SystemClock.uptimeMillis() + 5000
         while (SystemClock.uptimeMillis() < sEnd) {
@@ -239,12 +238,10 @@ object PayPalActions {
         AutomationState.log("ℹ Search tapped")
         StepUtils.sleepMs(700)
 
-        // 2. Paste country name
         pasteText(service, countryName, "search")
         AutomationState.log("ℹ Paste done — waiting for result")
         StepUtils.sleepMs(1800)
 
-        // 3. Find + click result — with retry (max 3 attempts)
         var attempt = 0
         while (attempt < 3) {
             attempt++
@@ -267,10 +264,8 @@ object PayPalActions {
             tapNode(service, match)
             StepUtils.sleepMs(2000)
 
-            // 4. Verify: dialog closed? (Search text no longer visible)
             val after = service.rootInActiveWindow
             if (after == null) {
-                // Screen unclear — treat as success
                 AutomationState.log("✔ Dialog seems closed")
                 return true
             }
@@ -294,10 +289,10 @@ object PayPalActions {
     }
 
     /**
-     * 🎯 Find country result with 3 rules:
-     *   1. Skip editable fields (search input)
-     *   2. Skip keyboard region (bottom 40% of screen)
-     *   3. Prefer nodes with "(CODE)" pattern
+     * Find country result:
+     *   1. Skip editable fields
+     *   2. Skip keyboard region (bottom 40%)
+     *   3. Prefer nodes with "(CODE)"
      */
     private fun findCountryResult(root: AccessibilityNodeInfo?, name: String, iso: String): AccessibilityNodeInfo? {
         if (root == null) return null
@@ -311,28 +306,23 @@ object PayPalActions {
         while (queue.isNotEmpty()) {
             val n = queue.removeFirst()
 
-            // Rule 1: skip editable
             if (n.isEditable) continue
 
             val t = n.text?.toString() ?: ""
             if (!t.contains(name, ignoreCase = true)) {
-                // still descend to children
                 for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
                 continue
             }
 
-            // Rule 2: skip keyboard region
             val r = Rect(); n.getBoundsInScreen(r)
             if (r.top > keyboardTop) continue
 
-            // Rule 3: prefer "(code)" pattern
             val hasCodePattern = t.contains("(", false) && t.contains(")", false)
             if (hasCodePattern) {
                 AutomationState.log("✔ Best match: '$t'")
                 return NodeFinder.findClickableParent(n) ?: n
             }
 
-            // Fallback candidate (name matched but no brackets)
             if (fallback == null) {
                 fallback = NodeFinder.findClickableParent(n) ?: n
                 AutomationState.log("ℹ Fallback candidate: '$t'")
@@ -344,21 +334,22 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  TYPE NUMBER — DOUBLE TAP + CLIPBOARD PASTE
+    //  TYPE NUMBER — 5 attempts, progressive delay, focus verify
     // ══════════════════════════════════════════════════════
     fun typeNumber(service: AccessibilityService, fullNumber: String, dialingCode: String): Boolean {
+        // Sanitize number
         var national = fullNumber.trim().removePrefix("+")
         if (dialingCode.isNotEmpty() && national.startsWith(dialingCode)) {
             national = national.substring(dialingCode.length)
         }
         national = national.replace(" ", "").replace("-", "")
-        AutomationState.log("ℹ Preparing number: $national")
+        if (national.startsWith("0")) national = national.substring(1)
+        AutomationState.log("ℹ Number to fill: '$national'")
 
-        StepUtils.sleepMs(1500)
-
+        // Wait for phone field label
         var phoneLabel: AccessibilityNodeInfo? = null
-        val end = SystemClock.uptimeMillis() + 5000
-        while (SystemClock.uptimeMillis() < end) {
+        val labelEnd = SystemClock.uptimeMillis() + 8000
+        while (SystemClock.uptimeMillis() < labelEnd) {
             if (StepUtils.shouldStop()) return false
             val root = service.rootInActiveWindow
             if (root != null) {
@@ -369,33 +360,97 @@ object PayPalActions {
             }
             StepUtils.sleepMs(StepUtils.POLL_MS)
         }
-
         if (phoneLabel == null) {
-            AutomationState.log("✘ 'phone number' field not found")
+            AutomationState.log("✘ 'phone number' label not found")
             return false
         }
+        AutomationState.log("✔ Phone label found")
 
         val bounds = Rect()
         phoneLabel.getBoundsInScreen(bounds)
         val x = bounds.centerX()
         val y = bounds.centerY()
-        AutomationState.log("ℹ Phone field at ($x, $y) — double tap")
+        AutomationState.log("ℹ Phone field at ($x, $y)")
 
-        tapAt(service, x, y)
-        StepUtils.sleepMs(250)
-        tapAt(service, x, y)
-        StepUtils.sleepMs(700)
+        // 5 attempts with progressive delays
+        val delays = longArrayOf(2000L, 3000L, 5000L, 5000L, 5000L)
 
-        pasteText(service, national, "phone")
-        StepUtils.sleepMs(800)
+        for (attempt in 0 until 5) {
+            if (StepUtils.shouldStop()) return false
 
-        val verifyRoot = service.rootInActiveWindow
-        if (verifyRoot != null) {
-            val edit = findEditableUnder(verifyRoot)
-            val entered = edit?.text?.toString() ?: ""
-            AutomationState.log("ℹ Field now contains: '$entered'")
+            AutomationState.log("ℹ Attempt #${attempt + 1}/5")
+
+            // Double tap (400ms gap)
+            tapAt(service, x, y)
+            StepUtils.sleepMs(400)
+            tapAt(service, x, y)
+            StepUtils.sleepMs(900)
+
+            // Verify focus
+            var focusedEdit: AccessibilityNodeInfo? = null
+            val fRoot = service.rootInActiveWindow
+            if (fRoot != null) {
+                focusedEdit = findFocusedEditable(fRoot)
+            }
+
+            if (focusedEdit == null) {
+                AutomationState.log("⚠ Field not focused")
+                StepUtils.sleepMs(delays[attempt])
+                continue
+            }
+
+            AutomationState.log("✔ Field focused — pasting")
+
+            // Paste
+            pasteText(service, national, "phone")
+            StepUtils.sleepMs(800)
+
+            // Verify text is visible
+            val vRoot = service.rootInActiveWindow
+            val currentText = (findFocusedEditable(vRoot) ?: findEditableUnder(vRoot))
+                ?.text?.toString() ?: ""
+
+            AutomationState.log("ℹ Field contains: '$currentText'")
+
+            if (currentText.isNotEmpty() && currentText.contains(national.takeLast(6))) {
+                AutomationState.log("✔ Number verified: '$currentText'")
+                return true
+            }
+
+            // Retry paste within same attempt
+            AutomationState.log("⚠ Paste not visible — trying again")
+            pasteText(service, national, "phone")
+            StepUtils.sleepMs(1200)
+
+            val vRoot2 = service.rootInActiveWindow
+            val currentText2 = (findFocusedEditable(vRoot2) ?: findEditableUnder(vRoot2))
+                ?.text?.toString() ?: ""
+            AutomationState.log("ℹ Field contains (2nd): '$currentText2'")
+
+            if (currentText2.isNotEmpty() && currentText2.contains(national.takeLast(6))) {
+                AutomationState.log("✔ Number verified on retry: '$currentText2'")
+                return true
+            }
+
+            // Move to next attempt with delay
+            AutomationState.log("⚠ Attempt #${attempt + 1} failed — waiting ${delays[attempt]}ms")
+            StepUtils.sleepMs(delays[attempt])
         }
-        return true
+
+        AutomationState.log("✘ Number not entered after 5 attempts")
+        return false
+    }
+
+    private fun findFocusedEditable(root: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        if (root == null) return null
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val n = queue.removeFirst()
+            if (n.isEditable && n.isVisibleToUser && n.isFocused) return n
+            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
+        }
+        return null
     }
 
     private fun pasteText(service: AccessibilityService, text: String, label: String) {
@@ -410,7 +465,7 @@ object PayPalActions {
         StepUtils.sleepMs(200)
 
         val root = service.rootInActiveWindow
-        val edit = findEditableUnder(root)
+        val edit = findFocusedEditable(root) ?: findEditableUnder(root)
 
         if (edit != null) {
             edit.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
