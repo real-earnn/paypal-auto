@@ -16,12 +16,20 @@ class AppPrefs(context: Context) {
         get() = prefs.getInt(KEY_FLIGHT_POS, 0)
         set(v) = prefs.edit().putInt(KEY_FLIGHT_POS, v).apply()
 
-    // 🟢 Captcha auto alarm toggle
+    // 🟢 Saved airplane tile tap coordinates
+    var flightTapX: Int
+        get() = prefs.getInt(KEY_FLIGHT_X, 0)
+        set(v) = prefs.edit().putInt(KEY_FLIGHT_X, v).apply()
+
+    var flightTapY: Int
+        get() = prefs.getInt(KEY_FLIGHT_Y, 0)
+        set(v) = prefs.edit().putInt(KEY_FLIGHT_Y, v).apply()
+
+    // 🟢 Captcha alarm
     var captchaAlarmEnabled: Boolean
         get() = prefs.getBoolean(KEY_CAPTCHA_ALARM, true)
         set(v) = prefs.edit().putBoolean(KEY_CAPTCHA_ALARM, v).apply()
 
-    // 🟢 Selected alarm sound URI (null = use default system alarm)
     var captchaAlarmUri: String?
         get() = prefs.getString(KEY_CAPTCHA_URI, null)
         set(v) = prefs.edit().putString(KEY_CAPTCHA_URI, v).apply()
@@ -29,6 +37,8 @@ class AppPrefs(context: Context) {
     companion object {
         private const val KEY_AUTO_FLIGHT = "auto_flight_mode"
         private const val KEY_FLIGHT_POS = "flight_position"
+        private const val KEY_FLIGHT_X = "flight_tap_x"
+        private const val KEY_FLIGHT_Y = "flight_tap_y"
         private const val KEY_CAPTCHA_ALARM = "captcha_alarm_enabled"
         private const val KEY_CAPTCHA_URI = "captcha_alarm_uri"
     }
