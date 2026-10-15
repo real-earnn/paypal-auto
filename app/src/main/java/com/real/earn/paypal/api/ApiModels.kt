@@ -51,6 +51,7 @@ data class LogoutResponse(
     @SerializedName("message") val message: String? = null
 )
 
+// ── Services List ─────────────────────────────────────────
 data class ServicesResponse(
     @SerializedName("success") val success: Boolean = false,
     @SerializedName("services") val services: List<ServiceItem>? = null
@@ -82,7 +83,7 @@ data class CountriesResponse(
     @SerializedName("countries") val countries: List<CountryItem>? = null
 )
 
-// ── Get Numbers ───────────────────────────────────────────
+// ── Get Numbers (existing) ────────────────────────────────
 data class GetNumberBody(
     @SerializedName("service") val service: String,
     @SerializedName("country") val country: String,
@@ -110,4 +111,62 @@ data class ReleaseNumberBody(
 data class ReleaseNumberResponse(
     @SerializedName("success") val success: Boolean = false,
     @SerializedName("released") val released: Int = 0
+)
+
+// ══════════════════════════════════════════════════════════════════════════
+//  🟢 PREFIX MODULE MODELS (NEW)
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── GET /api/app/prefixes (list mode) ─────────────────────
+data class PrefixesListResponse(
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("mode") val mode: String = "",
+    @SerializedName("prefixes") val prefixes: List<PrefixEntry>? = null
+)
+
+data class PrefixEntry(
+    @SerializedName("prefix") val prefix: String = "",
+    @SerializedName("files") val files: List<PrefixFileInfo>? = null
+) {
+    val filesSafe: List<PrefixFileInfo>
+        get() = files ?: emptyList()
+}
+
+data class PrefixFileInfo(
+    @SerializedName("name") val name: String = "",
+    @SerializedName("count") val count: Int = 0
+)
+
+// ── GET /api/app/prefixes?prefix=X (search mode) ──────────
+data class PrefixSearchResponse(
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("mode") val mode: String = "",
+    @SerializedName("searching_prefix") val searchingPrefix: String = "",
+    @SerializedName("files") val files: List<PrefixFileInfo>? = null
+) {
+    val filesSafe: List<PrefixFileInfo>
+        get() = files ?: emptyList()
+}
+
+// ── POST /api/app/get-number-by-prefix ────────────────────
+data class GetNumberByPrefixBody(
+    @SerializedName("service") val service: String,
+    @SerializedName("prefix") val prefix: String? = null,
+    @SerializedName("file") val file: String? = null,
+    @SerializedName("auto") val auto: Boolean = false,
+    @SerializedName("count") val count: Int = 5
+)
+
+data class GetNumberByPrefixResponse(
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("numbers") val numbers: List<String>? = null,
+    @SerializedName("raw_numbers") val rawNumbers: List<String>? = null,
+    @SerializedName("service") val service: String = "",
+    @SerializedName("prefix") val prefix: String = "",
+    @SerializedName("file") val file: String = "",
+    @SerializedName("country_code") val countryCode: String = "",
+    @SerializedName("dialing_code") val dialingCode: String = "",
+    @SerializedName("price") val price: Double = 0.0,
+    @SerializedName("error") val error: String? = null,
+    @SerializedName("message") val message: String? = null
 )
