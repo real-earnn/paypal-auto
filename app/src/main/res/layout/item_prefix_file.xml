@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="8dp"
+    android:padding="14dp"
+    android:background="@color/bg_card">
+
+    <!-- Prefix badge (left) -->
+    <TextView
+        android:id="@+id/tvPrefix"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@color/paypal_blue"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="6dp"
+        android:text="213"
+        android:textColor="@color/white"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <!-- File name -->
+    <TextView
+        android:id="@+id/tvFileName"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:text="algeria11"
+        android:textColor="@color/text_light"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toEndOf="@id/tvPrefix"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- Count -->
+    <TextView
+        android:id="@+id/tvCount"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="4dp"
+        android:text="293 numbers"
+        android:textColor="@color/text_dim"
+        android:textSize="12sp"
+        app:layout_constraintTop_toBottomOf="@id/tvFileName"
+        app:layout_constraintStart_toEndOf="@id/tvPrefix"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
