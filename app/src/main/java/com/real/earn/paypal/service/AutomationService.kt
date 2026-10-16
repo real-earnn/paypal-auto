@@ -35,9 +35,12 @@ class AutomationService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var loopJob: Job? = null
     private var overlay: OverlayManager? = null
-    private var wakeLock: PowerManager.WakeLock? = null
 
-    // 🟢 Mode: "service" | "auto" | "prefix"
+    // 🟢 CPU wake lock — keep CPU running
+    private var wakeLock: PowerManager.WakeLock? = null
+    // 🟢 Screen wake lock — keep SCREEN ON (bright) while automation runs
+    private var screenLock: PowerManager.WakeLock? = null
+
     private var mode: String = "service"
     private var serviceName: String = "PayPal"
     private var countryName: String = ""
@@ -96,8 +99,13 @@ class AutomationService : Service() {
         super.onCreate()
         startForeground(NOTIF_ID, buildNotification("Initializing…"))
         acquireWakeLock()
+        // 🟢 Screen wake lock onCreate mein hi le lo — screen kabhi off na ho
+        acquireScreenLock()
     }
 
+    // ══════════════════════════════════════════════════════════════════════
+    //  🟢 CPU Wake Lock (already existing)
+    // ══════════════════════════════════════════════════════════════════════
     private fun acquireWakeLock() {
         try {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -106,14 +114,58 @@ class AutomationService : Service() {
                 "RealEarnPayPal::AutomationWakeLock"
             ).apply {
                 setReferenceCounted(false)
-                acquire(2 * 60 * 60 * 1000L)
+                acquire(2 * 60 * 60 * 1000L) // 2 hours max
             }
         } catch (_: Exception) {}
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  🟢 NEW: Screen Wake Lock — screen kabhi off nahi hogi
+    //  FULL_WAKE_LOCK = screen ON at full brightness (deprecated but works)
+    //  Fallback: SCREEN_BRIGHT_WAKE_LOCK on older devices
+    // ══════════════════════════════════════════════════════════════════════
+    @Suppress("DEPRECATION")
+    private fun acquireScreenLock() {
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+
+            // ACQUIRE_CAUSES_WAKEUP — agar screen already off hai to turant on karega
+            // ON_AFTER_RELEASE — release ke baad screen timeout reset
+            val flags = PowerManager.FULL_WAKE_LOCK or
+                    PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                    PowerManager.ON_AFTER_RELEASE
+
+            screenLock = pm.newWakeLock(
+                flags,
+                "RealEarnPayPal::ScreenOnLock"
+            ).apply {
+                setReferenceCounted(false)
+                acquire(2 * 60 * 60 * 1000L) // 2 hours max
+            }
+        } catch (_: Exception) {
+            // Fallback: SCREEN_BRIGHT_WAKE_LOCK (kuch devices pe better)
+            try {
+                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                screenLock = pm.newWakeLock(
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                            PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                    "RealEarnPayPal::ScreenOnLock"
+                ).apply {
+                    setReferenceCounted(false)
+                    acquire(2 * 60 * 60 * 1000L)
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     private fun releaseWakeLock() {
         try { if (wakeLock?.isHeld == true) wakeLock?.release() } catch (_: Exception) {}
         wakeLock = null
+    }
+
+    private fun releaseScreenLock() {
+        try { if (screenLock?.isHeld == true) screenLock?.release() } catch (_: Exception) {}
+        screenLock = null
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -161,7 +213,6 @@ class AutomationService : Service() {
         AutomationState.reset()
         AutomationState.setStatus(AutomationState.Status.RUNNING)
 
-        // 🟢 Mode-aware log
         when (mode) {
             "auto" -> AutomationState.log("🚀 Automation: $serviceName · Auto Prefix")
             "prefix" -> AutomationState.log("🚀 Automation: $serviceName · $prefix / $file")
@@ -253,20 +304,16 @@ class AutomationService : Service() {
                 updateNotification("Stopped")
                 overlay?.hide(); overlay = null
                 releaseWakeLock()
+                releaseScreenLock()   // 🟢 screen lock release
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             } catch (_: Exception) {}
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  🟢 FETCH NUMBERS — mode-aware
-    // ══════════════════════════════════════════════════════════════════════════
     private suspend fun fetchNumbers(auth: AuthManager): List<String> {
         return try {
             when (mode) {
-
-                // ═══════ AUTO MODE ═══════
                 "auto" -> {
                     val res = ApiClient.service(auth).getNumbersByPrefix(
                         GetNumberByPrefixBody(
@@ -277,10 +324,8 @@ class AutomationService : Service() {
                     )
                     if (res.isSuccessful && res.body()?.success == true) {
                         val body = res.body()!!
-                        // Update country info from response
                         countryCodeIso = body.countryCode
                         dialingCode = body.dialingCode
-                        // countryName ke liye file name use karo (PayPal search ke liye)
                         countryName = body.file.ifEmpty { "Unknown" }
                         AutomationState.log("🎲 Auto pick: ${body.prefix} / ${body.file}")
                         body.numbers ?: emptyList()
@@ -290,7 +335,6 @@ class AutomationService : Service() {
                     }
                 }
 
-                // ═══════ PREFIX MODE ═══════
                 "prefix" -> {
                     val res = ApiClient.service(auth).getNumbersByPrefix(
                         GetNumberByPrefixBody(
@@ -303,10 +347,8 @@ class AutomationService : Service() {
                     )
                     if (res.isSuccessful && res.body()?.success == true) {
                         val body = res.body()!!
-                        // Update country info from response
                         countryCodeIso = body.countryCode
                         dialingCode = body.dialingCode
-                        // countryName = file name (e.g. algeria11)
                         countryName = body.file.ifEmpty { file }
                         body.numbers ?: emptyList()
                     } else {
@@ -315,7 +357,6 @@ class AutomationService : Service() {
                     }
                 }
 
-                // ═══════ SERVICE MODE (default, old flow) ═══════
                 else -> {
                     val res = ApiClient.service(auth).getNumbers(
                         GetNumberBody(service = serviceName, country = countryName, count = 5)
@@ -409,6 +450,7 @@ class AutomationService : Service() {
         loopJob?.cancel(); scope.cancel()
         overlay?.hide(); overlay = null
         releaseWakeLock()
+        releaseScreenLock()   // 🟢 release screen lock
         super.onDestroy()
     }
 }
