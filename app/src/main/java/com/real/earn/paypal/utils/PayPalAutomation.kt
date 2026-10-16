@@ -24,7 +24,7 @@ object PayPalAutomation {
         if (numbers.isEmpty()) return Pair(0, 0)
 
         // ══════════════════════════════════════════════════════════════════
-        //  ROUND SETUP — ek dafa (flight + clear + launch + country)
+        //  ROUND SETUP
         // ══════════════════════════════════════════════════════════════════
         if (autoFlightMode) {
             val ok = StepUtils.retryStep("Flight cycle") {
@@ -71,7 +71,7 @@ object PayPalAutomation {
         AutomationState.log("✔ Country: $countryIso")
 
         // ══════════════════════════════════════════════════════════════════
-        //  INNER LOOP — multiple numbers same session
+        //  INNER LOOP
         // ══════════════════════════════════════════════════════════════════
         for (num in numbers) {
             if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
@@ -101,24 +101,28 @@ object PayPalAutomation {
             }
             AutomationState.log("ℹ Continue tapped — waiting result…")
 
-            // ③ Wait for result — captcha-aware retry loop
+            // ③ Wait for result — captcha-aware, patient
             var finalResult = PayPalActions.Result.TIMEOUT
             var captchaRetries = 0
 
-            while (captchaRetries < 4) {
+            while (captchaRetries < 6) {
                 if (StepUtils.shouldStop()) break
 
-                val r = PayPalActions.checkResult(service, 12000)
+                // 🟢 Longer initial timeout — captcha loading ke liye
+                val r = PayPalActions.checkResult(service, 15000)
 
                 if (r == PayPalActions.Result.RETRY_CONTINUE) {
                     captchaRetries++
                     AutomationState.log("ℹ Captcha solved — Continue again (#$captchaRetries)")
-                    StepUtils.sleepMs(800)
+
+                    // Grace: PayPal UI settle hone do
+                    StepUtils.sleepMs(1000)
 
                     if (!PayPalActions.tapContinue(service)) {
                         AutomationState.log("  ⚠ Re-tap Continue failed")
-                        finalResult = PayPalActions.Result.TIMEOUT
-                        break
+                        // Don't fail immediately — PayPal might still be processing
+                        StepUtils.sleepMs(2000)
+                        continue
                     }
                     StepUtils.sleepMs(1500)
                     continue
@@ -135,24 +139,21 @@ object PayPalAutomation {
                     AutomationState.log("✔ OTP screen — SUCCESS: $num")
                     onNumberSuccess(num); success++
 
-                    // Resend 2x (5s each)
                     PayPalActions.tapResendTwice(service)
 
-                    // Red error appeared during/after resend?
                     StepUtils.sleepMs(2000)
                     if (PayPalActions.hasRedError(service)) {
                         AutomationState.log("✘ Red error after resend — ROUND END")
                         break
                     }
 
-                    // No error → close popup + clear field, next number
                     AutomationState.log("ℹ No error — closing resend popup + clearing field")
                     PayPalActions.closeResendPopup(service)
                     PayPalActions.clearNumberField(service)
                     StepUtils.sleepMs(500)
                 }
 
-                // ─── FAIL: Red error on Continue ───
+                // ─── FAIL: Red error ───
                 PayPalActions.Result.ERROR -> {
                     AutomationState.log("✘ Red error on Continue — ROUND END")
                     onNumberFail(num); fail++
@@ -168,7 +169,6 @@ object PayPalAutomation {
                     StepUtils.sleepMs(500)
                 }
 
-                // ─── Unexpected ───
                 else -> {
                     AutomationState.log("⏱ Unexpected result — treating as fail")
                     onNumberFail(num); fail++
@@ -176,9 +176,6 @@ object PayPalAutomation {
             }
         }
 
-        // ══════════════════════════════════════════════════════════════════
-        //  ROUND CLEANUP
-        // ══════════════════════════════════════════════════════════════════
         PayPalActions.closePayPal(service)
         StepUtils.sleepMs(500)
 
