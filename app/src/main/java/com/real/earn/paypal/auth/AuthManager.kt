@@ -41,6 +41,13 @@ class AuthManager(context: Context) {
 
     fun getUserName(): String = prefs.getString(KEY_USERNAME, "") ?: ""
 
+    // 🟢 Client board ID (0 = main board)
+    fun saveClientId(clientId: Long) {
+        prefs.edit().putLong(KEY_CLIENT_ID, clientId).apply()
+    }
+
+    fun getClientId(): Long = prefs.getLong(KEY_CLIENT_ID, 0L)
+
     fun isLoggedIn(): Boolean = !getToken().isNullOrEmpty()
 
     fun clear() {
@@ -52,5 +59,6 @@ class AuthManager(context: Context) {
         private const val KEY_TOKEN = "auth_token"
         private const val KEY_USER_ID = "user_id"
         private const val KEY_USERNAME = "user_name"
+        private const val KEY_CLIENT_ID = "client_id"  // 🟢 NEW
     }
 }
