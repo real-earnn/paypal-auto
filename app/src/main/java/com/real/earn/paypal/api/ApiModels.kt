@@ -5,12 +5,14 @@ import com.google.gson.annotations.SerializedName
 // ── Auth: Request Code ────────────────────────────────────
 data class RequestCodeBody(
     @SerializedName("telegram_id") val telegramId: Long? = null,
-    @SerializedName("username") val username: String? = null
+    @SerializedName("username") val username: String? = null,
+    @SerializedName("owner_id") val ownerId: Long? = null   // 🟢 NEW: client mode ke liye
 )
 
 data class RequestCodeResponse(
     @SerializedName("success") val success: Boolean,
     @SerializedName("user_id") val userId: Long = 0,
+    @SerializedName("client_id") val clientId: Long = 0,    // 🟢 NEW: server returns client_id
     @SerializedName("error") val error: String? = null,
     @SerializedName("message") val message: String? = null,
     @SerializedName("not_found") val notFound: Boolean = false
@@ -18,12 +20,14 @@ data class RequestCodeResponse(
 
 data class VerifyCodeBody(
     @SerializedName("user_id") val userId: Long,
-    @SerializedName("code") val code: String
+    @SerializedName("code") val code: String,
+    @SerializedName("client_id") val clientId: Long = 0     // 🟢 NEW: optional safety
 )
 
 data class VerifyCodeResponse(
     @SerializedName("success") val success: Boolean,
     @SerializedName("token") val token: String? = null,
+    @SerializedName("client_id") val clientId: Long = 0,    // 🟢 NEW
     @SerializedName("user") val user: UserInfo? = null,
     @SerializedName("error") val error: String? = null,
     @SerializedName("message") val message: String? = null
