@@ -22,13 +22,8 @@ object PayPalActions {
     // ══════════════════════════════════════════════════════
     fun launch(service: AccessibilityService): Boolean {
         return try {
-            val intent = service.packageManager.getLaunchIntentForPackage(PAYPAL_PKG)
-                ?: return false
-            intent.addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or
-                Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                Intent.FLAG_ACTIVITY_CLEAR_TASK
-            )
+            val intent = service.packageManager.getLaunchIntentForPackage(PAYPAL_PKG) ?: return false
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_CLEAR_TASK)
             service.startActivity(intent)
             StepUtils.waitForPackage(service, "paypal", 8000)
         } catch (e: Exception) {
@@ -43,38 +38,30 @@ object PayPalActions {
     fun tapGetStarted(service: AccessibilityService, timeoutMs: Long = 15000): Boolean {
         val end = SystemClock.uptimeMillis() + timeoutMs
         var lastLog = 0L
-
         AutomationState.log("ℹ Waiting for Get Started…")
 
         while (SystemClock.uptimeMillis() < end) {
             if (StepUtils.shouldStop()) return false
-
             val root = service.rootInActiveWindow
             if (root != null) {
                 val hasEditField = findEditableUnder(root) != null
-                val hasEmailText = NodeFinder.containsAny(
-                    root, "email or number", "Email or phone number"
-                )
+                val hasEmailText = NodeFinder.containsAny(root, "email or number", "Email or phone number")
                 if (hasEditField || hasEmailText) {
                     AutomationState.log("ℹ Number screen already visible")
                     return true
                 }
-
                 val node = findByTextEquals(root, "Get Started")
                     ?: findByTextContains(root, "Get Started")
                     ?: findByContentDescContains(root, "Get Started")
-
                 if (node != null) {
                     AutomationState.log("ℹ Get Started FOUND — clicking")
-                    val ok = tapNode(service, node)
-                    if (ok) {
+                    if (tapNode(service, node)) {
                         AutomationState.log("✔ Get Started tapped — 5s wait")
                         StepUtils.sleepMs(5000)
                         return true
                     }
                 }
             }
-
             val now = SystemClock.uptimeMillis()
             if (now - lastLog > 3000) {
                 AutomationState.log("ℹ Still waiting for Get Started…")
@@ -95,26 +82,22 @@ object PayPalActions {
 
         while (SystemClock.uptimeMillis() < end) {
             if (StepUtils.shouldStop()) return false
-
             val root = service.rootInActiveWindow
             if (root != null) {
                 if (dialogOrSearchVisible(root)) {
                     AutomationState.log("✔ Country dialog already open")
                     return true
                 }
-
                 val usNode = findUsNode(root)
                 if (usNode != null) {
                     AutomationState.log("ℹ US found — tapping")
-                    val clicked = tapNode(service, usNode)
-                    if (clicked) {
+                    if (tapNode(service, usNode)) {
                         StepUtils.sleepMs(2000)
                         val r2 = service.rootInActiveWindow
                         if (r2 != null && dialogOrSearchVisible(r2)) {
-                            AutomationState.log("✔ Dialog opened via US tap")
+                            AutomationState.log("✔ Dialog opened")
                             return true
                         } else {
-                            AutomationState.log("⚠ Tap done but dialog not visible — retry")
                             StepUtils.sleepMs(800)
                             tapNode(service, usNode)
                             StepUtils.sleepMs(2000)
@@ -143,14 +126,10 @@ object PayPalActions {
             AutomationState.log("  ↳ click: parent")
             return true
         }
-        val bounds = Rect()
-        node.getBoundsInScreen(bounds)
+        val bounds = Rect(); node.getBoundsInScreen(bounds)
         if (bounds.width() > 0 && bounds.height() > 0) {
-            val x = bounds.centerX(); val y = bounds.centerY()
-            AutomationState.log("  ↳ tap at ($x, $y)")
-            return tapAt(service, x, y)
+            return tapAt(service, bounds.centerX(), bounds.centerY())
         }
-        AutomationState.log("  ↳ tap: bounds invalid")
         return false
     }
 
@@ -167,10 +146,7 @@ object PayPalActions {
             }, null)
             latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
             ok
-        } catch (e: Exception) {
-            AutomationState.log("✘ tapAt: ${e.message}")
-            false
-        }
+        } catch (e: Exception) { false }
     }
 
     private fun findUsNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
@@ -181,11 +157,7 @@ object PayPalActions {
             if (!n.isVisibleToUser) continue
             val t = n.text?.toString()?.trim() ?: ""
             val d = n.contentDescription?.toString()?.trim() ?: ""
-            if (matchesUS("$t $d".trim())) {
-                val r = Rect(); n.getBoundsInScreen(r)
-                AutomationState.log("ℹ US match: T='$t' D='$d' bounds=${r.centerX()},${r.centerY()}")
-                return n
-            }
+            if (matchesUS("$t $d".trim())) return n
             for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
         }
         return null
@@ -207,7 +179,7 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  TYPE COUNTRY
+    //  🟢 TYPE + SELECT COUNTRY — Smart retry (no retype)
     // ══════════════════════════════════════════════════════
     fun typeAndSelectCountry(
         service: AccessibilityService,
@@ -217,6 +189,7 @@ object PayPalActions {
         val countryName = cleanCountryName(countryNameRaw)
         AutomationState.log("ℹ Country: $countryName (from $countryNameRaw)")
 
+        // ① Find & click Search
         var searchNode: AccessibilityNodeInfo? = null
         val sEnd = SystemClock.uptimeMillis() + 5000
         while (SystemClock.uptimeMillis() < sEnd) {
@@ -228,60 +201,114 @@ object PayPalActions {
             }
             StepUtils.sleepMs(StepUtils.POLL_MS)
         }
-
         if (searchNode == null) {
-            AutomationState.log("✘ 'Search' text not found")
+            AutomationState.log("✘ 'Search' not found")
             return false
         }
 
         tapNode(service, searchNode)
-        AutomationState.log("ℹ Search tapped")
         StepUtils.sleepMs(700)
 
+        // ② Paste country name (ONCE)
         pasteText(service, countryName, "search")
         AutomationState.log("ℹ Paste done — waiting for result")
-        StepUtils.sleepMs(1800)
+        StepUtils.sleepMs(2000)
 
-        var attempt = 0
-        while (attempt < 3) {
-            attempt++
+        // ══════════════════════════════════════════════════════════════
+        //  ③ CLICK LOOP — don't retype! Just click the SAME result again
+        // ══════════════════════════════════════════════════════════════
+        var clickAttempts = 0
+        val maxAttempts = 5
+
+        while (clickAttempts < maxAttempts) {
+            clickAttempts++
             if (StepUtils.shouldStop()) return false
 
             val root = service.rootInActiveWindow
             if (root == null) {
-                StepUtils.sleepMs(800)
+                StepUtils.sleepMs(700)
                 continue
             }
 
-            val match = findCountryResult(root, countryName, countryIso)
-            if (match == null) {
-                AutomationState.log("⚠ Result not found (attempt $attempt)")
-                StepUtils.sleepMs(1000)
-                continue
-            }
-
-            AutomationState.log("ℹ Clicking result (attempt $attempt)")
-            tapNode(service, match)
-            StepUtils.sleepMs(2000)
-
-            val after = service.rootInActiveWindow
-            if (after == null) {
-                AutomationState.log("✔ Dialog seems closed")
-                return true
-            }
-            val stillOpen = findByTextEquals(after, "Search") != null
-            if (!stillOpen) {
-                AutomationState.log("✔ Country selected, dialog closed")
+            // Check: has dialog already closed? (moved to number screen)
+            if (!dialogStillOpen(root)) {
+                AutomationState.log("✔ Country selected (dialog closed)")
                 StepUtils.sleepMs(1200)
                 return true
             }
 
-            AutomationState.log("⚠ Dialog still open — retry click")
-            StepUtils.sleepMs(500)
+            // Find country result
+            val match = findCountryResult(root, countryName, countryIso)
+            if (match == null) {
+                AutomationState.log("⚠ Result not found (attempt $clickAttempts)")
+                // Check if input still has country text (search field)
+                val searchField = findSearchInput(root)
+                val searchText = searchField?.text?.toString()?.trim() ?: ""
+                if (searchText.isEmpty()) {
+                    // Country name disappeared from input — retype needed
+                    AutomationState.log("  ℹ Search field empty — re-typing country")
+                    tapNode(service, searchNode)
+                    StepUtils.sleepMs(500)
+                    pasteText(service, countryName, "search")
+                    StepUtils.sleepMs(1800)
+                }
+                StepUtils.sleepMs(800)
+                continue
+            }
+
+            // Result found — get its position (top or bottom of dialog)
+            val r = Rect(); match.getBoundsInScreen(r)
+            AutomationState.log("ℹ Result found @ ${r.centerX()},${r.centerY()} (attempt $clickAttempts)")
+
+            // Click it
+            tapNode(service, match)
+            StepUtils.sleepMs(1500)
+
+            // Verify: dialog closed?
+            val after = service.rootInActiveWindow
+            if (after == null) {
+                AutomationState.log("✔ Dialog closed — success")
+                return true
+            }
+            if (!dialogStillOpen(after)) {
+                AutomationState.log("✔ Country selected on attempt $clickAttempts")
+                StepUtils.sleepMs(1200)
+                return true
+            }
+
+            // Still open — check if the same country result is STILL visible
+            // (keyboard closed but country result shifted)
+            val stillThere = findCountryResult(after, countryName, countryIso)
+            if (stillThere != null) {
+                AutomationState.log("  ℹ Dialog still open, result still visible — clicking again")
+                StepUtils.sleepMs(600)
+                // Loop continues — click again (no retype)
+            } else {
+                AutomationState.log("  ⚠ Result gone — check input field")
+                StepUtils.sleepMs(700)
+            }
         }
 
-        AutomationState.log("✘ Country selection failed after 3 attempts")
+        AutomationState.log("✘ Country selection failed after $maxAttempts attempts")
         return false
+    }
+
+    private fun dialogStillOpen(root: AccessibilityNodeInfo): Boolean {
+        // Dialog is open if we see "Search" text AND some country list
+        val hasSearch = findByTextEquals(root, "Search") != null
+        val hasCountry = NodeFinder.containsAny(root, "Country of residence", "Country/region")
+        return hasSearch || hasCountry
+    }
+
+    private fun findSearchInput(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val n = queue.removeFirst()
+            if (n.isEditable && n.isVisibleToUser) return n
+            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
+        }
+        return null
     }
 
     private fun cleanCountryName(raw: String): String {
@@ -291,7 +318,7 @@ object PayPalActions {
     private fun findCountryResult(root: AccessibilityNodeInfo?, name: String, iso: String): AccessibilityNodeInfo? {
         if (root == null) return null
         val rootR = Rect(); root.getBoundsInScreen(rootR)
-        val keyboardTop = rootR.top + (rootR.height() * 0.60).toInt()
+        val keyboardTop = rootR.top + (rootR.height() * 0.65).toInt()
 
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
@@ -299,7 +326,6 @@ object PayPalActions {
 
         while (queue.isNotEmpty()) {
             val n = queue.removeFirst()
-
             if (n.isEditable) continue
 
             val t = n.text?.toString() ?: ""
@@ -319,7 +345,7 @@ object PayPalActions {
 
             if (fallback == null) {
                 fallback = NodeFinder.findClickableParent(n) ?: n
-                AutomationState.log("ℹ Fallback candidate: '$t'")
+                AutomationState.log("ℹ Fallback: '$t'")
             }
 
             for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
@@ -344,7 +370,6 @@ object PayPalActions {
     // ══════════════════════════════════════════════════════
     fun closeResendPopup(service: AccessibilityService): Boolean {
         val root = service.rootInActiveWindow ?: return false
-
         val closeTexts = arrayOf("Close", "Cancel", "Dismiss", "✕", "✖", "×", "X")
 
         NodeFinder.findByText(root, *closeTexts)?.let { n ->
@@ -354,7 +379,6 @@ object PayPalActions {
                 return true
             }
         }
-
         for (t in closeTexts) {
             val n = NodeFinder.findByTextContains(root, t)
             if (n != null && NodeFinder.isVisible(n) && NodeFinder.click(n)) {
@@ -363,8 +387,6 @@ object PayPalActions {
                 return true
             }
         }
-
-        AutomationState.log("ℹ Resend popup close skip (not found)")
         return false
     }
 
@@ -374,20 +396,15 @@ object PayPalActions {
     fun clearNumberField(service: AccessibilityService): Boolean {
         val root = service.rootInActiveWindow ?: return false
         val edit = findFocusedEditable(root) ?: findEditableUnder(root) ?: return false
-
         NodeFinder.click(edit)
         StepUtils.sleepMs(300)
-
         val args = Bundle()
-        args.putCharSequence(
-            AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, ""
-        )
+        args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "")
         if (edit.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
             AutomationState.log("ℹ Number field cleared")
             StepUtils.sleepMs(400)
             return true
         }
-
         return false
     }
 
@@ -404,12 +421,11 @@ object PayPalActions {
 
         val nationalDigits = national.replace(Regex("\\D"), "")
         if (nationalDigits.length < 6) {
-            AutomationState.log("✘ National number too short: '$nationalDigits'")
+            AutomationState.log("✘ Number too short")
             return false
         }
         val verifyTail = nationalDigits.takeLast(6)
-
-        AutomationState.log("ℹ Target: '$national' (verify tail: $verifyTail)")
+        AutomationState.log("ℹ Target: '$national' (tail: $verifyTail)")
 
         var phoneLabel: AccessibilityNodeInfo? = null
         val labelEnd = SystemClock.uptimeMillis() + 8000
@@ -425,55 +441,41 @@ object PayPalActions {
             StepUtils.sleepMs(StepUtils.POLL_MS)
         }
         if (phoneLabel == null) {
-            AutomationState.log("✘ Phone field label not found")
+            AutomationState.log("✘ Phone field not found")
             return false
         }
-        AutomationState.log("✔ Phone field found")
 
-        val bounds = Rect()
-        phoneLabel.getBoundsInScreen(bounds)
-        val x = bounds.centerX()
-        val y = bounds.centerY()
-        AutomationState.log("ℹ Phone field at ($x, $y)")
+        val bounds = Rect(); phoneLabel.getBoundsInScreen(bounds)
+        val x = bounds.centerX(); val y = bounds.centerY()
 
         val delays = longArrayOf(2000L, 3000L, 5000L, 5000L, 5000L)
-
         for (attempt in 0 until 5) {
             if (StepUtils.shouldStop()) return false
-
             val preRoot = service.rootInActiveWindow
             val preEdit = findFocusedEditable(preRoot) ?: findEditableUnder(preRoot)
             val preText = preEdit?.text?.toString() ?: ""
             val preDigits = preText.replace(Regex("\\D"), "")
-
             if (preDigits.contains(verifyTail)) {
-                AutomationState.log("✔ Already filled: '$preText' — skipping")
+                AutomationState.log("✔ Already filled")
                 return true
             }
 
-            AutomationState.log("ℹ Attempt #${attempt + 1}/5 — tapping field")
-
-            tapAt(service, x, y)
-            StepUtils.sleepMs(400)
-            tapAt(service, x, y)
-            StepUtils.sleepMs(900)
+            AutomationState.log("ℹ Attempt #${attempt + 1}/5")
+            tapAt(service, x, y); StepUtils.sleepMs(400)
+            tapAt(service, x, y); StepUtils.sleepMs(900)
 
             val fRoot = service.rootInActiveWindow
             val focused = findFocusedEditable(fRoot)
             if (focused == null) {
-                AutomationState.log("⚠ Field not focused")
-                StepUtils.sleepMs(delays[attempt])
-                continue
+                AutomationState.log("⚠ Not focused")
+                StepUtils.sleepMs(delays[attempt]); continue
             }
-            AutomationState.log("✔ Field focused")
+            AutomationState.log("✔ Focused")
 
             val existing = focused.text?.toString() ?: ""
             if (existing.isNotEmpty()) {
-                AutomationState.log("ℹ Clearing stale '$existing'")
                 val args = Bundle()
-                args.putCharSequence(
-                    AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, ""
-                )
+                args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "")
                 focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
                 StepUtils.sleepMs(400)
             }
@@ -485,24 +487,19 @@ object PayPalActions {
             val vEdit = findFocusedEditable(vRoot) ?: findEditableUnder(vRoot)
             val vText = vEdit?.text?.toString() ?: ""
             val vDigits = vText.replace(Regex("\\D"), "")
-
-            AutomationState.log("ℹ Field after paste: '$vText' → digits='$vDigits'")
+            AutomationState.log("ℹ After paste: '$vText' → '$vDigits'")
 
             if (vDigits.isNotEmpty() && vDigits.contains(verifyTail)) {
-                AutomationState.log("✔ Number verified: '$vText'")
+                AutomationState.log("✔ Verified")
                 return true
             }
-
             if (vDigits.length >= 8) {
-                AutomationState.log("ℹ Field has ${vDigits.length} digits — accepting")
+                AutomationState.log("ℹ ${vDigits.length} digits — accepting")
                 return true
             }
-
-            AutomationState.log("⚠ Verify failed — waiting ${delays[attempt]}ms")
             StepUtils.sleepMs(delays[attempt])
         }
-
-        AutomationState.log("✘ Number not entered after 5 attempts")
+        AutomationState.log("✘ Number not entered")
         return false
     }
 
@@ -522,39 +519,18 @@ object PayPalActions {
         try {
             val cm = service.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             cm.setPrimaryClip(ClipData.newPlainText(label, text))
-            AutomationState.log("ℹ Clipboard set: '$text'")
-        } catch (e: Exception) {
-            AutomationState.log("✘ Clipboard fail: ${e.message}")
-        }
+        } catch (_: Exception) {}
 
         StepUtils.sleepMs(200)
-
         val root = service.rootInActiveWindow
         val edit = findFocusedEditable(root) ?: findEditableUnder(root)
 
         if (edit != null) {
             edit.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-
-            val pasteOk = edit.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-            if (pasteOk) {
-                AutomationState.log("✔ Pasted via ACTION_PASTE")
-                return
-            }
-
+            if (edit.performAction(AccessibilityNodeInfo.ACTION_PASTE)) return
             val args = Bundle()
-            args.putCharSequence(
-                AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-                text
-            )
-            val setOk = edit.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-            if (setOk) {
-                AutomationState.log("✔ Set text via ACTION_SET_TEXT")
-                return
-            }
-
-            AutomationState.log("⚠ Both paste & setText failed")
-        } else {
-            AutomationState.log("⚠ No editable node")
+            args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+            edit.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
         }
     }
 
@@ -577,21 +553,23 @@ object PayPalActions {
     enum class Result { OTP_SCREEN, ERROR, TIMEOUT, RETRY_CONTINUE }
 
     // ══════════════════════════════════════════════════════════════════════
-    //  🟢 checkResult — Captcha-aware, patient loading
+    //  🟢 checkResult — FULL SCREEN ANALYSIS
     //
-    //  Logic:
-    //    • Success: "Resend" visible
-    //    • Captcha present (any state — checkbox visible, loading, puzzle)
-    //      → extend deadline aggressively (60s from last captcha activity)
-    //    • Captcha gone + Continue visible → RETRY_CONTINUE
-    //    • Error only when no captcha present
+    //  Look at BOTH previous & current setup:
+    //    • Number input still visible  → still processing → WAIT
+    //    • Continue visible with spinner → loading → WAIT
+    //    • Resend visible              → OTP_SCREEN
+    //    • Explicit error text         → ERROR
+    //    • Captcha visible             → extend deadline 60s
+    //    • Nothing → keep waiting (do NOT assume timeout too early)
     // ══════════════════════════════════════════════════════════════════════
-    fun checkResult(service: AccessibilityService, timeoutMs: Long = 15000): Result {
+    fun checkResult(service: AccessibilityService, timeoutMs: Long = 20000): Result {
         var deadline = SystemClock.uptimeMillis() + timeoutMs
         var errorFlag = false
         var captchaEverSeen = false
         var captchaClearedAt = 0L
         var lastCaptchaSeenAt = 0L
+        var lastLog = 0L
 
         while (SystemClock.uptimeMillis() < deadline) {
             if (StepUtils.shouldStop()) return Result.TIMEOUT
@@ -603,78 +581,96 @@ object PayPalActions {
                 continue
             }
 
-            // ═══════════════════════════════════════════════════════
-            //  1. SUCCESS — Resend screen
-            // ═══════════════════════════════════════════════════════
+            // ═══ ① SUCCESS — Resend screen ═══
             if (NodeFinder.containsAny(root, "Resend Code", "Resend code", "Resend")) {
+                AutomationState.log("  ✔ Resend visible → OTP_SCREEN")
                 return Result.OTP_SCREEN
             }
 
-            // ═══════════════════════════════════════════════════════
-            //  2. CAPTCHA STATE — extended patience
-            // ═══════════════════════════════════════════════════════
+            // ═══ ② CAPTCHA present — extend deadline aggressively ═══
             val captchaVisible = isCaptchaPresent(root)
-
             if (captchaVisible) {
                 captchaEverSeen = true
                 captchaClearedAt = 0L
                 lastCaptchaSeenAt = now
-                // Extend aggressively — captcha loading can take 60s+ on slow networks
                 val ext = now + 60_000
                 if (ext > deadline) deadline = ext
+                if (now - lastLog > 3000) {
+                    AutomationState.log("  ⏳ Captcha present — extending wait")
+                    lastLog = now
+                }
                 StepUtils.sleepMs(StepUtils.POLL_MS)
                 continue
             }
 
-            // ═══════════════════════════════════════════════════════
-            //  3. ERROR — only if no captcha present
-            // ═══════════════════════════════════════════════════════
+            // ═══ ③ ERROR — only if no captcha AND explicit error text ═══
             if (!errorFlag && NodeFinder.containsAny(root,
                     "Something went wrong", "can't be used", "not valid",
                     "invalid", "Enter a valid", "try again", "Try again")) {
                 errorFlag = true
+                AutomationState.log("  ⚠ Error text detected")
             }
 
-            // ═══════════════════════════════════════════════════════
-            //  4. POST-CAPTCHA: looking for Continue
-            // ═══════════════════════════════════════════════════════
+            // ═══ ④ POST-CAPTCHA — check if still processing ═══
             if (captchaEverSeen) {
                 val continueBtn = NodeFinder.findByText(root, "Continue", "Next")
-                if (continueBtn != null && continueBtn.isVisibleToUser) {
+                val hasContinue = continueBtn != null && continueBtn.isVisibleToUser
+
+                if (hasContinue) {
                     if (captchaClearedAt == 0L) {
                         captchaClearedAt = now
                     } else if (now - captchaClearedAt > 1500) {
+                        AutomationState.log("  ✔ Captcha cleared + Continue visible → RETRY")
                         return Result.RETRY_CONTINUE
                     }
                 } else {
                     captchaClearedAt = 0L
-                    // No Continue yet → PayPal is processing after captcha.
-                    // Extend as long as recent captcha activity (<30s ago).
-                    if (now - lastCaptchaSeenAt < 30_000) {
-                        val ext = now + 20_000
+                    // No Continue yet → still processing after captcha
+                    if (now - lastCaptchaSeenAt < 45_000) {
+                        val ext = now + 15_000
                         if (ext > deadline) deadline = ext
+                        if (now - lastLog > 4000) {
+                            AutomationState.log("  ⏳ Post-captcha processing — waiting")
+                            lastLog = now
+                        }
                     }
+                }
+            }
+
+            // ═══ ⑤ MID-PROCESSING CHECK ═══
+            // If typed number still visible in a field → PayPal still working
+            val hasNumberField = findEditableUnder(root) != null
+            if (hasNumberField && !errorFlag && !captchaEverSeen) {
+                // Extend a bit
+                val ext = now + 5000
+                if (ext > deadline) deadline = ext
+                if (now - lastLog > 4000) {
+                    AutomationState.log("  ⏳ Still processing (field active) — waiting")
+                    lastLog = now
                 }
             }
 
             StepUtils.sleepMs(StepUtils.POLL_MS)
         }
 
-        return if (errorFlag) Result.ERROR else Result.TIMEOUT
+        // ═══ Final verdict — only ERROR if explicitly seen ═══
+        if (errorFlag) {
+            AutomationState.log("  ✘ Result: ERROR (explicit error text)")
+            return Result.ERROR
+        }
+        AutomationState.log("  ⏱ Result: TIMEOUT")
+        return Result.TIMEOUT
     }
 
-    // 🟢 Captcha presence detector — strong markers only
     private fun isCaptchaPresent(root: AccessibilityNodeInfo?): Boolean {
         if (root == null) return false
         return NodeFinder.containsAny(
             root,
-            // hCaptcha main markers
             "I am human",
             "Security Challenge",
             "hCaptcha",
             "Verify you are human",
             "Verify you are a human",
-            // Puzzle instruction markers
             "Drag the",
             "Select all",
             "Choose the",
