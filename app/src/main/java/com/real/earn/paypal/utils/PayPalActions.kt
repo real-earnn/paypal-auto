@@ -346,7 +346,6 @@ object PayPalActions {
 
         val closeTexts = arrayOf("Close", "Cancel", "Dismiss", "✕", "✖", "×", "X")
 
-        // Exact match
         NodeFinder.findByText(root, *closeTexts)?.let { n ->
             if (NodeFinder.isVisible(n) && NodeFinder.click(n)) {
                 AutomationState.log("ℹ Resend popup closed")
@@ -355,7 +354,6 @@ object PayPalActions {
             }
         }
 
-        // Fallback: contains match
         for (t in closeTexts) {
             val n = NodeFinder.findByTextContains(root, t)
             if (n != null && NodeFinder.isVisible(n) && NodeFinder.click(n)) {
@@ -376,11 +374,9 @@ object PayPalActions {
         val root = service.rootInActiveWindow ?: return false
         val edit = findFocusedEditable(root) ?: findEditableUnder(root) ?: return false
 
-        // Focus + click
         NodeFinder.click(edit)
         StepUtils.sleepMs(300)
 
-        // Set text to empty
         val args = Bundle()
         args.putCharSequence(
             AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, ""
@@ -393,11 +389,11 @@ object PayPalActions {
 
         return false
     }
+
     // ══════════════════════════════════════════════════════
     //  TYPE NUMBER — Normalize digits, no double-paste
     // ══════════════════════════════════════════════════════
     fun typeNumber(service: AccessibilityService, fullNumber: String, dialingCode: String): Boolean {
-        // ── Sanitize target number ──
         var national = fullNumber.trim().removePrefix("+")
         if (dialingCode.isNotEmpty() && national.startsWith(dialingCode)) {
             national = national.substring(dialingCode.length)
@@ -410,12 +406,10 @@ object PayPalActions {
             AutomationState.log("✘ National number too short: '$nationalDigits'")
             return false
         }
-        // Verify tail = last 6 digits (safe against PayPal formatting)
         val verifyTail = nationalDigits.takeLast(6)
 
         AutomationState.log("ℹ Target: '$national' (verify tail: $verifyTail)")
 
-        // ═══ Step 1: Find phone field ═══
         var phoneLabel: AccessibilityNodeInfo? = null
         val labelEnd = SystemClock.uptimeMillis() + 8000
         while (SystemClock.uptimeMillis() < labelEnd) {
@@ -441,13 +435,11 @@ object PayPalActions {
         val y = bounds.centerY()
         AutomationState.log("ℹ Phone field at ($x, $y)")
 
-        // ═══ Step 2: 5 attempts with progressive delay ═══
         val delays = longArrayOf(2000L, 3000L, 5000L, 5000L, 5000L)
 
         for (attempt in 0 until 5) {
             if (StepUtils.shouldStop()) return false
 
-            // ── Pre-check: field already has the correct number? ──
             val preRoot = service.rootInActiveWindow
             val preEdit = findFocusedEditable(preRoot) ?: findEditableUnder(preRoot)
             val preText = preEdit?.text?.toString() ?: ""
@@ -460,13 +452,11 @@ object PayPalActions {
 
             AutomationState.log("ℹ Attempt #${attempt + 1}/5 — tapping field")
 
-            // Double tap (400ms gap)
             tapAt(service, x, y)
             StepUtils.sleepMs(400)
             tapAt(service, x, y)
             StepUtils.sleepMs(900)
 
-            // ── Focus verify ──
             val fRoot = service.rootInActiveWindow
             val focused = findFocusedEditable(fRoot)
             if (focused == null) {
@@ -476,7 +466,6 @@ object PayPalActions {
             }
             AutomationState.log("✔ Field focused")
 
-            // ── Clear stale content ──
             val existing = focused.text?.toString() ?: ""
             if (existing.isNotEmpty()) {
                 AutomationState.log("ℹ Clearing stale '$existing'")
@@ -488,11 +477,9 @@ object PayPalActions {
                 StepUtils.sleepMs(400)
             }
 
-            // ── Paste ──
             pasteText(service, national, "phone")
             StepUtils.sleepMs(1300)
 
-            // ── Normalized verify (digits only!) ──
             val vRoot = service.rootInActiveWindow
             val vEdit = findFocusedEditable(vRoot) ?: findEditableUnder(vRoot)
             val vText = vEdit?.text?.toString() ?: ""
@@ -500,13 +487,11 @@ object PayPalActions {
 
             AutomationState.log("ℹ Field after paste: '$vText' → digits='$vDigits'")
 
-            // Accept if the last 6 digits match (PayPal may add +263, spaces, hyphens)
             if (vDigits.isNotEmpty() && vDigits.contains(verifyTail)) {
                 AutomationState.log("✔ Number verified: '$vText'")
                 return true
             }
 
-            // Tolerant accept: if field already has ≥ 8 digits
             if (vDigits.length >= 8) {
                 AutomationState.log("ℹ Field has ${vDigits.length} digits — accepting")
                 return true
@@ -588,25 +573,49 @@ object PayPalActions {
     // ══════════════════════════════════════════════════════
     //  RESULT
     // ══════════════════════════════════════════════════════
-    enum class Result { OTP_SCREEN, ERROR, TIMEOUT }
+    enum class Result { OTP_SCREEN, ERROR, TIMEOUT, RETRY_CONTINUE }
 
     fun checkResult(service: AccessibilityService, timeoutMs: Long = 10000): Result {
         val end = SystemClock.uptimeMillis() + timeoutMs
         var errorFlag = false
+        var captchaSeen = false
+        var captchaClearedAt = 0L
+
         while (SystemClock.uptimeMillis() < end) {
             if (StepUtils.shouldStop()) return Result.TIMEOUT
 
             val root = service.rootInActiveWindow
             if (root != null) {
+                // Detect captcha presence
+                val captchaVisible = NodeFinder.containsAny(
+                    root, "I am human", "Security Challenge", "hCaptcha", "Verify you are human"
+                )
+                if (captchaVisible) captchaSeen = true
+
+                // Success: Resend screen visible
                 if (NodeFinder.containsAny(root, "Resend Code", "Resend code", "Resend")) {
                     return Result.OTP_SCREEN
                 }
+
+                // Error detection
                 if (!errorFlag && NodeFinder.containsAny(
                         root,
                         "Something went wrong", "can't be used", "not valid",
                         "invalid", "Enter a valid", "try again", "Try again"
                     )
                 ) errorFlag = true
+
+                // Captcha was seen, now gone → check for Continue to retry
+                if (captchaSeen && !captchaVisible && !errorFlag) {
+                    val contBtn = NodeFinder.findByText(root, "Continue", "Next")
+                    if (contBtn != null && contBtn.isVisibleToUser) {
+                        if (captchaClearedAt == 0L) {
+                            captchaClearedAt = SystemClock.uptimeMillis()
+                        } else if (SystemClock.uptimeMillis() - captchaClearedAt > 800) {
+                            return Result.RETRY_CONTINUE
+                        }
+                    }
+                }
             }
             StepUtils.sleepMs(StepUtils.POLL_MS)
         }
