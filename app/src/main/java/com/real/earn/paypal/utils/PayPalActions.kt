@@ -326,8 +326,9 @@ object PayPalActions {
         }
         return fallback
     }
+
     // ══════════════════════════════════════════════════════
-    //  hasRedError — kya red error visible hai?
+    //  hasRedError
     // ══════════════════════════════════════════════════════
     fun hasRedError(service: AccessibilityService): Boolean {
         val root = service.rootInActiveWindow ?: return false
@@ -339,7 +340,7 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  closeResendPopup — Resend popup ko X se band karo
+    //  closeResendPopup
     // ══════════════════════════════════════════════════════
     fun closeResendPopup(service: AccessibilityService): Boolean {
         val root = service.rootInActiveWindow ?: return false
@@ -368,7 +369,7 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  clearNumberField — number input field khali karo
+    //  clearNumberField
     // ══════════════════════════════════════════════════════
     fun clearNumberField(service: AccessibilityService): Boolean {
         val root = service.rootInActiveWindow ?: return false
@@ -391,7 +392,7 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  TYPE NUMBER — Normalize digits, no double-paste
+    //  TYPE NUMBER
     // ══════════════════════════════════════════════════════
     fun typeNumber(service: AccessibilityService, fullNumber: String, dialingCode: String): Boolean {
         var national = fullNumber.trim().removePrefix("+")
@@ -575,51 +576,116 @@ object PayPalActions {
     // ══════════════════════════════════════════════════════
     enum class Result { OTP_SCREEN, ERROR, TIMEOUT, RETRY_CONTINUE }
 
-    fun checkResult(service: AccessibilityService, timeoutMs: Long = 10000): Result {
-        val end = SystemClock.uptimeMillis() + timeoutMs
+    // ══════════════════════════════════════════════════════════════════════
+    //  🟢 checkResult — Captcha-aware, patient loading
+    //
+    //  Logic:
+    //    • Success: "Resend" visible
+    //    • Captcha present (any state — checkbox visible, loading, puzzle)
+    //      → extend deadline aggressively (60s from last captcha activity)
+    //    • Captcha gone + Continue visible → RETRY_CONTINUE
+    //    • Error only when no captcha present
+    // ══════════════════════════════════════════════════════════════════════
+    fun checkResult(service: AccessibilityService, timeoutMs: Long = 15000): Result {
+        var deadline = SystemClock.uptimeMillis() + timeoutMs
         var errorFlag = false
-        var captchaSeen = false
+        var captchaEverSeen = false
         var captchaClearedAt = 0L
+        var lastCaptchaSeenAt = 0L
 
-        while (SystemClock.uptimeMillis() < end) {
+        while (SystemClock.uptimeMillis() < deadline) {
             if (StepUtils.shouldStop()) return Result.TIMEOUT
-
+            val now = SystemClock.uptimeMillis()
             val root = service.rootInActiveWindow
-            if (root != null) {
-                // Detect captcha presence
-                val captchaVisible = NodeFinder.containsAny(
-                    root, "I am human", "Security Challenge", "hCaptcha", "Verify you are human"
-                )
-                if (captchaVisible) captchaSeen = true
 
-                // Success: Resend screen visible
-                if (NodeFinder.containsAny(root, "Resend Code", "Resend code", "Resend")) {
-                    return Result.OTP_SCREEN
-                }
+            if (root == null) {
+                StepUtils.sleepMs(StepUtils.POLL_MS)
+                continue
+            }
 
-                // Error detection
-                if (!errorFlag && NodeFinder.containsAny(
-                        root,
-                        "Something went wrong", "can't be used", "not valid",
-                        "invalid", "Enter a valid", "try again", "Try again"
-                    )
-                ) errorFlag = true
+            // ═══════════════════════════════════════════════════════
+            //  1. SUCCESS — Resend screen
+            // ═══════════════════════════════════════════════════════
+            if (NodeFinder.containsAny(root, "Resend Code", "Resend code", "Resend")) {
+                return Result.OTP_SCREEN
+            }
 
-                // Captcha was seen, now gone → check for Continue to retry
-                if (captchaSeen && !captchaVisible && !errorFlag) {
-                    val contBtn = NodeFinder.findByText(root, "Continue", "Next")
-                    if (contBtn != null && contBtn.isVisibleToUser) {
-                        if (captchaClearedAt == 0L) {
-                            captchaClearedAt = SystemClock.uptimeMillis()
-                        } else if (SystemClock.uptimeMillis() - captchaClearedAt > 800) {
-                            return Result.RETRY_CONTINUE
-                        }
+            // ═══════════════════════════════════════════════════════
+            //  2. CAPTCHA STATE — extended patience
+            // ═══════════════════════════════════════════════════════
+            val captchaVisible = isCaptchaPresent(root)
+
+            if (captchaVisible) {
+                captchaEverSeen = true
+                captchaClearedAt = 0L
+                lastCaptchaSeenAt = now
+                // Extend aggressively — captcha loading can take 60s+ on slow networks
+                val ext = now + 60_000
+                if (ext > deadline) deadline = ext
+                StepUtils.sleepMs(StepUtils.POLL_MS)
+                continue
+            }
+
+            // ═══════════════════════════════════════════════════════
+            //  3. ERROR — only if no captcha present
+            // ═══════════════════════════════════════════════════════
+            if (!errorFlag && NodeFinder.containsAny(root,
+                    "Something went wrong", "can't be used", "not valid",
+                    "invalid", "Enter a valid", "try again", "Try again")) {
+                errorFlag = true
+            }
+
+            // ═══════════════════════════════════════════════════════
+            //  4. POST-CAPTCHA: looking for Continue
+            // ═══════════════════════════════════════════════════════
+            if (captchaEverSeen) {
+                val continueBtn = NodeFinder.findByText(root, "Continue", "Next")
+                if (continueBtn != null && continueBtn.isVisibleToUser) {
+                    if (captchaClearedAt == 0L) {
+                        captchaClearedAt = now
+                    } else if (now - captchaClearedAt > 1500) {
+                        return Result.RETRY_CONTINUE
+                    }
+                } else {
+                    captchaClearedAt = 0L
+                    // No Continue yet → PayPal is processing after captcha.
+                    // Extend as long as recent captcha activity (<30s ago).
+                    if (now - lastCaptchaSeenAt < 30_000) {
+                        val ext = now + 20_000
+                        if (ext > deadline) deadline = ext
                     }
                 }
             }
+
             StepUtils.sleepMs(StepUtils.POLL_MS)
         }
+
         return if (errorFlag) Result.ERROR else Result.TIMEOUT
+    }
+
+    // 🟢 Captcha presence detector — strong markers only
+    private fun isCaptchaPresent(root: AccessibilityNodeInfo?): Boolean {
+        if (root == null) return false
+        return NodeFinder.containsAny(
+            root,
+            // hCaptcha main markers
+            "I am human",
+            "Security Challenge",
+            "hCaptcha",
+            "Verify you are human",
+            "Verify you are a human",
+            // Puzzle instruction markers
+            "Drag the",
+            "Select all",
+            "Choose the",
+            "Choose all",
+            "Please click",
+            "Please drag",
+            "Please select",
+            "Click each",
+            "Rotate the",
+            "Match the"
+        )
     }
 
     fun tapResendTwice(service: AccessibilityService) {
