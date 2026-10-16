@@ -12,6 +12,93 @@ import com.real.earn.paypal.service.AutomationState
 
 object AirplaneModeController {
 
+    // ══════════════════════════════════════════════════════════════════════
+    //  🟢 Comprehensive keyword list — multi-variant + multi-language
+    //  Ye sabhi word tile ke naam mein match honge
+    // ══════════════════════════════════════════════════════════════════════
+    private val AIRPLANE_KEYWORDS = arrayOf(
+        // ── English (all variants) ──
+        "airplane",         // US
+        "aeroplane",        // UK / India / Commonwealth
+        "air plane",        // rare split
+        "air-plane",        // rare hyphen
+        "flight mode",      // old Android / some OEMs
+        "flight-mode",
+        "in-flight",        // airplane mode sometimes "in-flight"
+        "inflight",
+        "flight",           // short
+
+        // ── Urdu (اردو) ──
+        "ایروپلین",
+        "ایرو پلین",
+        "فلائٹ",
+        "ہوائی جہاز",
+        "ہوائی",
+        "طیارہ",
+
+        // ── Hindi (हिंदी) ──
+        "एयरप्लेन",
+        "एयरोप्लेन",
+        "फ्लाइट",
+        "हवाई जहाज",
+        "हवाई जहाज़",
+        "विमान",
+
+        // ── Arabic (العربية) ──
+        "طيران",
+        "الطيران",
+        "وضع الطيران",
+
+        // ── Persian / Farsi (فارسی) ──
+        "هواپیما",
+        "پرواز",
+        "حالت هواپیما",
+
+        // ── Turkish ──
+        "uçak",
+        "ucak",
+        "uçuş",
+        "ucus",
+
+        // ── Bengali (বাংলা) ──
+        "বিমান",
+        "ফ্লাইট",
+
+        // ── Indonesian / Malay ──
+        "mode pesawat",
+        "pesawat",
+
+        // ── Russian (Русский) ──
+        "самолет",
+        "самолёт",
+        "авиарежим",
+        "полет",
+        "полёт",
+
+        // ── French ──
+        "mode avion",
+        "avion",
+
+        // ── Spanish ──
+        "modo avión",
+        "modo avion",
+        "avión",
+        "avion",
+
+        // ── German ──
+        "flugmodus",
+        "flug",
+
+        // ── Portuguese ──
+        "modo avião",
+        "modo aviao",
+
+        // ── Italian ──
+        "modalità aereo",
+        "modalita aereo",
+        "aereo",
+    )
+
     fun toggleCycle(service: AccessibilityService): Boolean = strictToggle(service)
 
     fun strictToggle(service: AccessibilityService): Boolean {
@@ -163,6 +250,7 @@ object AirplaneModeController {
 
     // ══════════════════════════════════════════════════════════════════════
     //  FIND TILE — returns ORIGINAL matched node (for gesture tap bounds)
+    //  🟢 Multi-variant + multi-language support
     // ══════════════════════════════════════════════════════════════════════
     private fun findTile(service: AccessibilityService): AccessibilityNodeInfo? {
         val root = service.rootInActiveWindow ?: return null
@@ -193,10 +281,10 @@ object AirplaneModeController {
             val tl = text.lowercase()
             val il = id.lowercase()
 
-            val saysAirplane =
-                dl.contains("airplane") || dl.contains("flight mode") ||
-                tl.contains("airplane") || tl.contains("flight mode") ||
-                il.contains("airplane")
+            // 🟢 Check against comprehensive keyword list
+            val saysAirplane = matchesAirplaneKeyword(dl) ||
+                    matchesAirplaneKeyword(tl) ||
+                    matchesAirplaneKeyword(il)
 
             if (saysAirplane && n.isVisibleToUser) {
                 val r = Rect(); n.getBoundsInScreen(r)
@@ -206,14 +294,23 @@ object AirplaneModeController {
                 if (nodeArea > (screenArea * 0.6).toInt()) score += 30
                 if (r.top < 150) score += 20
 
+                // ═══ Scoring — prefer exact match over partial ═══
+                val dlLower = dl.lowercase().trim()
+                val tlLower = tl.lowercase().trim()
+
+                val isExactDesc = isExactAirplaneMatch(dlLower)
+                val isExactText = isExactAirplaneMatch(tlLower)
+                val startsDesc = startsWithAirplane(dlLower)
+                val startsText = startsWithAirplane(tlLower)
+
                 when {
-                    dl == "airplane mode" || dl == "flight mode" -> score += 0
-                    tl == "airplane mode" || tl == "flight mode" -> score += 2
-                    dl.startsWith("airplane") || dl.startsWith("flight") -> score += 3
-                    tl.startsWith("airplane") || tl.startsWith("flight") -> score += 5
-                    else -> score += 8
+                    isExactDesc || isExactText -> score += 0   // best
+                    startsDesc -> score += 3
+                    startsText -> score += 5
+                    else -> score += 8                          // contains only
                 }
 
+                // ═══ Bonus: neighbour text hints (mobile data, wifi, etc.) ═══
                 val adjacent = getAdjacentSiblingTexts(n)
                 val combined = (dl + " " + tl + " " + adjacent).lowercase()
                 if (combined.contains("mobile data")) score += 15
@@ -241,6 +338,72 @@ object AirplaneModeController {
         val picked = sorted.first()
         AutomationState.log("  ✔ Picked: sc=${picked.score} D='${picked.desc.take(30)}'")
         return picked.node
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  🟢 Keyword matchers
+    // ══════════════════════════════════════════════════════════════════════
+
+    /** Check if text contains any airplane-related keyword */
+    private fun matchesAirplaneKeyword(input: String): Boolean {
+        if (input.isEmpty()) return false
+        for (kw in AIRPLANE_KEYWORDS) {
+            if (input.contains(kw)) return true
+        }
+        return false
+    }
+
+    /** Exact match — "airplane mode", "aeroplane mode", "flight mode", etc. */
+    private fun isExactAirplaneMatch(input: String): Boolean {
+        val t = input.trim()
+        // Common exact tile titles
+        val exactSet = arrayOf(
+            "airplane mode", "aeroplane mode", "air plane mode",
+            "flight mode", "in-flight mode", "inflight mode",
+            "airplane", "aeroplane", "flight",
+            // Urdu
+            "ایروپلین موڈ", "فلائٹ موڈ", "ہوائی جہاز کا موڈ",
+            // Hindi
+            "एयरप्लेन मोड", "एयरोप्लेन मोड", "फ्लाइट मोड",
+            // Arabic
+            "وضع الطيران", "الطيران",
+            // Turkish
+            "uçak modu", "ucak modu",
+        )
+        for (e in exactSet) {
+            if (t == e) return true
+        }
+        // Also exact if it starts with airplane/aeroplane and only has "mode" after
+        if ((t.startsWith("airplane") || t.startsWith("aeroplane")) &&
+            (t.endsWith("mode") || t == "airplane" || t == "aeroplane")) return true
+        return false
+    }
+
+    /** Starts with any airplane variant */
+    private fun startsWithAirplane(input: String): Boolean {
+        val t = input.trim()
+        val starts = arrayOf(
+            "airplane", "aeroplane", "air plane", "air-plane",
+            "flight", "in-flight", "inflight",
+            // Non-latin
+            "ایروپلین", "فلائٹ", "ہوائی", "طیارہ",
+            "एयरप्लेन", "एयरोप्लेन", "फ्लाइट", "हवाई", "विमान",
+            "طيران", "الطيران",
+            "هواپیما", "پرواز",
+            "uçak", "ucak", "uçuş", "ucus",
+            "বিমান", "ফ্লাইট",
+            "mode pesawat", "pesawat",
+            "самолет", "самолёт", "авиарежим", "полет", "полёт",
+            "mode avion", "avion",
+            "modo avión", "modo avion", "avión",
+            "flugmodus", "flug",
+            "modo avião", "modo aviao",
+            "modalità aereo", "modalita aereo", "aereo",
+        )
+        for (s in starts) {
+            if (t.startsWith(s)) return true
+        }
+        return false
     }
 
     private fun getAdjacentSiblingTexts(node: AccessibilityNodeInfo): String {
