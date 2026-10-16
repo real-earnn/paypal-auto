@@ -14,96 +14,43 @@ object AirplaneModeController {
 
     // ══════════════════════════════════════════════════════════════════════
     //  🟢 Comprehensive keyword list — multi-variant + multi-language
-    //  Ye sabhi word tile ke naam mein match honge
     // ══════════════════════════════════════════════════════════════════════
     private val AIRPLANE_KEYWORDS = arrayOf(
-        // ── English (all variants) ──
-        "airplane",         // US
-        "aeroplane",        // UK / India / Commonwealth
-        "air plane",        // rare split
-        "air-plane",        // rare hyphen
-        "flight mode",      // old Android / some OEMs
-        "flight-mode",
-        "in-flight",        // airplane mode sometimes "in-flight"
-        "inflight",
-        "flight",           // short
-
-        // ── Urdu (اردو) ──
-        "ایروپلین",
-        "ایرو پلین",
-        "فلائٹ",
-        "ہوائی جہاز",
-        "ہوائی",
-        "طیارہ",
-
-        // ── Hindi (हिंदी) ──
-        "एयरप्लेन",
-        "एयरोप्लेन",
-        "फ्लाइट",
-        "हवाई जहाज",
-        "हवाई जहाज़",
-        "विमान",
-
-        // ── Arabic (العربية) ──
-        "طيران",
-        "الطيران",
-        "وضع الطيران",
-
-        // ── Persian / Farsi (فارسی) ──
-        "هواپیما",
-        "پرواز",
-        "حالت هواپیما",
-
-        // ── Turkish ──
-        "uçak",
-        "ucak",
-        "uçuş",
-        "ucus",
-
-        // ── Bengali (বাংলা) ──
-        "বিমান",
-        "ফ্লাইট",
-
-        // ── Indonesian / Malay ──
-        "mode pesawat",
-        "pesawat",
-
-        // ── Russian (Русский) ──
-        "самолет",
-        "самолёт",
-        "авиарежим",
-        "полет",
-        "полёт",
-
-        // ── French ──
-        "mode avion",
-        "avion",
-
-        // ── Spanish ──
-        "modo avión",
-        "modo avion",
-        "avión",
-        "avion",
-
-        // ── German ──
-        "flugmodus",
-        "flug",
-
-        // ── Portuguese ──
-        "modo avião",
-        "modo aviao",
-
-        // ── Italian ──
-        "modalità aereo",
-        "modalita aereo",
-        "aereo",
+        // English variants
+        "airplane", "aeroplane", "air plane", "air-plane",
+        "flight mode", "flight-mode", "in-flight", "inflight", "flight",
+        // Urdu
+        "ایروپلین", "ایرو پلین", "فلائٹ", "ہوائی جہاز", "ہوائی", "طیارہ",
+        // Hindi
+        "एयरप्लेन", "एयरोप्लेन", "फ्लाइट", "हवाई जहाज", "हवाई जहाज़", "विमान",
+        // Arabic
+        "طيران", "الطيران", "وضع الطيران",
+        // Persian
+        "هواپیما", "پرواز", "حالت هواپیما",
+        // Turkish
+        "uçak", "ucak", "uçuş", "ucus",
+        // Bengali
+        "বিমান", "ফ্লাইট",
+        // Indonesian
+        "mode pesawat", "pesawat",
+        // Russian
+        "самолет", "самолёт", "авиарежим", "полет", "полёт",
+        // French
+        "mode avion", "avion",
+        // Spanish
+        "modo avión", "modo avion", "avión", "avion",
+        // German
+        "flugmodus", "flug",
+        // Portuguese
+        "modo avião", "modo aviao",
+        // Italian
+        "modalità aereo", "modalita aereo", "aereo",
     )
 
     fun toggleCycle(service: AccessibilityService): Boolean = strictToggle(service)
 
     fun strictToggle(service: AccessibilityService): Boolean {
         return try {
-            // Normalize: if ON, turn OFF first
             if (isAirplaneModeOn(service)) {
                 AutomationState.log("ℹ Flight was ON — normalizing")
                 toggleTo(service, targetOn = false)
@@ -111,7 +58,6 @@ object AirplaneModeController {
                 StepUtils.waitForPackageExit(service, "systemui", 1500)
             }
 
-            // Turn ON
             AutomationState.log("✈ Flight ON")
             if (!toggleTo(service, targetOn = true)) {
                 AutomationState.log("✘ ON failed")
@@ -119,10 +65,8 @@ object AirplaneModeController {
             }
             AutomationState.log("✔ Flight ON")
 
-            // Gap
             StepUtils.sleepMs(900)
 
-            // Turn OFF
             AutomationState.log("✈ Flight OFF")
             if (!toggleTo(service, targetOn = false)) {
                 AutomationState.log("✘ OFF failed")
@@ -141,9 +85,6 @@ object AirplaneModeController {
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    //  toggleTo — Saved coords first, find-tile fallback
-    // ══════════════════════════════════════════════════════════════════════
     private fun toggleTo(service: AccessibilityService, targetOn: Boolean): Boolean {
         val prefs = AppPrefs(service)
 
@@ -154,60 +95,57 @@ object AirplaneModeController {
         }
         StepUtils.sleepMs(700)
 
-        // ═══ ② Try saved coordinates first ═══
-        val savedX = prefs.flightTapX
-        val savedY = prefs.flightTapY
+        // ═══ ② Resolve target coordinates ═══
+        var targetX = prefs.flightTapX
+        var targetY = prefs.flightTapY
 
-        if (savedX > 0 && savedY > 0) {
-            AutomationState.log("  ℹ Using saved coords ($savedX, $savedY)")
-            if (tryTap(service, savedX, savedY, targetOn)) {
+        if (targetX > 0 && targetY > 0) {
+            AutomationState.log("  ℹ Using saved coords ($targetX, $targetY)")
+        } else {
+            val pick = findTile(service) ?: run {
+                AutomationState.log("  ✘ No tile found")
+                return false
+            }
+            val r = Rect(); pick.getBoundsInScreen(r)
+            targetX = r.centerX()
+            targetY = r.centerY()
+            AutomationState.log("  ℹ Tile found at ($targetX, $targetY) size=${r.width()}x${r.height()}")
+        }
+
+        // ═══ ③ Try tapping the SAME position up to 4 times (no QS close) ═══
+        for (attempt in 1..4) {
+            if (StepUtils.shouldStop()) return false
+
+            AutomationState.log("  ↳ Tap attempt #$attempt at ($targetX, $targetY)")
+            tapAt(service, targetX, targetY)
+
+            // Wait for state to flip
+            if (waitAirplaneState(service, targetOn, 3200)) {
+                prefs.flightTapX = targetX
+                prefs.flightTapY = targetY
+                AutomationState.log("  ✔ Success on attempt #$attempt")
                 return true
             }
-            // Saved coords failed → clear them
-            AutomationState.log("  ⚠ Saved coords failed — refinding tile")
-            prefs.flightTapX = 0
-            prefs.flightTapY = 0
+
+            // Not flipped — check QS still open before retry
+            if (!isQsOpen(service)) {
+                AutomationState.log("  ⚠ QS closed after tap #$attempt — reopening")
+                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS)
+                if (!StepUtils.waitForPackage(service, "systemui", 2000)) {
+                    AutomationState.log("  ✘ QS reopen failed")
+                    return false
+                }
+                StepUtils.sleepMs(600)
+            } else {
+                // Still open — just short gap before retry
+                StepUtils.sleepMs(400)
+            }
         }
 
-        // ═══ ③ Find tile by accessibility scan ═══
-        val pick = findTile(service) ?: run {
-            AutomationState.log("  ✘ No tile found")
-            return false
-        }
-        val r = Rect(); pick.getBoundsInScreen(r)
-        val x = r.centerX()
-        val y = r.centerY()
-        AutomationState.log("  ℹ Tile found at ($x, $y) size=${r.width()}x${r.height()}")
-
-        // ═══ ④ Tap & verify ═══
-        if (tryTap(service, x, y, targetOn)) {
-            prefs.flightTapX = x
-            prefs.flightTapY = y
-            AutomationState.log("  ✔ Saved tap coords ($x, $y)")
-            return true
-        }
-
-        // ═══ ⑤ Retry: re-open QS if closed, retry once ═══
-        AutomationState.log("  ⚠ First tap failed — retry")
-        if (!isQsOpen(service)) {
-            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS)
-            StepUtils.waitForPackage(service, "systemui", 1500)
-            StepUtils.sleepMs(700)
-        }
-
-        if (tryTap(service, x, y, targetOn)) {
-            prefs.flightTapX = x
-            prefs.flightTapY = y
-            AutomationState.log("  ✔ Saved tap coords (retry) ($x, $y)")
-            return true
-        }
-
-        return false
-    }
-
-    private fun tryTap(service: AccessibilityService, x: Int, y: Int, targetOn: Boolean): Boolean {
-        tapAt(service, x, y)
-        if (waitAirplaneState(service, targetOn, 3200)) return true
+        // ═══ ④ All attempts failed — clear saved coords for future ═══
+        AutomationState.log("  ✘ All 4 tap attempts failed — clearing saved coords")
+        prefs.flightTapX = 0
+        prefs.flightTapY = 0
         return false
     }
 
@@ -248,10 +186,6 @@ object AirplaneModeController {
         return false
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    //  FIND TILE — returns ORIGINAL matched node (for gesture tap bounds)
-    //  🟢 Multi-variant + multi-language support
-    // ══════════════════════════════════════════════════════════════════════
     private fun findTile(service: AccessibilityService): AccessibilityNodeInfo? {
         val root = service.rootInActiveWindow ?: return null
         val screenR = Rect(); root.getBoundsInScreen(screenR)
@@ -281,7 +215,6 @@ object AirplaneModeController {
             val tl = text.lowercase()
             val il = id.lowercase()
 
-            // 🟢 Check against comprehensive keyword list
             val saysAirplane = matchesAirplaneKeyword(dl) ||
                     matchesAirplaneKeyword(tl) ||
                     matchesAirplaneKeyword(il)
@@ -294,7 +227,6 @@ object AirplaneModeController {
                 if (nodeArea > (screenArea * 0.6).toInt()) score += 30
                 if (r.top < 150) score += 20
 
-                // ═══ Scoring — prefer exact match over partial ═══
                 val dlLower = dl.lowercase().trim()
                 val tlLower = tl.lowercase().trim()
 
@@ -304,13 +236,12 @@ object AirplaneModeController {
                 val startsText = startsWithAirplane(tlLower)
 
                 when {
-                    isExactDesc || isExactText -> score += 0   // best
+                    isExactDesc || isExactText -> score += 0
                     startsDesc -> score += 3
                     startsText -> score += 5
-                    else -> score += 8                          // contains only
+                    else -> score += 8
                 }
 
-                // ═══ Bonus: neighbour text hints (mobile data, wifi, etc.) ═══
                 val adjacent = getAdjacentSiblingTexts(n)
                 val combined = (dl + " " + tl + " " + adjacent).lowercase()
                 if (combined.contains("mobile data")) score += 15
@@ -340,11 +271,6 @@ object AirplaneModeController {
         return picked.node
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    //  🟢 Keyword matchers
-    // ══════════════════════════════════════════════════════════════════════
-
-    /** Check if text contains any airplane-related keyword */
     private fun matchesAirplaneKeyword(input: String): Boolean {
         if (input.isEmpty()) return false
         for (kw in AIRPLANE_KEYWORDS) {
@@ -353,39 +279,30 @@ object AirplaneModeController {
         return false
     }
 
-    /** Exact match — "airplane mode", "aeroplane mode", "flight mode", etc. */
     private fun isExactAirplaneMatch(input: String): Boolean {
         val t = input.trim()
-        // Common exact tile titles
         val exactSet = arrayOf(
             "airplane mode", "aeroplane mode", "air plane mode",
             "flight mode", "in-flight mode", "inflight mode",
             "airplane", "aeroplane", "flight",
-            // Urdu
             "ایروپلین موڈ", "فلائٹ موڈ", "ہوائی جہاز کا موڈ",
-            // Hindi
             "एयरप्लेन मोड", "एयरोप्लेन मोड", "फ्लाइट मोड",
-            // Arabic
             "وضع الطيران", "الطيران",
-            // Turkish
             "uçak modu", "ucak modu",
         )
         for (e in exactSet) {
             if (t == e) return true
         }
-        // Also exact if it starts with airplane/aeroplane and only has "mode" after
         if ((t.startsWith("airplane") || t.startsWith("aeroplane")) &&
             (t.endsWith("mode") || t == "airplane" || t == "aeroplane")) return true
         return false
     }
 
-    /** Starts with any airplane variant */
     private fun startsWithAirplane(input: String): Boolean {
         val t = input.trim()
         val starts = arrayOf(
             "airplane", "aeroplane", "air plane", "air-plane",
             "flight", "in-flight", "inflight",
-            // Non-latin
             "ایروپلین", "فلائٹ", "ہوائی", "طیارہ",
             "एयरप्लेन", "एयरोप्लेन", "फ्लाइट", "हवाई", "विमान",
             "طيران", "الطيران",
