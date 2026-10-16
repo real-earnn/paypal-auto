@@ -43,38 +43,37 @@ class LoginActivity : AppCompatActivity() {
     private fun requestCode(input: String) {
         setLoading(true)
 
-        // 🟢 Detect "OWNERID-USERID" pattern (both sides numeric)
+        // 🟢 Detect "OWNERID-USERID" pattern
         val dashParts = input.split("-")
         val isClientFormat = dashParts.size == 2 &&
                 dashParts[0].all { it.isDigit() } &&
                 dashParts[1].all { it.isDigit() } &&
                 dashParts[0].isNotEmpty() && dashParts[1].isNotEmpty()
 
+        var ownerId: Long = 0L
+        var userIdentifier: String = input
+
         val body: RequestCodeBody = if (isClientFormat) {
-            // Client mode
+            ownerId = dashParts[0].toLongOrNull() ?: 0L
+            userIdentifier = dashParts[1]
             RequestCodeBody(
                 telegramId = dashParts[1].toLongOrNull(),
                 username = null,
-                ownerId = dashParts[0].toLongOrNull()
+                ownerId = ownerId
             )
         } else if (input.all { it.isDigit() }) {
-            // Main board — telegram ID
             RequestCodeBody(
                 telegramId = input.toLongOrNull(),
                 username = null,
                 ownerId = null
             )
         } else {
-            // Main board — username
             RequestCodeBody(
                 telegramId = null,
                 username = input,
                 ownerId = null
             )
         }
-
-        // Identifier jise CodeVerifyActivity ko pass karenge (resend ke liye)
-        val identifierForNext = if (isClientFormat) dashParts[1] else input
 
         lifecycleScope.launch {
             try {
@@ -83,13 +82,13 @@ class LoginActivity : AppCompatActivity() {
                 if (response.isSuccessful) {
                     val data = response.body()
                     if (data?.success == true && data.userId > 0) {
-                        // 🟢 Server ne client_id diya (0 = main, else client bot id)
                         val returnedClientId = data.clientId
 
                         val intent = Intent(this@LoginActivity, CodeVerifyActivity::class.java)
                         intent.putExtra("user_id", data.userId)
-                        intent.putExtra("identifier", identifierForNext)
-                        intent.putExtra("client_id", returnedClientId)  // 🟢 NEW
+                        intent.putExtra("identifier", userIdentifier)
+                        intent.putExtra("client_id", returnedClientId)  // 🟢
+                        intent.putExtra("owner_id", ownerId)            // 🟢 resend ke liye
                         startActivity(intent)
                     } else {
                         Toast.makeText(
