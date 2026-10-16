@@ -22,6 +22,8 @@ class CodeVerifyActivity : AppCompatActivity() {
     private lateinit var authManager: AuthManager
     private var userId: Long = 0L
     private var identifier: String = ""
+    private var clientId: Long = 0L   // 🟢 client board id (0 = main)
+    private var ownerId: Long = 0L    // 🟢 resend ke liye
 
     private val otpBoxes by lazy {
         listOf(
@@ -38,6 +40,13 @@ class CodeVerifyActivity : AppCompatActivity() {
         authManager = AuthManager(this)
         userId = intent.getLongExtra("user_id", 0L)
         identifier = intent.getStringExtra("identifier") ?: ""
+        clientId = intent.getLongExtra("client_id", 0L)   // 🟢
+        ownerId = intent.getLongExtra("owner_id", 0L)     // 🟢
+
+        // 🟢 Login attempt ki info pehle se save kar lo (resend ke liye)
+        authManager.saveIdentifier(identifier)
+        authManager.saveOwnerId(ownerId)
+        authManager.saveUserId(userId)
 
         setupOtpBoxes()
 
@@ -55,14 +64,12 @@ class CodeVerifyActivity : AppCompatActivity() {
                 override fun afterTextChanged(s: Editable?) {
                     val text = s?.toString() ?: ""
                     if (text.isNotEmpty()) {
-                        // Move next
                         if (index < otpBoxes.lastIndex) {
                             otpBoxes[index + 1].requestFocus()
                         } else {
                             box.clearFocus()
                         }
                     } else {
-                        // Move back on delete
                         if (index > 0) {
                             otpBoxes[index - 1].requestFocus()
                         }
@@ -100,15 +107,22 @@ class CodeVerifyActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 val response = ApiClient.service(authManager)
-                    .verifyCode(VerifyCodeBody(userId = userId, code = code))
+                    .verifyCode(VerifyCodeBody(
+                        userId = userId,
+                        code = code,
+                        clientId = clientId
+                    ))
 
                 if (response.isSuccessful && response.body()?.success == true) {
                     val data = response.body()!!
                     val token = data.token ?: ""
+                    val returnedClientId = data.clientId
 
                     authManager.saveToken(token)
                     authManager.saveUserId(data.user?.id ?: userId)
                     authManager.saveUserName(data.user?.firstName ?: "")
+                    authManager.saveClientId(returnedClientId)  // 🟢
+                    // owner_id + identifier already saved in onCreate
 
                     Toast.makeText(this@CodeVerifyActivity, "Login ho gaya!", Toast.LENGTH_SHORT).show()
 
@@ -134,17 +148,46 @@ class CodeVerifyActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 🟢 Resend — ab client mode mein bhi sahi kaam karega.
+     * Agar ownerId > 0 hai (client mode), to wohi bhejenge.
+     */
     private fun resendCode() {
-        val body = if (identifier.all { it.isDigit() }) {
-            RequestCodeBody(telegramId = identifier.toLongOrNull(), username = null)
-        } else {
-            RequestCodeBody(telegramId = null, username = identifier)
+        val body: RequestCodeBody = when {
+            // Client mode — owner_id + telegram_id
+            ownerId > 0 && identifier.all { it.isDigit() } -> {
+                RequestCodeBody(
+                    telegramId = identifier.toLongOrNull(),
+                    username = null,
+                    ownerId = ownerId
+                )
+            }
+            // Main board — telegram_id
+            identifier.all { it.isDigit() } -> {
+                RequestCodeBody(
+                    telegramId = identifier.toLongOrNull(),
+                    username = null,
+                    ownerId = null
+                )
+            }
+            // Main board — username
+            else -> {
+                RequestCodeBody(
+                    telegramId = null,
+                    username = identifier,
+                    ownerId = null
+                )
+            }
         }
 
         lifecycleScope.launch {
             try {
-                ApiClient.service(authManager).requestCode(body)
-                Toast.makeText(this@CodeVerifyActivity, "Naya code bhej diya", Toast.LENGTH_SHORT).show()
+                val res = ApiClient.service(authManager).requestCode(body)
+                if (res.isSuccessful) {
+                    Toast.makeText(this@CodeVerifyActivity, "Naya code bhej diya", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this@CodeVerifyActivity, "Resend fail (${res.code()})", Toast.LENGTH_LONG).show()
+                }
             } catch (e: Exception) {
                 Toast.makeText(this@CodeVerifyActivity, "Resend fail: ${e.message}", Toast.LENGTH_LONG).show()
             }
