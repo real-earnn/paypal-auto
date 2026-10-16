@@ -72,7 +72,6 @@ object PayPalAutomation {
 
         // ══════════════════════════════════════════════════════════════════
         //  INNER LOOP — multiple numbers same session
-        //  Exit: red error OR all numbers tried OR stop
         // ══════════════════════════════════════════════════════════════════
         for (num in numbers) {
             if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
@@ -83,13 +82,13 @@ object PayPalAutomation {
             AutomationState.log("─────────────")
             AutomationState.log("▶ $num")
 
-            // ① Type number (typeNumber khud clear karta hai stale text)
+            // ① Type number
             if (!StepUtils.retryStep("Number type") {
                     PayPalActions.typeNumber(service, num, dialingCode)
                 }) {
                 AutomationState.log("✘ Number type fail")
                 onNumberFail(num); fail++
-                continue  // 🟢 Next number same session
+                continue
             }
 
             // ② Continue
@@ -98,12 +97,38 @@ object PayPalAutomation {
                 }) {
                 AutomationState.log("✘ Continue fail")
                 onNumberFail(num); fail++
-                continue  // 🟢 Next number same session
+                continue
             }
             AutomationState.log("ℹ Continue tapped — waiting result…")
 
-            // ③ Wait for result
-            when (PayPalActions.checkResult(service, 10000)) {
+            // ③ Wait for result — captcha-aware retry loop
+            var finalResult = PayPalActions.Result.TIMEOUT
+            var captchaRetries = 0
+
+            while (captchaRetries < 4) {
+                if (StepUtils.shouldStop()) break
+
+                val r = PayPalActions.checkResult(service, 12000)
+
+                if (r == PayPalActions.Result.RETRY_CONTINUE) {
+                    captchaRetries++
+                    AutomationState.log("ℹ Captcha solved — Continue again (#$captchaRetries)")
+                    StepUtils.sleepMs(800)
+
+                    if (!PayPalActions.tapContinue(service)) {
+                        AutomationState.log("  ⚠ Re-tap Continue failed")
+                        finalResult = PayPalActions.Result.TIMEOUT
+                        break
+                    }
+                    StepUtils.sleepMs(1500)
+                    continue
+                }
+
+                finalResult = r
+                break
+            }
+
+            when (finalResult) {
 
                 // ─── SUCCESS: OTP screen ───
                 PayPalActions.Result.OTP_SCREEN -> {
@@ -117,7 +142,7 @@ object PayPalAutomation {
                     StepUtils.sleepMs(2000)
                     if (PayPalActions.hasRedError(service)) {
                         AutomationState.log("✘ Red error after resend — ROUND END")
-                        break  // 🛑 Exit inner loop → new round
+                        break
                     }
 
                     // No error → close popup + clear field, next number
@@ -125,25 +150,28 @@ object PayPalAutomation {
                     PayPalActions.closeResendPopup(service)
                     PayPalActions.clearNumberField(service)
                     StepUtils.sleepMs(500)
-                    // fall through to next iteration
                 }
 
                 // ─── FAIL: Red error on Continue ───
                 PayPalActions.Result.ERROR -> {
                     AutomationState.log("✘ Red error on Continue — ROUND END")
                     onNumberFail(num); fail++
-                    break  // 🛑 Exit inner loop → new round
+                    break
                 }
 
                 // ─── TIMEOUT ───
                 PayPalActions.Result.TIMEOUT -> {
                     AutomationState.log("⏱ Timeout — treating as fail")
                     onNumberFail(num); fail++
-                    // Best effort: close popup + clear field, try next number
                     PayPalActions.closeResendPopup(service)
                     PayPalActions.clearNumberField(service)
                     StepUtils.sleepMs(500)
-                    // next iteration
+                }
+
+                // ─── Unexpected ───
+                else -> {
+                    AutomationState.log("⏱ Unexpected result — treating as fail")
+                    onNumberFail(num); fail++
                 }
             }
         }
