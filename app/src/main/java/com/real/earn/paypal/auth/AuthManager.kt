@@ -41,14 +41,30 @@ class AuthManager(context: Context) {
 
     fun getUserName(): String = prefs.getString(KEY_USERNAME, "") ?: ""
 
-    // 🟢 Client board ID (0 = main board)
+    // 🟢 Client board bot_id (0 = main board)
     fun saveClientId(clientId: Long) {
         prefs.edit().putLong(KEY_CLIENT_ID, clientId).apply()
     }
 
     fun getClientId(): Long = prefs.getLong(KEY_CLIENT_ID, 0L)
 
+    // 🟢 Owner ID (client mode mein login ke liye — resend ke waqt zaroori)
+    fun saveOwnerId(ownerId: Long) {
+        prefs.edit().putLong(KEY_OWNER_ID, ownerId).apply()
+    }
+
+    fun getOwnerId(): Long = prefs.getLong(KEY_OWNER_ID, 0L)
+
+    // 🟢 Login identifier (resend ke liye — username ya user_id)
+    fun saveIdentifier(identifier: String) {
+        prefs.edit().putString(KEY_IDENTIFIER, identifier).apply()
+    }
+
+    fun getIdentifier(): String = prefs.getString(KEY_IDENTIFIER, "") ?: ""
+
     fun isLoggedIn(): Boolean = !getToken().isNullOrEmpty()
+
+    fun isClientMode(): Boolean = getClientId() > 0
 
     fun clear() {
         prefs.edit().clear().apply()
@@ -59,6 +75,8 @@ class AuthManager(context: Context) {
         private const val KEY_TOKEN = "auth_token"
         private const val KEY_USER_ID = "user_id"
         private const val KEY_USERNAME = "user_name"
-        private const val KEY_CLIENT_ID = "client_id"  // 🟢 NEW
+        private const val KEY_CLIENT_ID = "client_id"   // 🟢 NEW
+        private const val KEY_OWNER_ID = "owner_id"     // 🟢 NEW
+        private const val KEY_IDENTIFIER = "identifier" // 🟢 NEW
     }
 }
