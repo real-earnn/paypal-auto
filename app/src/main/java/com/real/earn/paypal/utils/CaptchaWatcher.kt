@@ -14,12 +14,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-/**
- * Background captcha watcher.
- * - Detects PayPal's "I am human" hCaptcha checkbox → clicks it
- * - If picture puzzle appears → triggers loud alarm (so human comes)
- * - Once captcha disappears → stops alarm
- */
 object CaptchaWatcher {
 
     private var job: Job? = null
@@ -27,7 +21,6 @@ object CaptchaWatcher {
     private var consecutiveClicks = 0
     private var alertActive = false
 
-    // Expose so PayPalAutomation can check
     @Volatile
     var picturePuzzleDetected: Boolean = false
         private set
@@ -49,7 +42,6 @@ object CaptchaWatcher {
                 delay(500)
             }
 
-            // Cleanup
             if (alertActive) {
                 CaptchaAlert.stopAlert()
                 alertActive = false
@@ -74,16 +66,13 @@ object CaptchaWatcher {
     private fun scanAndSolve(service: AccessibilityService, ctx: Context) {
         val root = service.rootInActiveWindow ?: return
 
-        // ═══ Step 1: Is any captcha visible? ═══
         val captchaVisible = NodeFinder.containsAny(
             root,
             "I am human", "Security Challenge", "hCaptcha", "Verify you are human"
         )
 
-        // ═══ Step 2: Is it a picture puzzle? ═══
         val isPuzzle = captchaVisible && isPicturePuzzle(root)
 
-        // ═══ Step 3: Handle alarm ═══
         if (isPuzzle) {
             if (!alertActive) {
                 AutomationState.log("🛡️ PICTURE PUZZLE detected — alarming!")
@@ -91,11 +80,9 @@ object CaptchaWatcher {
                 CaptchaAlert.startAlert(ctx)
                 alertActive = true
             }
-            // Do NOT try to solve picture puzzle — let human do it
             return
         }
 
-        // ═══ Step 4: Puzzle gone? Stop alarm ═══
         if (alertActive && !isPuzzle) {
             AutomationState.log("🛡️ Puzzle cleared — stopping alarm")
             CaptchaAlert.stopAlert()
@@ -103,7 +90,6 @@ object CaptchaWatcher {
             picturePuzzleDetected = false
         }
 
-        // ═══ Step 5: If simple "I am human" checkbox visible — click it ═══
         if (captchaVisible) {
             if (consecutiveClicks == 0) {
                 AutomationState.log("🛡️ hCaptcha checkbox visible")
@@ -113,7 +99,6 @@ object CaptchaWatcher {
             if (now - lastClickAt < 2500) return
             if (consecutiveClicks >= 6) return
 
-            // Strategy A: "I am human" text → click 70px to LEFT
             val humanNode = NodeFinder.findByTextContains(root, "I am human")
             if (humanNode != null) {
                 val r = Rect(); humanNode.getBoundsInScreen(r)
@@ -128,7 +113,6 @@ object CaptchaWatcher {
                 }
             }
 
-            // Strategy B: small clickable square in top half
             val rootR = Rect(); root.getBoundsInScreen(rootR)
             val topLimit = rootR.top + (rootR.height() * 0.5).toInt()
 
@@ -160,38 +144,24 @@ object CaptchaWatcher {
         }
     }
 
-    /** Detect picture-puzzle indicators (drag-drop, image grid, rotate) */
+    /**
+     * 🟢 Improved: 
+     *   1. Agar Resend / Continue visible → PUZZLE NAHI
+     *   2. Sirf explicit puzzle text markers pe bharosa (ImageView heuristic hataya)
+     */
     private fun isPicturePuzzle(root: AccessibilityNodeInfo): Boolean {
+        // ═══ Priority 1: Agar number/OTP screen pe hain → puzzle nahi ═══
+        if (NodeFinder.containsAny(root, "Resend Code", "Resend code", "Resend")) return false
+        if (NodeFinder.findByText(root, "Continue", "Next") != null) return false
+
+        // ═══ Priority 2: Sirf explicit puzzle text markers ═══
         val puzzleMarkers = arrayOf(
             "Drag the", "Select all", "Choose the", "Choose all",
             "Please click", "Please drag", "Please select",
             "Click each", "Rotate the", "Match the",
             "Skip", "Audio", "Refresh"
         )
-        // If any puzzle marker is visible, it's a picture puzzle
-        if (NodeFinder.containsAny(root, *puzzleMarkers)) return true
-
-        // Look for a challenge image container (large ImageView in middle)
-        val rootR = Rect(); root.getBoundsInScreen(rootR)
-        val midTop = rootR.top + (rootR.height() * 0.30).toInt()
-        val midBot = rootR.top + (rootR.height() * 0.75).toInt()
-
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val n = queue.removeFirst()
-            val cn = n.className?.toString() ?: ""
-            if (cn.contains("ImageView", true)) {
-                val r = Rect(); n.getBoundsInScreen(r)
-                // Large image in middle → likely puzzle
-                if (r.width() > 200 && r.height() > 200 &&
-                    r.top > midTop && r.top < midBot) {
-                    return true
-                }
-            }
-            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
-        }
-        return false
+        return NodeFinder.containsAny(root, *puzzleMarkers)
     }
 
     private fun tapAt(service: AccessibilityService, x: Int, y: Int): Boolean {
