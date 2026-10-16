@@ -326,7 +326,73 @@ object PayPalActions {
         }
         return fallback
     }
+    // ══════════════════════════════════════════════════════
+    //  hasRedError — kya red error visible hai?
+    // ══════════════════════════════════════════════════════
+    fun hasRedError(service: AccessibilityService): Boolean {
+        val root = service.rootInActiveWindow ?: return false
+        return NodeFinder.containsAny(
+            root,
+            "Something went wrong", "can't be used", "not valid",
+            "invalid", "Enter a valid", "try again", "Try again"
+        )
+    }
 
+    // ══════════════════════════════════════════════════════
+    //  closeResendPopup — Resend popup ko X se band karo
+    // ══════════════════════════════════════════════════════
+    fun closeResendPopup(service: AccessibilityService): Boolean {
+        val root = service.rootInActiveWindow ?: return false
+
+        val closeTexts = arrayOf("Close", "Cancel", "Dismiss", "✕", "✖", "×", "X")
+
+        // Exact match
+        NodeFinder.findByText(root, *closeTexts)?.let { n ->
+            if (NodeFinder.isVisible(n) && NodeFinder.click(n)) {
+                AutomationState.log("ℹ Resend popup closed")
+                StepUtils.sleepMs(500)
+                return true
+            }
+        }
+
+        // Fallback: contains match
+        for (t in closeTexts) {
+            val n = NodeFinder.findByTextContains(root, t)
+            if (n != null && NodeFinder.isVisible(n) && NodeFinder.click(n)) {
+                AutomationState.log("ℹ Resend popup closed (fallback)")
+                StepUtils.sleepMs(500)
+                return true
+            }
+        }
+
+        AutomationState.log("ℹ Resend popup close skip (not found)")
+        return false
+    }
+
+    // ══════════════════════════════════════════════════════
+    //  clearNumberField — number input field khali karo
+    // ══════════════════════════════════════════════════════
+    fun clearNumberField(service: AccessibilityService): Boolean {
+        val root = service.rootInActiveWindow ?: return false
+        val edit = findFocusedEditable(root) ?: findEditableUnder(root) ?: return false
+
+        // Focus + click
+        NodeFinder.click(edit)
+        StepUtils.sleepMs(300)
+
+        // Set text to empty
+        val args = Bundle()
+        args.putCharSequence(
+            AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, ""
+        )
+        if (edit.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
+            AutomationState.log("ℹ Number field cleared")
+            StepUtils.sleepMs(400)
+            return true
+        }
+
+        return false
+    }
     // ══════════════════════════════════════════════════════
     //  TYPE NUMBER — Normalize digits, no double-paste
     // ══════════════════════════════════════════════════════
