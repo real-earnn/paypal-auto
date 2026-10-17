@@ -6,6 +6,7 @@
     android:background="#121212"
     android:padding="16dp">
 
+    <!-- Back Button -->
     <ImageButton
         android:id="@+id/btnBack"
         android:layout_width="48dp"
@@ -28,6 +29,7 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/btnBack" />
 
+    <!-- Permission Card -->
     <androidx.cardview.widget.CardView
         android:id="@+id/cardPermission"
         android:layout_width="match_parent"
@@ -55,7 +57,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="Virtual Android banane ke liye 'Device Admin' ki permission zaroori hai. Yeh aapke personal data ko touch nahi karegi."
+                android:text="Virtual Android banane ke liye 'Device Admin' ki permission zaroori hai."
                 android:textColor="#AAAAAA"
                 android:textSize="14sp" />
 
@@ -72,6 +74,7 @@
         </LinearLayout>
     </androidx.cardview.widget.CardView>
 
+    <!-- Status Text -->
     <TextView
         android:id="@+id/tvStatus"
         android:layout_width="match_parent"
@@ -82,6 +85,33 @@
         android:textSize="16sp"
         app:layout_constraintTop_toBottomOf="@id/cardPermission" />
 
+    <!-- Loader (Sirf Set Up ke doran dikhega) -->
+    <LinearLayout
+        android:id="@+id/layoutLoader"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/tvStatus">
+
+        <ProgressBar
+            android:layout_width="60dp"
+            android:layout_height="60dp"
+            android:indeterminateTint="#2196F3" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Setting up Virtual Android...\nPlease wait..."
+            android:textAlignment="center"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp" />
+    </LinearLayout>
+
+    <!-- App List -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerApps"
         android:layout_width="match_parent"
@@ -91,6 +121,7 @@
         app:layout_constraintBottom_toTopOf="@+id/layoutButtons"
         app:layout_constraintTop_toBottomOf="@id/tvStatus" />
 
+    <!-- Buttons Layout -->
     <LinearLayout
         android:id="@+id/layoutButtons"
         android:layout_width="match_parent"
@@ -134,7 +165,5 @@
             android:textStyle="bold"
             android:visibility="gone"
             app:cornerRadius="16dp" />
-
     </LinearLayout>
-
 </androidx.constraintlayout.widget.ConstraintLayout>
