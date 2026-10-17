@@ -40,7 +40,24 @@
         android:theme="@style/Theme.RealEarnPayPal"
         android:usesCleartextTraffic="true"
         tools:targetApi="34">
+<!-- 🟢 NAYA: Device Admin Receiver for Work Profile -->
+<receiver
+    android:name=".admin.MyDeviceAdminReceiver"
+    android:permission="android.permission.BIND_DEVICE_ADMIN"
+    android:exported="true">
+    <meta-data
+        android:name="android.app.device_admin"
+        android:resource="@xml/device_admin_receiver" />
+    <intent-filter>
+        <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+    </intent-filter>
+</receiver>
 
+<!-- 🟢 NAYA: Work Profile Activity -->
+<activity
+    android:name=".VirtualProfileActivity"
+    android:exported="false"
+    android:theme="@style/Theme.RealEarnPayPal" />
         <!-- ══════════════════════════════════════════════════════
              ACTIVITY: Splash (LAUNCHER)
         ══════════════════════════════════════════════════════ -->
