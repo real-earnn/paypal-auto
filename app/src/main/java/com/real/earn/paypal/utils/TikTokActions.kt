@@ -45,15 +45,12 @@ object TikTokActions {
         }
     }
 
-    // ══════════════════════════════════════════════════════
-    //  🟢 SMART BRAIN: 5s Wait + Slow Human Swipe + Strict Bottom
-    // ══════════════════════════════════════════════════════
     fun handleStartupSequence(service: AccessibilityService): Boolean {
         AutomationState.log("ℹ Handling TikTok startup sequence…")
         val startTime = System.currentTimeMillis()
         val timeout = 90000L 
         var swipeAttempts = 0
-        var waitedForVideo = false // 🟢 5s wait flag
+        var waitedForVideo = false 
 
         while (System.currentTimeMillis() - startTime < timeout) {
             if (StepUtils.shouldStop()) return false
@@ -64,31 +61,26 @@ object TikTokActions {
                 continue
             }
 
-            // 1. SUCCESS: Phone Number Screen?
             if (findCountryCodeNode(root) != null || NodeFinder.findByTextContains(root, "Phone number") != null) {
                 AutomationState.log("✔ Reached Phone Number screen")
                 return true
             }
 
-            // 2. Terms, Permissions, Gender, Interests
             if (clickNode(service, root, "Use phone / email / username", "Use phone")) { StepUtils.sleepMs(2000); continue }
             if (clickNode(service, root, "Agree and continue", "Agree", "Accept", "I Agree")) { StepUtils.sleepMs(1500); continue }
             if (clickNode(service, root, "Allow", "While using the app", "OK", "Allow all")) { StepUtils.sleepMs(1500); continue }
             if (clickNode(service, root, "Man", "Woman", "Non-binary", "Prefer not to say")) { StepUtils.sleepMs(1500); continue }
             if (clickNode(service, root, "Skip")) { StepUtils.sleepMs(1500); continue }
 
-            // 3. Profile Page (Log in / Add account)
             if (clickNode(service, root, "Log in", "Add another account", "Add account")) {
                 StepUtils.sleepMs(2000)
                 continue
             }
 
-            // 4. 🟢 HOME FEED LOGIC
             val isVideoFeed = NodeFinder.findByTextContains(root, "Swipe up") != null || 
                               findStrictBottomTab(root, "Home") != null
 
             if (isVideoFeed) {
-                // Step A: First time seeing video? Wait 5 seconds!
                 if (!waitedForVideo) {
                     AutomationState.log("  ↳ Video feed detected — waiting 5 seconds...")
                     StepUtils.sleepMs(5000) 
@@ -96,7 +88,6 @@ object TikTokActions {
                     continue
                 }
 
-                // Step B: Find strict bottom Profile tab
                 val profileTab = findStrictBottomTab(root, "Profile")
 
                 if (profileTab != null) {
@@ -106,7 +97,6 @@ object TikTokActions {
                     waitedForVideo = false 
                     continue
                 } else {
-                    // Step C: If no bottom tab, swipe up (slow human swipe)
                     AutomationState.log("  ↳ Profile tab not found — Swiping up (#${swipeAttempts + 1})")
                     swipeUp(service)
                     StepUtils.sleepMs(3000)
@@ -128,7 +118,6 @@ object TikTokActions {
         return false
     }
 
-    // 🟢 STRICT BOTTOM TAB: Only looks at the absolute bottom 10% of screen
     private fun findStrictBottomTab(root: AccessibilityNodeInfo, tabName: String): AccessibilityNodeInfo? {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
@@ -345,7 +334,7 @@ object TikTokActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  🟢 FIXED: Human-like slow swipe (500ms duration)
+    //  🟢 FIXED: Swipe ONLY in the middle 55% (skips Top 20% & Bottom 25%)
     // ══════════════════════════════════════════════════════
     private fun swipeUp(service: AccessibilityService) {
         try {
@@ -353,17 +342,18 @@ object TikTokActions {
             val bounds = Rect(); root.getBoundsInScreen(bounds)
             val x = bounds.centerX()
             
-            // Start near bottom (90%) and go to top (10%)
-            val startY = bounds.height() * 0.90f
-            val endY = bounds.height() * 0.10f
+            // 🟢 Start at 75% (leaves bottom 25% for music/nav bar)
+            val startY = bounds.height() * 0.75f
+            // 🟢 End at 25% (leaves top 20% for tabs)
+            val endY = bounds.height() * 0.25f
 
             val path = Path().apply {
                 moveTo(x.toFloat(), startY)
                 lineTo(x.toFloat(), endY)
             }
             
-            // 🟢 500ms duration for a slow, realistic finger drag
-            val stroke = GestureDescription.StrokeDescription(path, 0, 500) 
+            // 600ms duration for a natural finger drag
+            val stroke = GestureDescription.StrokeDescription(path, 0, 600) 
             val gesture = GestureDescription.Builder().addStroke(stroke).build()
             
             val latch = CountDownLatch(1)
