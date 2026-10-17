@@ -18,7 +18,7 @@ object TikTokOldAccountAutomation {
 
         var success = 0
         var fail = 0
-        var consecutiveErrors = 0
+        var errorCount = 0  // 🟢 Sirf stats ke liye, koi limit nahi
 
         AutomationState.log("🎵 TikTok Old Account Method Started")
         AutomationState.log("ℹ Waiting for user to Resume on Phone Input Screen...")
@@ -31,14 +31,10 @@ object TikTokOldAccountAutomation {
 
         var i = 0
         while (i < numbers.size) {
+            // 🟢 Sirf user ke STOP pe hi bahar niklega
             if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
             while (AutomationState.getStatus() == AutomationState.Status.PAUSED) delay(300)
             if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
-
-            if (consecutiveErrors >= 5) {
-                AutomationState.log("✘ 5 consecutive Red Errors reached. Stopping.")
-                break
-            }
 
             val num = numbers[i]
             onNumberStart(num)
@@ -58,7 +54,6 @@ object TikTokOldAccountAutomation {
             // ═══ STEP 2: Type Number ═══
             if (!typeNumber(service, num)) {
                 if (AutomationState.getStatus() == AutomationState.Status.PAUSED) {
-                    // It got auto-paused, retry
                     continue
                 }
                 AutomationState.log("✘ Failed to type number")
@@ -80,13 +75,12 @@ object TikTokOldAccountAutomation {
 
             // ═══ STEP 5: Check result ═══
             if (hasRedError(service)) {
-                AutomationState.log("✘ Red error detected! (#${consecutiveErrors + 1}/5)")
+                errorCount++
+                AutomationState.log("✘ Red error detected! (Total errors: $errorCount) — trying next number")
                 onNumberFail(num); fail++
-                consecutiveErrors++
             } else {
                 AutomationState.log("✔ No Red Error (Likely OTP Screen)")
                 onNumberSuccess(num); success++
-                consecutiveErrors = 0
             }
 
             // ═══ STEP 6: Smart Back to input screen ═══
@@ -96,7 +90,7 @@ object TikTokOldAccountAutomation {
             i++
         }
 
-        AutomationState.log("⏹ Batch Finished. Success: $success, Fail: $fail")
+        AutomationState.log("⏹ Batch Finished. Success: $success, Fail: $fail, Total Errors: $errorCount")
         return Pair(success, fail)
     }
 
@@ -118,10 +112,8 @@ object TikTokOldAccountAutomation {
     }
 
     private fun isOnPhoneInputScreen(root: AccessibilityNodeInfo): Boolean {
-        // If we're on OTP screen, definitely not on phone input
         if (isOnOtpScreen(root)) return false
 
-        // Look for phone number label or editable field
         return NodeFinder.findByTextContains(root, "Phone number") != null ||
                NodeFinder.findByTextContains(root, "phone number") != null ||
                NodeFinder.findByTextContains(root, "Enter phone") != null ||
@@ -130,18 +122,16 @@ object TikTokOldAccountAutomation {
     }
 
     // ══════════════════════════════════════════════════════
-    //  🟢 TYPE NUMBER (with safe check)
+    //  🟢 TYPE NUMBER
     // ══════════════════════════════════════════════════════
     private fun typeNumber(service: AccessibilityService, number: String): Boolean {
         val root = service.rootInActiveWindow ?: return false
 
-        // Double-check: OTP screen pe ho to yahan number mat type karo
         if (isOnOtpScreen(root)) {
             AutomationState.log("  ↳ Detected OTP screen — cannot type here")
             return false
         }
 
-        // Find the phone input field
         val inputField = NodeFinder.findByTextContains(root, "Phone number")
             ?: NodeFinder.findByTextContains(root, "phone number")
             ?: NodeFinder.findEditText(root)
@@ -151,11 +141,9 @@ object TikTokOldAccountAutomation {
             return false
         }
 
-        // Tap to focus
         tapNode(service, inputField)
         StepUtils.sleepMs(500)
 
-        // Clear existing text
         val clearArgs = android.os.Bundle()
         clearArgs.putCharSequence(
             AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, ""
@@ -163,7 +151,6 @@ object TikTokOldAccountAutomation {
         inputField.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, clearArgs)
         StepUtils.sleepMs(300)
 
-        // Set new text
         val setArgs = android.os.Bundle()
         setArgs.putCharSequence(
             AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, number
@@ -199,7 +186,6 @@ object TikTokOldAccountAutomation {
         for (attempt in 0 until 5) {
             val root = service.rootInActiveWindow
             if (root == null) {
-                // Screen unreadable, back press anyway
                 service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
                 StepUtils.sleepMs(1200)
                 continue
@@ -211,7 +197,6 @@ object TikTokOldAccountAutomation {
             AutomationState.log("    attempt #${attempt + 1}: OTP=$onOtp, Input=$onInput")
 
             if (onInput && !onOtp) {
-                // Reached phone input, clear the field
                 val edit = NodeFinder.findEditText(root)
                 if (edit != null) {
                     val clearArgs = android.os.Bundle()
@@ -224,7 +209,6 @@ object TikTokOldAccountAutomation {
                 return
             }
 
-            // Need to press Back
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
             StepUtils.sleepMs(1200)
         }
