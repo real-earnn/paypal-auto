@@ -19,6 +19,7 @@ class CountrySelectActivity : AppCompatActivity() {
     private lateinit var authManager: AuthManager
     private var serviceName: String = ""
     private var isUnpaid: Boolean = false
+    private var engineType: String = "paypal"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -28,6 +29,7 @@ class CountrySelectActivity : AppCompatActivity() {
         authManager = AuthManager(this)
         serviceName = intent.getStringExtra("service") ?: ""
         isUnpaid = intent.getBooleanExtra("is_unpaid", false)
+        engineType = intent.getStringExtra("engine_type") ?: "paypal"
 
         binding.tvTitle.text = serviceName
         binding.recycler.layoutManager = LinearLayoutManager(this)
@@ -50,9 +52,8 @@ class CountrySelectActivity : AppCompatActivity() {
             try {
                 val res = ApiClient.service(authManager).getCountries(serviceName)
                 if (res.isSuccessful && res.body()?.success == true) {
-
                     val body = res.body()!!
-                    val countries = body.countries ?: emptyList()      // 🟢 safe
+                    val countries = body.countries ?: emptyList()
                     val unpaid = body.isUnpaid || isUnpaid
 
                     if (countries.isEmpty()) {
@@ -67,17 +68,18 @@ class CountrySelectActivity : AppCompatActivity() {
                             i.putExtra("dialing_code", c.dialingCode)
                             i.putExtra("price", c.price)
                             i.putExtra("is_unpaid", unpaid)
+                            
+                            // 🟢 Pass engine_type and default mode "service"
+                            i.putExtra("mode", "service")
+                            i.putExtra("engine_type", engineType)
+                            
                             startActivity(i)
                         }
                     }
-
                 } else if (res.code() == 401) {
                     Toast.makeText(this@CountrySelectActivity, "Session khatam", Toast.LENGTH_LONG).show()
                     authManager.clear()
-                    startActivity(
-                        Intent(this@CountrySelectActivity, LoginActivity::class.java)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                    )
+                    startActivity(Intent(this@CountrySelectActivity, LoginActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
                     finish()
                 } else {
                     binding.tvEmpty.visibility = View.VISIBLE
