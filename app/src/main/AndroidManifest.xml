@@ -18,14 +18,17 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- 🟢 Work Profile Permissions -->
     <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS" tools:ignore="ProtectedPermissions" />
 
     <!-- ══════════════════════════════════════════════════════════
          PACKAGE VISIBILITY (Android 11+)
-         PayPal app ko discover karne ke liye zaroori
+         PayPal & TikTok apps ko discover karne ke liye zaroori
     ══════════════════════════════════════════════════════════ -->
     <queries>
         <package android:name="com.paypal.android.p2pmobile" />
+        <package android:name="com.zhiliaoapp.musically" />
+        <package android:name="com.ss.android.ugc.trill" />
     </queries>
 
     <!-- ══════════════════════════════════════════════════════════
@@ -41,24 +44,25 @@
         android:theme="@style/Theme.RealEarnPayPal"
         android:usesCleartextTraffic="true"
         tools:targetApi="34">
-<!-- 🟢 NAYA: Device Admin Receiver for Work Profile -->
-<receiver
-    android:name=".admin.MyDeviceAdminReceiver"
-    android:permission="android.permission.BIND_DEVICE_ADMIN"
-    android:exported="true">
-    <meta-data
-        android:name="android.app.device_admin"
-        android:resource="@xml/device_admin_receiver" />
-    <intent-filter>
-        <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
-    </intent-filter>
-</receiver>
 
-<!-- 🟢 NAYA: Work Profile Activity -->
-<activity
-    android:name=".VirtualProfileActivity"
-    android:exported="false"
-    android:theme="@style/Theme.RealEarnPayPal" />
+        <!-- ══════════════════════════════════════════════════════
+             RECEIVER: Device Admin for Work Profile
+        ══════════════════════════════════════════════════════ -->
+        <receiver
+            android:name=".admin.MyDeviceAdminReceiver"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:exported="true">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin_receiver" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+                <!-- 🟢 Work Profile Creation Success Broadcast -->
+                <action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" />
+                <action android:name="android.app.action.MANAGED_PROFILE_PROVISIONED" />
+            </intent-filter>
+        </receiver>
+
         <!-- ══════════════════════════════════════════════════════
              ACTIVITY: Splash (LAUNCHER)
         ══════════════════════════════════════════════════════ -->
@@ -84,26 +88,30 @@
             android:name=".CodeVerifyActivity"
             android:exported="false"
             android:theme="@style/Theme.RealEarnPayPal" />
-        <activity
-            android:name=".AppSelectActivity"
-            android:exported="false"
-            android:theme="@style/Theme.RealEarnPayPal" />
+
         <!-- ══════════════════════════════════════════════════════
-             ACTIVITY: Dashboard
+             ACTIVITY: Dashboard & App Select
         ══════════════════════════════════════════════════════ -->
         <activity
             android:name=".DashboardActivity"
             android:exported="false"
             android:theme="@style/Theme.RealEarnPayPal" />
 
+        <activity
+            android:name=".AppSelectActivity"
+            android:exported="false"
+            android:theme="@style/Theme.RealEarnPayPal" />
+
+        <!-- ══════════════════════════════════════════════════════
+             ACTIVITY: Virtual Profile (Work Profile Manager)
+        ══════════════════════════════════════════════════════ -->
+        <activity
+            android:name=".VirtualProfileActivity"
+            android:exported="false"
+            android:theme="@style/Theme.RealEarnPayPal" />
+
         <!-- ══════════════════════════════════════════════════════
              ACTIVITY: Automation Flow (New 3-Mode System)
-             1. ServiceSelect  → 3 buttons (Select / Auto / Prefix)
-             2. ServiceBrowse  → Purani services list
-             3. PrefixInput    → Prefix search + file picker
-             4. CountrySelect  → Country list
-             5. Permission     → Permissions + Start button
-             6. Automation     → Running screen + logs
         ══════════════════════════════════════════════════════ -->
         <activity
             android:name=".ServiceSelectActivity"
@@ -164,7 +172,7 @@
             android:permission="android.permission.BIND_VOICE_INTERACTION" />
 
         <!-- ══════════════════════════════════════════════════════
-             SERVICE: Accessibility (PayPal UI Automation)
+             SERVICE: Accessibility (UI Automation)
         ══════════════════════════════════════════════════════ -->
         <service
             android:name=".service.PayPalAccessibilityService"
@@ -187,7 +195,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="PayPal UI automation" />
+                android:value="UI automation" />
         </service>
 
     </application>
