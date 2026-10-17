@@ -535,15 +535,22 @@ object PayPalActions {
     enum class Result { OTP_SCREEN, ERROR, TIMEOUT, RETRY_CONTINUE }
 
     // ══════════════════════════════════════════════════════════════════════
-    //  🟢 checkResult — Immediate error, patient captcha
+    //  🟢 checkResult — Priority-Based Logic
+    //
+    //  Priority:
+    //    ① Resend visible → OTP_SCREEN
+    //    ② Captcha visible → extend + wait
+    //    ③ ERROR visible → confirm 400ms → ERROR (STOPS everything else)
+    //    ④ Post-captcha Continue ready → RETRY
+    //    ⑤ Post-captcha processing → wait
     // ══════════════════════════════════════════════════════════════════════
     fun checkResult(service: AccessibilityService, timeoutMs: Long = 20000): Result {
         var deadline = SystemClock.uptimeMillis() + timeoutMs
-        var errorFlag = false
         var captchaEverSeen = false
         var captchaClearedAt = 0L
         var lastCaptchaSeenAt = 0L
         var lastLog = 0L
+        var errorSeenAt = 0L
 
         while (SystemClock.uptimeMillis() < deadline) {
             if (StepUtils.shouldStop()) return Result.TIMEOUT
@@ -555,52 +562,67 @@ object PayPalActions {
                 continue
             }
 
-            // ═══ ① SUCCESS — Resend screen ═══
+            // ═══════════════════════════════════════════════════════════════
+            //  ① SUCCESS — Resend screen (HIGHEST PRIORITY)
+            // ═══════════════════════════════════════════════════════════════
             if (NodeFinder.containsAny(root, "Resend Code", "Resend code", "Resend")) {
                 AutomationState.log("  ✔ Resend visible → OTP_SCREEN")
                 return Result.OTP_SCREEN
             }
 
-            // ═══ ② CAPTCHA present — extend deadline, handle loading ═══
+            // ═══════════════════════════════════════════════════════════════
+            //  ② CAPTCHA visible — extend deadline, don't interfere
+            // ═══════════════════════════════════════════════════════════════
             val captchaVisible = isCaptchaPresent(root)
             if (captchaVisible) {
                 captchaEverSeen = true
                 captchaClearedAt = 0L
                 lastCaptchaSeenAt = now
+                errorSeenAt = 0L  // reset error — captcha has priority
                 val ext = now + 60_000
                 if (ext > deadline) deadline = ext
-                
-                // Check if loading (Security Challenge visible, but no I am human)
                 val humanNode = NodeFinder.findByTextContains(root, "I am human")
-                if (humanNode == null) {
-                    if (now - lastLog > 3000) {
-                        AutomationState.log("  ⏳ Captcha loading (network slow) — waiting")
-                        lastLog = now
-                    }
+                if (humanNode == null && now - lastLog > 3000) {
+                    AutomationState.log("  ⏳ Captcha loading — waiting")
+                    lastLog = now
                 }
                 StepUtils.sleepMs(StepUtils.POLL_MS)
                 continue
             }
 
-            // ═══ ③ ERROR — only if no captcha AND explicit error text ═══
-            if (!errorFlag && NodeFinder.containsAny(root,
-                    "Something went wrong", "can't be used", "not valid",
-                    "invalid", "Enter a valid", "try again", "Try again")) {
-                errorFlag = true
-                AutomationState.log("  ⚠ Error text detected")
-                
-                // Confirm error persists for 600ms (avoid flash errors)
-                StepUtils.sleepMs(600)
-                val confirmRoot = service.rootInActiveWindow
-                if (confirmRoot != null && NodeFinder.containsAny(confirmRoot,
-                        "Something went wrong", "can't be used", "not valid",
-                        "invalid", "Enter a valid", "try again", "Try again")) {
-                    AutomationState.log("  ✘ Returning ERROR immediately")
+            // ═══════════════════════════════════════════════════════════════
+            //  ③ ERROR — HIGH PRIORITY. Blocks everything else.
+            // ═══════════════════════════════════════════════════════════════
+            val errorVisible = NodeFinder.containsAny(root,
+                "Something went wrong", "can't be used", "not valid",
+                "invalid", "Enter a valid", "try again", "Try again")
+
+            if (errorVisible) {
+                if (errorSeenAt == 0L) {
+                    errorSeenAt = now
+                    AutomationState.log("  ⚠ Error text detected — verifying…")
+                } else if (now - errorSeenAt >= 400) {
+                    // Persisted for 400ms → real error
+                    AutomationState.log("  ✘ Error confirmed (${now - errorSeenAt}ms) → ERROR")
                     return Result.ERROR
+                }
+                // Don't fall through — keep checking same error
+                StepUtils.sleepMs(StepUtils.POLL_MS)
+                continue
+            } else {
+                // Error disappeared?
+                if (errorSeenAt > 0L) {
+                    if (now - errorSeenAt > 1500) {
+                        AutomationState.log("  ℹ Error text gone — continuing")
+                        errorSeenAt = 0L
+                    }
+                    // else: give grace — UI may be transitioning (popup, etc.)
                 }
             }
 
-            // ═══ ④ POST-CAPTCHA — check if still processing ═══
+            // ═══════════════════════════════════════════════════════════════
+            //  ④ POST-CAPTCHA — Continue ready?
+            // ═══════════════════════════════════════════════════════════════
             if (captchaEverSeen) {
                 val continueBtn = NodeFinder.findByText(root, "Continue", "Next")
                 val hasContinue = continueBtn != null && continueBtn.isVisibleToUser
@@ -625,13 +647,15 @@ object PayPalActions {
                 }
             }
 
-            // ═══ ⑤ MID-PROCESSING CHECK ═══
+            // ═══════════════════════════════════════════════════════════════
+            //  ⑤ MID-PROCESSING — number field active
+            // ═══════════════════════════════════════════════════════════════
             val hasNumberField = findEditableUnder(root) != null
-            if (hasNumberField && !errorFlag && !captchaEverSeen) {
+            if (hasNumberField && !captchaEverSeen && errorSeenAt == 0L) {
                 val ext = now + 5000
                 if (ext > deadline) deadline = ext
                 if (now - lastLog > 4000) {
-                    AutomationState.log("  ⏳ Still processing (field active) — waiting")
+                    AutomationState.log("  ⏳ Still processing — waiting")
                     lastLog = now
                 }
             }
@@ -639,7 +663,12 @@ object PayPalActions {
             StepUtils.sleepMs(StepUtils.POLL_MS)
         }
 
-        if (errorFlag) return Result.ERROR
+        // Final verdict
+        if (errorSeenAt > 0L) {
+            AutomationState.log("  ✘ Result: ERROR (timeout with error seen)")
+            return Result.ERROR
+        }
+        AutomationState.log("  ⏱ Result: TIMEOUT")
         return Result.TIMEOUT
     }
 
