@@ -15,6 +15,7 @@ class ServiceSelectActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityServiceSelectBinding
     private lateinit var authManager: AuthManager
+    private var engineType: String = "paypal"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -22,36 +23,27 @@ class ServiceSelectActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         authManager = AuthManager(this)
+        engineType = intent.getStringExtra("engine_type") ?: "paypal"
 
         binding.btnBack.setOnClickListener { finish() }
 
-        // ═══ TOP: Select Services ═══
         binding.cardServices.setOnClickListener {
-            // Purana flow — ab alag activity nahi, isi activity ka hissa nahi.
-            // Chalo simple: ek naya Intent → ServiceListActivity? Nahi.
-            // Direct: is activity ka "old" version reload? Nahi.
-            // Simplest: dedicated button → ab ServiceSelect replaced hai, toh use
-            // cardServices ka kaam yahan hi krte hain — matlab Services list yahin
-            // dikhani hai. Lekin hum alag screen preserve karenge:
-            startActivity(Intent(this, ServiceBrowseActivity::class.java))
+            val intent = Intent(this, ServiceBrowseActivity::class.java)
+            intent.putExtra("engine_type", engineType)
+            startActivity(intent)
         }
 
-        // ═══ AUTO MODE ═══
         binding.cardAuto.setOnClickListener {
             checkAutoPrefixesAndGo()
         }
 
-        // ═══ SEARCH PREFIX MODE ═══
         binding.cardPrefix.setOnClickListener {
-            startActivity(Intent(this, PrefixInputActivity::class.java))
+            val intent = Intent(this, PrefixInputActivity::class.java)
+            intent.putExtra("engine_type", engineType)
+            startActivity(intent)
         }
     }
 
-    /**
-     * Auto mode click → pehle check karo admin ne prefix config kiya hai ya nahi.
-     * Agar list empty ho → Toast message.
-     * Warna → PermissionActivity with mode=auto
-     */
     private fun checkAutoPrefixesAndGo() {
         binding.progressBar.visibility = View.VISIBLE
 
@@ -65,43 +57,28 @@ class ServiceSelectActivity : AppCompatActivity() {
                     val hasValid = prefixes.any { it.filesSafe.isNotEmpty() }
 
                     if (!hasValid) {
-                        Toast.makeText(
-                            this@ServiceSelectActivity,
-                            "Admin ne abhi koi prefix configure nahi kiya hai",
-                            Toast.LENGTH_LONG
-                        ).show()
+                        Toast.makeText(this@ServiceSelectActivity, "Admin ne abhi koi prefix configure nahi kiya hai", Toast.LENGTH_LONG).show()
                         return@launch
                     }
 
-                    // Go to PermissionActivity with mode=auto
                     val intent = Intent(this@ServiceSelectActivity, PermissionActivity::class.java).apply {
                         putExtra("mode", "auto")
-                        putExtra("service", "PayPal")
+                        putExtra("service", if (engineType == "tiktok") "TikTok" else "PayPal")
+                        putExtra("engine_type", engineType)
                     }
                     startActivity(intent)
 
                 } else if (res.code() == 401) {
                     Toast.makeText(this@ServiceSelectActivity, "Session khatam. Login karo.", Toast.LENGTH_LONG).show()
                     authManager.clear()
-                    startActivity(
-                        Intent(this@ServiceSelectActivity, LoginActivity::class.java)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                    )
+                    startActivity(Intent(this@ServiceSelectActivity, LoginActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
                     finish()
                 } else {
-                    Toast.makeText(
-                        this@ServiceSelectActivity,
-                        "Prefixes load nahi ho sake (code ${res.code()})",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    Toast.makeText(this@ServiceSelectActivity, "Prefixes load nahi ho sake (code ${res.code()})", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 binding.progressBar.visibility = View.GONE
-                Toast.makeText(
-                    this@ServiceSelectActivity,
-                    "Network error: ${e.message}",
-                    Toast.LENGTH_LONG
-                ).show()
+                Toast.makeText(this@ServiceSelectActivity, "Network error: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
     }
