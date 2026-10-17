@@ -23,9 +23,6 @@ object PayPalAutomation {
 
         if (numbers.isEmpty()) return Pair(0, 0)
 
-        // ══════════════════════════════════════════════════════════════════
-        //  ROUND SETUP
-        // ══════════════════════════════════════════════════════════════════
         if (autoFlightMode) {
             val ok = StepUtils.retryStep("Flight cycle") {
                 AirplaneModeController.strictToggle(service)
@@ -70,9 +67,6 @@ object PayPalAutomation {
         }
         AutomationState.log("✔ Country: $countryIso")
 
-        // ══════════════════════════════════════════════════════════════════
-        //  INNER LOOP — try next number on error (max 3 consecutive fails)
-        // ══════════════════════════════════════════════════════════════════
         var consecutiveFails = 0
 
         for (num in numbers) {
@@ -89,7 +83,6 @@ object PayPalAutomation {
             AutomationState.log("─────────────")
             AutomationState.log("▶ $num")
 
-            // ① Type number
             if (!StepUtils.retryStep("Number type") {
                     PayPalActions.typeNumber(service, num, dialingCode)
                 }) {
@@ -99,7 +92,6 @@ object PayPalAutomation {
                 continue
             }
 
-            // ② Continue
             if (!StepUtils.retryStep("Continue") {
                     PayPalActions.tapContinue(service)
                 }) {
@@ -110,7 +102,6 @@ object PayPalAutomation {
             }
             AutomationState.log("ℹ Continue tapped — waiting result…")
 
-            // ③ Wait for result — captcha-aware
             var finalResult = PayPalActions.Result.TIMEOUT
             var captchaRetries = 0
 
@@ -142,9 +133,8 @@ object PayPalAutomation {
                 PayPalActions.Result.OTP_SCREEN -> {
                     AutomationState.log("✔ OTP screen — SUCCESS: $num")
                     onNumberSuccess(num); success++
-                    consecutiveFails = 0 // 🟢 Reset on success
+                    consecutiveFails = 0
 
-                    // Resend 2x
                     PayPalActions.tapResendTwice(service)
 
                     StepUtils.sleepMs(2000)
@@ -154,14 +144,14 @@ object PayPalAutomation {
                         consecutiveFails++
                         PayPalActions.closeResendPopup(service)
                         PayPalActions.clearNumberField(service)
-                        StepUtils.sleepMs(500)
+                        StepUtils.sleepMs(200) // 🟢 Fast transition
                         continue
                     }
 
                     AutomationState.log("ℹ No error — closing resend popup + clearing field")
                     PayPalActions.closeResendPopup(service)
                     PayPalActions.clearNumberField(service)
-                    StepUtils.sleepMs(500)
+                    StepUtils.sleepMs(200) // 🟢 Fast transition
                 }
 
                 // ─── FAIL: Red error on Continue ───
@@ -171,7 +161,7 @@ object PayPalAutomation {
                     consecutiveFails++
                     PayPalActions.closeResendPopup(service)
                     PayPalActions.clearNumberField(service)
-                    StepUtils.sleepMs(500)
+                    StepUtils.sleepMs(200) // 🟢 Fast transition
                 }
 
                 // ─── TIMEOUT ───
@@ -181,7 +171,7 @@ object PayPalAutomation {
                     consecutiveFails++
                     PayPalActions.closeResendPopup(service)
                     PayPalActions.clearNumberField(service)
-                    StepUtils.sleepMs(500)
+                    StepUtils.sleepMs(200) // 🟢 Fast transition
                 }
 
                 else -> {
@@ -192,9 +182,6 @@ object PayPalAutomation {
             }
         }
 
-        // ══════════════════════════════════════════════════════════════════
-        //  ROUND CLEANUP
-        // ══════════════════════════════════════════════════════════════════
         PayPalActions.closePayPal(service)
         StepUtils.sleepMs(500)
 
