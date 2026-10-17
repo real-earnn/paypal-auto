@@ -6,7 +6,6 @@
     android:background="#121212"
     android:padding="16dp">
 
-    <!-- Back Button -->
     <ImageButton
         android:id="@+id/btnBack"
         android:layout_width="48dp"
@@ -29,7 +28,19 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/btnBack" />
 
-    <!-- Permission Card -->
+    <!-- 🟢 تھری ڈاٹ مینو -->
+    <ImageButton
+        android:id="@+id/btnMenu"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:src="@android:drawable/ic_menu_more"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@id/tvTitle"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="@id/tvTitle"
+        app:tint="@android:color/white" />
+
     <androidx.cardview.widget.CardView
         android:id="@+id/cardPermission"
         android:layout_width="match_parent"
@@ -74,7 +85,6 @@
         </LinearLayout>
     </androidx.cardview.widget.CardView>
 
-    <!-- Status Text -->
     <TextView
         android:id="@+id/tvStatus"
         android:layout_width="match_parent"
@@ -85,7 +95,7 @@
         android:textSize="16sp"
         app:layout_constraintTop_toBottomOf="@id/cardPermission" />
 
-    <!-- Loader (Sirf Set Up ke doran dikhega) -->
+    <!-- Loader -->
     <LinearLayout
         android:id="@+id/layoutLoader"
         android:layout_width="match_parent"
@@ -111,7 +121,6 @@
             android:textSize="16sp" />
     </LinearLayout>
 
-    <!-- App List -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerApps"
         android:layout_width="match_parent"
@@ -121,7 +130,6 @@
         app:layout_constraintBottom_toTopOf="@+id/layoutButtons"
         app:layout_constraintTop_toBottomOf="@id/tvStatus" />
 
-    <!-- Buttons Layout -->
     <LinearLayout
         android:id="@+id/layoutButtons"
         android:layout_width="match_parent"
@@ -147,19 +155,6 @@
             android:layout_height="60dp"
             android:backgroundTint="#2196F3"
             android:text="Add Apps to Virtual Android"
-            android:textColor="@android:color/white"
-            android:textSize="18sp"
-            android:textStyle="bold"
-            android:visibility="gone"
-            app:cornerRadius="16dp" />
-
-        <Button
-            android:id="@+id/btnDeleteProfile"
-            android:layout_width="match_parent"
-            android:layout_height="60dp"
-            android:layout_marginTop="12dp"
-            android:backgroundTint="#F44336"
-            android:text="Delete Virtual Android"
             android:textColor="@android:color/white"
             android:textSize="18sp"
             android:textStyle="bold"
