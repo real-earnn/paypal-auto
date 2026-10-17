@@ -17,12 +17,7 @@ import com.real.earn.paypal.api.GetNumberBody
 import com.real.earn.paypal.api.GetNumberByPrefixBody
 import com.real.earn.paypal.api.ReleaseNumberBody
 import com.real.earn.paypal.auth.AuthManager
-import com.real.earn.paypal.utils.AppPrefs
-import com.real.earn.paypal.utils.CaptchaWatcher
-import com.real.earn.paypal.utils.OverlayManager
-import com.real.earn.paypal.utils.PayPalAutomation
-import com.real.earn.paypal.utils.PopupWatcher
-import com.real.earn.paypal.utils.TikTokAutomation
+import com.real.earn.paypal.utils.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -47,6 +42,7 @@ class AutomationService : Service() {
     private var dialingCode: String = ""
     private var prefix: String = ""
     private var file: String = ""
+    private var oldAccountMethod: Boolean = false // 🟢 Naya Flag
 
     companion object {
         private const val NOTIF_ID = 1001
@@ -66,7 +62,8 @@ class AutomationService : Service() {
             dialingCode: String = "",
             prefix: String = "",
             file: String = "",
-            engineType: String = "paypal"
+            engineType: String = "paypal",
+            oldAccountMethod: Boolean = false // 🟢 Naya parameter
         ) {
             val i = Intent(context, AutomationService::class.java).apply {
                 action = ACTION_START
@@ -78,6 +75,7 @@ class AutomationService : Service() {
                 putExtra("prefix", prefix)
                 putExtra("file", file)
                 putExtra("engine_type", engineType)
+                putExtra("old_account_method", oldAccountMethod) // 🟢 Pass it
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(i)
@@ -150,6 +148,7 @@ class AutomationService : Service() {
                 dialingCode = intent.getStringExtra("dialingCode") ?: ""
                 prefix = intent.getStringExtra("prefix") ?: ""
                 file = intent.getStringExtra("file") ?: ""
+                oldAccountMethod = intent.getBooleanExtra("old_account_method", false)
                 showOverlay()
                 startLoop()
             }
@@ -183,13 +182,20 @@ class AutomationService : Service() {
         if (loopJob?.isActive == true) return
 
         AutomationState.reset()
-        AutomationState.setStatus(AutomationState.Status.RUNNING)
-
-        val engineName = if (engineType == "tiktok") "TikTok" else "PayPal"
-        when (mode) {
-            "auto" -> AutomationState.log("🚀 $engineName: Auto Prefix")
-            "prefix" -> AutomationState.log("🚀 $engineName: $prefix / $file")
-            else -> AutomationState.log("🚀 $engineName: $serviceName / $countryName")
+        
+        // 🟢 If Old Account Method, start in PAUSED state
+        if (oldAccountMethod) {
+            AutomationState.setStatus(AutomationState.Status.PAUSED)
+            AutomationState.log("🚀 TikTok Old Account: Started in PAUSED state.")
+            AutomationState.log("ℹ Please navigate to the phone input screen and press RESUME.")
+        } else {
+            AutomationState.setStatus(AutomationState.Status.RUNNING)
+            val engineName = if (engineType == "tiktok") "TikTok" else "PayPal"
+            when (mode) {
+                "auto" -> AutomationState.log("🚀 $engineName: Auto Prefix")
+                "prefix" -> AutomationState.log("🚀 $engineName: $prefix / $file")
+                else -> AutomationState.log("🚀 $engineName: $serviceName / $countryName")
+            }
         }
         updateNotification("Running")
 
@@ -228,7 +234,23 @@ class AutomationService : Service() {
                     }
                     AutomationState.log("✔ ${nums.size} numbers")
 
-                    val (s, f) = if (engineType == "tiktok") {
+                    val (s, f) = if (engineType == "tiktok" && oldAccountMethod) {
+                        // 🟢 Route to the new Old Account Logic
+                        TikTokOldAccountAutomation.runBatch(
+                            service = a11y,
+                            numbers = nums,
+                            onNumberStart = { num ->
+                                AutomationState.updateStats { it.copy(totalAttempts = it.totalAttempts + 1, currentService = serviceName, currentCountry = countryName, currentNumber = num) }
+                            },
+                            onNumberSuccess = { _ ->
+                                AutomationState.updateStats { it.copy(successCount = it.successCount + 1) }
+                            },
+                            onNumberFail = { num ->
+                                AutomationState.updateStats { it.copy(failCount = it.failCount + 1) }
+                                releaseNumbers(auth, listOf(num), "otp_failed")
+                            }
+                        )
+                    } else if (engineType == "tiktok") {
                         AutomationState.log("🎵 Running TikTok Engine")
                         TikTokAutomation.runBatch(
                             service = a11y,
