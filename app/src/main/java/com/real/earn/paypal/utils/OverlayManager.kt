@@ -4,12 +4,16 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.PixelFormat
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.widget.ImageButton
 import android.widget.ImageView
+import android.widget.LinearLayout
 import com.real.earn.paypal.R
 
 class OverlayManager(private val context: Context) {
@@ -17,13 +21,19 @@ class OverlayManager(private val context: Context) {
     private var windowManager: WindowManager? = null
     private var overlayView: View? = null
     private var params: WindowManager.LayoutParams? = null
-    private var btnToggle: ImageView? = null
-    private var btnClose: ImageView? = null
+    
+    private var llExpanded: LinearLayout? = null
+    private var ivMinimized: ImageView? = null
+    private var btnToggle: ImageButton? = null
+    private var btnClose: ImageButton? = null
+    private var btnMinimize: ImageButton? = null
 
     var onToggle: (() -> Unit)? = null
     var onClose: (() -> Unit)? = null
 
     private var paused: Boolean = false
+    private val handler = Handler(Looper.getMainLooper())
+    private var autoHideRunnable: Runnable? = null
 
     @SuppressLint("ClickableViewAccessibility")
     fun show() {
@@ -38,33 +48,46 @@ class OverlayManager(private val context: Context) {
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
-        // 🟢 BOTTOM-RIGHT CORNER, edge se bilkul chipka hua
-        // 🟢 FLAG_KEEP_SCREEN_ON — automation complete hone tak screen band nahi hogi
         params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,   // 🟢 NEW: Screen ON
+                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.BOTTOM or Gravity.END
-            x = 0
-            y = 0
-            // 🟢 Screen ko aur bhi strongly ON rakhne ke liye (Android 11+)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                // No direct "keep screen on" here — but the FLAG above is enough
-            }
+            x = 20
+            y = 300 // Thoda upar rakha hai taake bottom tabs block na hon
         }
 
         overlayView = LayoutInflater.from(context).inflate(R.layout.overlay_controls, null)
+        
+        llExpanded = overlayView?.findViewById(R.id.llExpanded)
+        ivMinimized = overlayView?.findViewById(R.id.ivMinimized)
         btnToggle = overlayView?.findViewById(R.id.btnToggle)
         btnClose = overlayView?.findViewById(R.id.btnClose)
+        btnMinimize = overlayView?.findViewById(R.id.btnMinimize)
 
-        btnToggle?.setOnClickListener { onToggle?.invoke() }
-        btnClose?.setOnClickListener { onClose?.invoke() }
+        btnToggle?.setOnClickListener { 
+            onToggle?.invoke()
+            resetAutoHideTimer()
+        }
+        
+        btnClose?.setOnClickListener { 
+            onClose?.invoke()
+        }
+        
+        btnMinimize?.setOnClickListener { 
+            collapseOverlay()
+        }
 
+        ivMinimized?.setOnClickListener {
+            expandOverlay()
+        }
+
+        // Touch listener for dragging (Simplified)
         overlayView?.setOnTouchListener(object : View.OnTouchListener {
             private var initialX = 0
             private var initialY = 0
@@ -80,6 +103,7 @@ class OverlayManager(private val context: Context) {
                         touchX = event.rawX
                         touchY = event.rawY
                         isDragging = false
+                        resetAutoHideTimer() // User touched, reset timer
                         return false
                     }
                     MotionEvent.ACTION_MOVE -> {
@@ -93,7 +117,9 @@ class OverlayManager(private val context: Context) {
                             return true
                         }
                     }
-                    MotionEvent.ACTION_UP -> return isDragging
+                    MotionEvent.ACTION_UP -> {
+                        if (isDragging) return true
+                    }
                 }
                 return false
             }
@@ -101,22 +127,48 @@ class OverlayManager(private val context: Context) {
 
         try {
             windowManager?.addView(overlayView, params)
+            resetAutoHideTimer()
         } catch (_: Exception) {}
     }
 
     fun hide() {
+        autoHideRunnable?.let { handler.removeCallbacks(it) }
         overlayView?.let {
             try { windowManager?.removeView(it) } catch (_: Exception) {}
         }
         overlayView = null
         windowManager = null
+        llExpanded = null
+        ivMinimized = null
         btnToggle = null
         btnClose = null
+        btnMinimize = null
     }
 
     fun updatePausedVisuals(isPaused: Boolean) {
         paused = isPaused
         btnToggle?.setImageResource(if (isPaused) R.drawable.ic_play else R.drawable.ic_pause)
         btnToggle?.contentDescription = if (isPaused) "Resume" else "Pause"
+    }
+
+    // 🟢 Auto Hide Logic
+    private fun resetAutoHideTimer() {
+        autoHideRunnable?.let { handler.removeCallbacks(it) }
+        autoHideRunnable = Runnable {
+            collapseOverlay()
+        }
+        handler.postDelayed(autoHideRunnable!!, 5000L) // 5 seconds
+    }
+
+    private fun collapseOverlay() {
+        llExpanded?.visibility = View.GONE
+        ivMinimized?.visibility = View.VISIBLE
+        autoHideRunnable?.let { handler.removeCallbacks(it) } // Stop timer when collapsed
+    }
+
+    private fun expandOverlay() {
+        llExpanded?.visibility = View.VISIBLE
+        ivMinimized?.visibility = View.GONE
+        resetAutoHideTimer() // Restart timer when expanded
     }
 }
