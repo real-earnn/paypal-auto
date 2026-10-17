@@ -76,15 +76,12 @@ object TikTokActions {
         return false
     }
 
-    /**
-     * 🟢 Country name clean karo: "Norway12" -> "Norway"
-     */
     private fun cleanCountryName(raw: String): String {
         return raw.replace(Regex("[0-9]+(-[0-9]+)*$"), "").trim()
     }
 
     fun selectCountry(service: AccessibilityService, rawCountryName: String): Boolean {
-        val countryName = cleanCountryName(rawCountryName) // 🟢 Clean here
+        val countryName = cleanCountryName(rawCountryName)
         AutomationState.log("ℹ Selecting country: $countryName")
         
         val root = service.rootInActiveWindow ?: return false
@@ -108,11 +105,9 @@ object TikTokActions {
             pasteText(service, countryName, "country_search")
             StepUtils.sleepMs(2000)
             
-            val resRoot = service.rootInActiveWindow
-            val result = NodeFinder.findByTextContains(resRoot, countryName)
-            if (result != null) {
-                AutomationState.log("✔ Selecting '$countryName' from list")
-                tapNode(service, result)
+            // 🟢 FIX: Click the result specifically (ignore the search bar)
+            if (clickCountryResult(service, countryName)) {
+                AutomationState.log("✔ Selected '$countryName' from list")
                 StepUtils.sleepMs(2000)
                 return true
             } else {
@@ -120,6 +115,33 @@ object TikTokActions {
             }
         } else {
             AutomationState.log("✘ Search field not found")
+        }
+        return false
+    }
+
+    /**
+     * 🟢 Specific logic to click the country from the list, not the search bar
+     */
+    private fun clickCountryResult(service: AccessibilityService, countryName: String): Boolean {
+        val root = service.rootInActiveWindow ?: return false
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        
+        while (queue.isNotEmpty()) {
+            val n = queue.removeFirst()
+            
+            // Skip the search bar itself
+            if (n.isEditable) continue
+            
+            val text = n.text?.toString() ?: ""
+            if (text.contains(countryName, ignoreCase = true)) {
+                val clickable = NodeFinder.findClickableParent(n) ?: n
+                if (clickable.isClickable) {
+                    return tapNode(service, clickable)
+                }
+            }
+            
+            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
         }
         return false
     }
@@ -148,7 +170,7 @@ object TikTokActions {
             val desc = n.contentDescription?.toString()?.trim() ?: ""
             if ((text.equals(tabName, true) || desc.equals(tabName, true)) && n.isVisibleToUser) {
                 val r = Rect(); n.getBoundsInScreen(r)
-                val rootR = Rect(); root.getBoundsInScreen(rootR)
+                val rootR = Rect(); root.getBoundsInScreen(r)
                 if (r.centerY() > rootR.height() * 0.8) return n
             }
             for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
@@ -156,27 +178,50 @@ object TikTokActions {
         return null
     }
 
+    // ══════════════════════════════════════════════════════
+    //  🟢 FIXED: Wait for Phone Number field before typing
+    // ══════════════════════════════════════════════════════
     fun typeNumberAndContinue(service: AccessibilityService, number: String, dialingCode: String): Boolean {
         var national = number.trim().removePrefix("+")
         if (national.startsWith(dialingCode)) national = national.substring(dialingCode.length)
         AutomationState.log("ℹ Entering number: $national")
 
-        val root = service.rootInActiveWindow
-        val inputField = NodeFinder.findByTextContains(root, "Phone number") ?: NodeFinder.findEditText(root)
+        var inputField: AccessibilityNodeInfo? = null
+        val end = SystemClock.uptimeMillis() + 8000 // 8 seconds wait
+        
+        // Wait specifically for "Phone number" hint/field
+        while (SystemClock.uptimeMillis() < end) {
+            val root = service.rootInActiveWindow
+            inputField = NodeFinder.findByTextContains(root, "Phone number")
             
+            // Fallback: If "Phone number" hint is gone (already typing), find the editable field
+            if (inputField == null) {
+                val codeNode = findCountryCodeNode(root ?: break)
+                if (codeNode != null) {
+                    // If country code is visible on screen, it's safe to grab the EditText
+                    inputField = NodeFinder.findEditText(root)
+                }
+            }
+            
+            if (inputField != null) break
+            StepUtils.sleepMs(500)
+        }
+
         if (inputField == null) {
-            AutomationState.log("✘ Input field not found")
+            AutomationState.log("✘ Phone number input field not found")
             return false
         }
 
         tapNode(service, inputField)
         StepUtils.sleepMs(500)
         
+        // Set text
         val setArgs = Bundle()
         setArgs.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, national)
         inputField.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, setArgs)
         StepUtils.sleepMs(1000)
 
+        // Click Continue
         val continueBtn = NodeFinder.findByText(service.rootInActiveWindow, "Continue")
         if (continueBtn != null) {
             AutomationState.log("ℹ Clicking Continue")
@@ -184,6 +229,7 @@ object TikTokActions {
             StepUtils.sleepMs(3000)
             return true
         }
+        
         AutomationState.log("✘ Continue button not found")
         return false
     }
