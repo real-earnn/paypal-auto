@@ -302,21 +302,31 @@ class VirtualProfileActivity : AppCompatActivity() {
         }
     }
 
-    private fun showAppPickerDialog() {
-        val pm = packageManager
-        val mainApps = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
-        val userApps = mainApps.filter { (it.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0 }
-        
-        val appNames = userApps.map { it.loadLabel(pm).toString() }.toTypedArray()
-        
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Select App to Add")
-            .setItems(appNames) { _, which ->
-                val selectedApp = userApps[which]
-                Toast.makeText(this, "Feature pending: Please install ${selectedApp.loadLabel(pm)} in Virtual Space.", Toast.LENGTH_LONG).show()
-            }
-            .show()
+  private fun showAppPickerDialog() {
+    val pm = packageManager
+    // صرف وہ ایپس دکھائیں جو سسٹم نہیں ہیں (User-installed)
+    val mainApps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+    val userApps = mainApps.filter { 
+        (it.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0 
     }
+    
+    val appNames = userApps.map { it.loadLabel(pm).toString() }.toTypedArray()
+    
+    AlertDialog.Builder(this)
+        .setTitle("Select App to Add to Virtual Android")
+        .setItems(appNames) { _, which ->
+            val selectedApp = userApps[which]
+            val workUser = workProfileUser
+            
+            if (workUser != null) {
+                Toast.makeText(this, "Installing ${selectedApp.loadLabel(pm)}...", Toast.LENGTH_SHORT).show()
+                ApkSharer.shareApkToWorkProfile(this, selectedApp.packageName, workUser)
+            } else {
+                Toast.makeText(this, "Virtual Android not ready.", Toast.LENGTH_SHORT).show()
+            }
+        }
+        .show()
+}
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
