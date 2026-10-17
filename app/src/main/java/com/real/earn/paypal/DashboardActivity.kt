@@ -48,20 +48,21 @@ class DashboardActivity : AppCompatActivity() {
     }
 
     // 🟢 Dynamic Button Text Logic
-    private fun updateVirtualProfileButtonText() {
-        val userManager = getSystemService(Context.USER_SERVICE) as UserManager
-        val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
-        
-        val hasWorkProfile = (userManager.userProfiles.size > 1) || prefs.getBoolean("profile_created", false)
+private fun updateVirtualProfileButtonText() {
+    val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+    val isOwner = dpm.isProfileOwnerApp(packageName)
+    
+    val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
+    val prefCreated = prefs.getBoolean("profile_created", false)
 
-        if (hasWorkProfile) {
-            binding.btnVirtualProfile.text = "Show Virtual Android Setup"
-            binding.btnVirtualProfile.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#4CAF50"))
-        } else {
-            binding.btnVirtualProfile.text = "Create Virtual Android"
-            binding.btnVirtualProfile.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#673AB7"))
-        }
+    if (isOwner || prefCreated) {
+        binding.btnVirtualProfile.text = "Show Virtual Android Setup"
+        binding.btnVirtualProfile.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#4CAF50"))
+    } else {
+        binding.btnVirtualProfile.text = "Create Virtual Android"
+        binding.btnVirtualProfile.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#673AB7"))
     }
+}
 
     private fun loadMe() {
         lifecycleScope.launch {
