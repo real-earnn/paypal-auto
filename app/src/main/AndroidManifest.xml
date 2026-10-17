@@ -2,9 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- ══════════════════════════════════════════════════════════
-         PERMISSIONS
-    ══════════════════════════════════════════════════════════ -->
+    <!-- Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -18,22 +16,15 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-    <!-- 🟢 Work Profile Permissions -->
     <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS" tools:ignore="ProtectedPermissions" />
 
-    <!-- ══════════════════════════════════════════════════════════
-         PACKAGE VISIBILITY (Android 11+)
-         PayPal & TikTok apps ko discover karne ke liye zaroori
-    ══════════════════════════════════════════════════════════ -->
+    <!-- Queries -->
     <queries>
         <package android:name="com.paypal.android.p2pmobile" />
         <package android:name="com.zhiliaoapp.musically" />
         <package android:name="com.ss.android.ugc.trill" />
     </queries>
 
-    <!-- ══════════════════════════════════════════════════════════
-         APPLICATION
-    ══════════════════════════════════════════════════════════ -->
     <application
         android:name=".App"
         android:allowBackup="false"
@@ -45,9 +36,7 @@
         android:usesCleartextTraffic="true"
         tools:targetApi="34">
 
-        <!-- ══════════════════════════════════════════════════════
-             RECEIVER: Device Admin for Work Profile
-        ══════════════════════════════════════════════════════ -->
+        <!-- 🟢 Device Admin Receiver (تیں Actions کے ساتھ) -->
         <receiver
             android:name=".admin.MyDeviceAdminReceiver"
             android:permission="android.permission.BIND_DEVICE_ADMIN"
@@ -57,145 +46,43 @@
                 android:resource="@xml/device_admin_receiver" />
             <intent-filter>
                 <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
-                <!-- 🟢 Work Profile Creation Success Broadcast -->
                 <action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" />
                 <action android:name="android.app.action.MANAGED_PROFILE_PROVISIONED" />
             </intent-filter>
         </receiver>
 
-        <!-- ══════════════════════════════════════════════════════
-             ACTIVITY: Splash (LAUNCHER)
-        ══════════════════════════════════════════════════════ -->
-        <activity
-            android:name=".SplashActivity"
-            android:exported="true"
-            android:theme="@style/Theme.RealEarnPayPal">
+        <!-- Activities -->
+        <activity android:name=".SplashActivity" android:exported="true" android:theme="@style/Theme.RealEarnPayPal">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".LoginActivity" android:exported="false" android:theme="@style/Theme.RealEarnPayPal" />
+        <activity android:name=".CodeVerifyActivity" android:exported="false" android:theme="@style/Theme.RealEarnPayPal" />
+        <activity android:name=".DashboardActivity" android:exported="false" android:theme="@style/Theme.RealEarnPayPal" />
+        <activity android:name=".AppSelectActivity" android:exported="false" android:theme="@style/Theme.RealEarnPayPal" />
+        <activity android:name=".VirtualProfileActivity" android:exported="false" android:theme="@style/Theme.RealEarnPayPal" />
+        <activity android:name=".ServiceSelectActivity" android:exported="false" android:theme="@style/Theme.RealEarnPayPal" />
+        <activity android:name=".ServiceBrowseActivity" android:exported="false" android:theme="@style/Theme.RealEarnPayPal" />
+        <activity android:name=".PrefixInputActivity" android:exported="false" android:theme="@style/Theme.RealEarnPayPal" />
+        <activity android:name=".CountrySelectActivity" android:exported="false" android:theme="@style/Theme.RealEarnPayPal" />
+        <activity android:name=".PermissionActivity" android:exported="false" android:theme="@style/Theme.RealEarnPayPal" />
+        <activity android:name=".AutomationActivity" android:exported="false" android:theme="@style/Theme.RealEarnPayPal" />
+        <activity android:name=".MainActivity" android:exported="false" android:theme="@style/Theme.RealEarnPayPal" />
 
-        <!-- ══════════════════════════════════════════════════════
-             ACTIVITY: Authentication
-        ══════════════════════════════════════════════════════ -->
-        <activity
-            android:name=".LoginActivity"
-            android:exported="false"
-            android:theme="@style/Theme.RealEarnPayPal" />
-
-        <activity
-            android:name=".CodeVerifyActivity"
-            android:exported="false"
-            android:theme="@style/Theme.RealEarnPayPal" />
-
-        <!-- ══════════════════════════════════════════════════════
-             ACTIVITY: Dashboard & App Select
-        ══════════════════════════════════════════════════════ -->
-        <activity
-            android:name=".DashboardActivity"
-            android:exported="false"
-            android:theme="@style/Theme.RealEarnPayPal" />
-
-        <activity
-            android:name=".AppSelectActivity"
-            android:exported="false"
-            android:theme="@style/Theme.RealEarnPayPal" />
-
-        <!-- ══════════════════════════════════════════════════════
-             ACTIVITY: Virtual Profile (Work Profile Manager)
-        ══════════════════════════════════════════════════════ -->
-        <activity
-            android:name=".VirtualProfileActivity"
-            android:exported="false"
-            android:theme="@style/Theme.RealEarnPayPal" />
-
-        <!-- ══════════════════════════════════════════════════════
-             ACTIVITY: Automation Flow (New 3-Mode System)
-        ══════════════════════════════════════════════════════ -->
-        <activity
-            android:name=".ServiceSelectActivity"
-            android:exported="false"
-            android:theme="@style/Theme.RealEarnPayPal" />
-
-        <activity
-            android:name=".ServiceBrowseActivity"
-            android:exported="false"
-            android:theme="@style/Theme.RealEarnPayPal" />
-
-        <activity
-            android:name=".PrefixInputActivity"
-            android:exported="false"
-            android:theme="@style/Theme.RealEarnPayPal" />
-
-        <activity
-            android:name=".CountrySelectActivity"
-            android:exported="false"
-            android:theme="@style/Theme.RealEarnPayPal" />
-
-        <activity
-            android:name=".PermissionActivity"
-            android:exported="false"
-            android:theme="@style/Theme.RealEarnPayPal" />
-
-        <activity
-            android:name=".AutomationActivity"
-            android:exported="false"
-            android:theme="@style/Theme.RealEarnPayPal" />
-
-        <!-- ══════════════════════════════════════════════════════
-             ACTIVITY: Utility (no longer launcher)
-        ══════════════════════════════════════════════════════ -->
-        <activity
-            android:name=".MainActivity"
-            android:exported="false"
-            android:theme="@style/Theme.RealEarnPayPal" />
-
-        <!-- ══════════════════════════════════════════════════════
-             SERVICE: Voice Interaction (Assist App — Airplane Mode)
-        ══════════════════════════════════════════════════════ -->
-        <service
-            android:name=".voice.PayPalInteractionService"
-            android:exported="true"
-            android:permission="android.permission.BIND_VOICE_INTERACTION">
-            <intent-filter>
-                <action android:name="android.service.voice.VoiceInteractionService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.voice_interaction"
-                android:resource="@xml/voice_interaction_service" />
+        <!-- Services -->
+        <service android:name=".voice.PayPalInteractionService" android:exported="true" android:permission="android.permission.BIND_VOICE_INTERACTION">
+            <intent-filter><action android:name="android.service.voice.VoiceInteractionService" /></intent-filter>
+            <meta-data android:name="android.voice_interaction" android:resource="@xml/voice_interaction_service" />
         </service>
-
-        <service
-            android:name=".voice.PayPalInteractionSessionService"
-            android:exported="true"
-            android:permission="android.permission.BIND_VOICE_INTERACTION" />
-
-        <!-- ══════════════════════════════════════════════════════
-             SERVICE: Accessibility (UI Automation)
-        ══════════════════════════════════════════════════════ -->
-        <service
-            android:name=".service.PayPalAccessibilityService"
-            android:exported="true"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_service_config" />
+        <service android:name=".voice.PayPalInteractionSessionService" android:exported="true" android:permission="android.permission.BIND_VOICE_INTERACTION" />
+        <service android:name=".service.PayPalAccessibilityService" android:exported="true" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_service_config" />
         </service>
-
-        <!-- ══════════════════════════════════════════════════════
-             SERVICE: Foreground Automation Loop
-        ══════════════════════════════════════════════════════ -->
-        <service
-            android:name=".service.AutomationService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="UI automation" />
+        <service android:name=".service.AutomationService" android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="UI automation" />
         </service>
 
     </application>
