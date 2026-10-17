@@ -12,6 +12,8 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityNodeInfo
 import com.real.earn.paypal.service.AutomationState
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 object TikTokActions {
 
@@ -44,14 +46,14 @@ object TikTokActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  🟢 SMART BRAIN: 10s Wait + Strict Bottom Navigation
+    //  🟢 SMART BRAIN: 5s Wait + Slow Human Swipe + Strict Bottom
     // ══════════════════════════════════════════════════════
     fun handleStartupSequence(service: AccessibilityService): Boolean {
         AutomationState.log("ℹ Handling TikTok startup sequence…")
         val startTime = System.currentTimeMillis()
         val timeout = 90000L 
         var swipeAttempts = 0
-        var waitedForVideo = false // 🟢 Flag to track 10s wait
+        var waitedForVideo = false // 🟢 5s wait flag
 
         while (System.currentTimeMillis() - startTime < timeout) {
             if (StepUtils.shouldStop()) return false
@@ -81,15 +83,15 @@ object TikTokActions {
                 continue
             }
 
-            // 4. 🟢 HOME FEED LOGIC (Video Screen)
+            // 4. 🟢 HOME FEED LOGIC
             val isVideoFeed = NodeFinder.findByTextContains(root, "Swipe up") != null || 
                               findStrictBottomTab(root, "Home") != null
 
             if (isVideoFeed) {
-                // Step A: First time seeing video? Wait 10 seconds!
+                // Step A: First time seeing video? Wait 5 seconds!
                 if (!waitedForVideo) {
-                    AutomationState.log("  ↳ Video feed detected — waiting 10 seconds for load...")
-                    StepUtils.sleepMs(10000) 
+                    AutomationState.log("  ↳ Video feed detected — waiting 5 seconds...")
+                    StepUtils.sleepMs(5000) 
                     waitedForVideo = true
                     continue
                 }
@@ -100,16 +102,16 @@ object TikTokActions {
                 if (profileTab != null) {
                     AutomationState.log("  ↳ Clicking Profile Tab (Bottom Bar)")
                     tapNode(service, profileTab)
-                    StepUtils.sleepMs(3000) // Wait for Profile page to load
-                    waitedForVideo = false // Reset for next time
+                    StepUtils.sleepMs(3000)
+                    waitedForVideo = false 
                     continue
                 } else {
-                    // If no bottom tab found, swipe up
+                    // Step C: If no bottom tab, swipe up (slow human swipe)
                     AutomationState.log("  ↳ Profile tab not found — Swiping up (#${swipeAttempts + 1})")
                     swipeUp(service)
                     StepUtils.sleepMs(3000)
                     swipeAttempts++
-                    waitedForVideo = false // Reset to wait 10s again after swipe
+                    waitedForVideo = false 
                     
                     if (swipeAttempts >= 6) {
                         AutomationState.log("✘ Too many swipe attempts.")
@@ -131,7 +133,7 @@ object TikTokActions {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         val rootR = Rect(); root.getBoundsInScreen(rootR)
-        val strictBottomThreshold = rootR.height() * 0.90 // Only bottom 10%
+        val strictBottomThreshold = rootR.height() * 0.90 
 
         while (queue.isNotEmpty()) {
             val n = queue.removeFirst()
@@ -140,7 +142,6 @@ object TikTokActions {
             
             if ((text.equals(tabName, true) || desc.equals(tabName, true)) && n.isVisibleToUser) {
                 val r = Rect(); n.getBoundsInScreen(r)
-                // Must be very close to the bottom edge
                 if (r.centerY() > strictBottomThreshold) {
                     return n
                 }
@@ -332,33 +333,53 @@ object TikTokActions {
             val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
             val stroke = GestureDescription.StrokeDescription(path, 0, 60)
             val gesture = GestureDescription.Builder().addStroke(stroke).build()
-            val latch = java.util.concurrent.CountDownLatch(1)
+            val latch = CountDownLatch(1)
             var ok = false
             service.dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
                 override fun onCompleted(d: GestureDescription?) { ok = true; latch.countDown() }
                 override fun onCancelled(d: GestureDescription?) { ok = false; latch.countDown() }
             }, null)
-            latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
+            latch.await(2, TimeUnit.SECONDS)
             ok
         } catch (e: Exception) { false }
     }
 
+    // ══════════════════════════════════════════════════════
+    //  🟢 FIXED: Human-like slow swipe (500ms duration)
+    // ══════════════════════════════════════════════════════
     private fun swipeUp(service: AccessibilityService) {
         try {
             val root = service.rootInActiveWindow ?: return
             val bounds = Rect(); root.getBoundsInScreen(bounds)
             val x = bounds.centerX()
-            val startY = bounds.height() * 3 / 4
-            val endY = bounds.height() / 4
+            
+            // Start near bottom (90%) and go to top (10%)
+            val startY = bounds.height() * 0.90f
+            val endY = bounds.height() * 0.10f
 
             val path = Path().apply {
-                moveTo(x.toFloat(), startY.toFloat())
-                lineTo(x.toFloat(), endY.toFloat())
+                moveTo(x.toFloat(), startY)
+                lineTo(x.toFloat(), endY)
             }
-            val stroke = GestureDescription.StrokeDescription(path, 0, 300)
+            
+            // 🟢 500ms duration for a slow, realistic finger drag
+            val stroke = GestureDescription.StrokeDescription(path, 0, 500) 
             val gesture = GestureDescription.Builder().addStroke(stroke).build()
-            service.dispatchGesture(gesture, null, null)
-            StepUtils.sleepMs(1000)
+            
+            val latch = CountDownLatch(1)
+            var ok = false
+            service.dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
+                override fun onCompleted(d: GestureDescription?) { ok = true; latch.countDown() }
+                override fun onCancelled(d: GestureDescription?) { ok = false; latch.countDown() }
+            }, null)
+            latch.await(2, TimeUnit.SECONDS)
+            
+            if (ok) {
+                AutomationState.log("  ↳ Swipe completed successfully")
+                StepUtils.sleepMs(1000)
+            } else {
+                AutomationState.log("  ↳ Swipe gesture cancelled")
+            }
         } catch (_: Exception) {}
     }
 
