@@ -85,7 +85,11 @@
         <activity android:name=".PermissionActivity" android:exported="false" android:theme="@style/Theme.RealEarnPayPal" />
         <activity android:name=".AutomationActivity" android:exported="false" android:theme="@style/Theme.RealEarnPayPal" />
         <activity android:name=".MainActivity" android:exported="false" android:theme="@style/Theme.RealEarnPayPal" />
-
+<!-- 🟢 ورک پروفائل میں سائلنٹ انسٹالر ایکٹیویٹی -->
+<activity
+    android:name=".WorkProfileInstallerActivity"
+    android:exported="true"
+    android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <!-- Services -->
         <service android:name=".voice.PayPalInteractionService" android:exported="true" android:permission="android.permission.BIND_VOICE_INTERACTION">
             <intent-filter><action android:name="android.service.voice.VoiceInteractionService" /></intent-filter>
