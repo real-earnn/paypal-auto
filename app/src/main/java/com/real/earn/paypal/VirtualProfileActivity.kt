@@ -87,11 +87,9 @@ class VirtualProfileActivity : AppCompatActivity() {
             workProfileUser = launcherProfiles.firstOrNull { it != myHandle }
             
             if (workProfileUser == null) {
-                // Fallback: UserManager سے تلاش کریں
+                // 🟢 FIX: Fallback mein isManagedProfile(hashCode) hata diya hai
                 val userManager = getSystemService(Context.USER_SERVICE) as UserManager
-                workProfileUser = userManager.userProfiles.firstOrNull { 
-                    it != myHandle && userManager.isManagedProfile(it.hashCode())
-                }
+                workProfileUser = userManager.userProfiles.firstOrNull { it != myHandle }
             }
 
             if (workProfileUser != null) {
