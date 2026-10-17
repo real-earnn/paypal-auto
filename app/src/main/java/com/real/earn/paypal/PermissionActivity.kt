@@ -10,8 +10,6 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.real.earn.paypal.databinding.ActivityPermissionBinding
 import com.real.earn.paypal.service.AutomationService
-import com.real.earn.paypal.service.PayPalAccessibilityService
-import com.real.earn.paypal.utils.AirplaneModeController
 import com.real.earn.paypal.utils.AppPrefs
 import com.real.earn.paypal.utils.PermissionHelper
 
@@ -20,8 +18,7 @@ class PermissionActivity : AppCompatActivity() {
     private lateinit var binding: ActivityPermissionBinding
     private lateinit var prefs: AppPrefs
 
-    // Mode-aware fields
-    private var mode: String = "service"   // "service" | "auto" | "prefix"
+    private var mode: String = "service"
     private var serviceName: String = "PayPal"
     private var countryName: String = ""
     private var countryCode: String = ""
@@ -29,6 +26,7 @@ class PermissionActivity : AppCompatActivity() {
     private var price: Double = 0.0
     private var prefix: String = ""
     private var file: String = ""
+    private var engineType: String = "paypal" // 🟢 New
 
     companion object {
         private const val REQ_RINGTONE = 5001
@@ -41,7 +39,6 @@ class PermissionActivity : AppCompatActivity() {
 
         prefs = AppPrefs(this)
 
-        // 🟢 Read mode + all possible extras
         mode = intent.getStringExtra("mode") ?: "service"
         serviceName = intent.getStringExtra("service") ?: "PayPal"
         countryName = intent.getStringExtra("country") ?: ""
@@ -50,8 +47,8 @@ class PermissionActivity : AppCompatActivity() {
         price = intent.getDoubleExtra("price", 0.0)
         prefix = intent.getStringExtra("prefix") ?: ""
         file = intent.getStringExtra("file") ?: ""
+        engineType = intent.getStringExtra("engine_type") ?: "paypal" // 🟢 Read Engine
 
-        // 🟢 Display title based on mode
         binding.tvTitle.text = when (mode) {
             "auto" -> "$serviceName — Auto Prefix"
             "prefix" -> "$serviceName — $prefix ($file)"
@@ -63,13 +60,9 @@ class PermissionActivity : AppCompatActivity() {
         binding.rowOverlay.setOnClickListener { PermissionHelper.openOverlaySettings(this) }
         binding.rowBattery.setOnClickListener { PermissionHelper.openBatterySettings(this) }
 
-        // Auto Flight toggle
         binding.switchAutoFlight.isChecked = prefs.autoFlightMode
-        binding.switchAutoFlight.setOnCheckedChangeListener { _, checked ->
-            prefs.autoFlightMode = checked
-        }
+        binding.switchAutoFlight.setOnCheckedChangeListener { _, checked -> prefs.autoFlightMode = checked }
 
-        // Captcha alarm
         binding.switchCaptchaAlarm.isChecked = prefs.captchaAlarmEnabled
         binding.switchCaptchaAlarm.setOnCheckedChangeListener { _, checked ->
             prefs.captchaAlarmEnabled = checked
@@ -89,7 +82,6 @@ class PermissionActivity : AppCompatActivity() {
     }
 
     private fun startAutomation() {
-        // 🟢 Pass mode-aware extras to AutomationActivity
         val actIntent = Intent(this, AutomationActivity::class.java).apply {
             putExtra("mode", mode)
             putExtra("service", serviceName)
@@ -99,7 +91,7 @@ class PermissionActivity : AppCompatActivity() {
         }
         startActivity(actIntent)
 
-        // 🟢 Start service with mode-aware extras
+        // 🟢 Pass Engine Type to Service
         AutomationService.start(
             context = this,
             mode = mode,
@@ -108,7 +100,8 @@ class PermissionActivity : AppCompatActivity() {
             countryCode = countryCode,
             dialingCode = dialingCode,
             prefix = prefix,
-            file = file
+            file = file,
+            engineType = engineType
         )
     }
 
@@ -171,12 +164,7 @@ class PermissionActivity : AppCompatActivity() {
     private fun openRingtonePicker() {
         try {
             val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
-                putExtra(
-                    RingtoneManager.EXTRA_RINGTONE_TYPE,
-                    RingtoneManager.TYPE_ALARM or
-                            RingtoneManager.TYPE_NOTIFICATION or
-                            RingtoneManager.TYPE_RINGTONE
-                )
+                putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM or RingtoneManager.TYPE_NOTIFICATION or RingtoneManager.TYPE_RINGTONE)
                 putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
                 putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
                 putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Select Captcha Alarm Sound")
@@ -185,10 +173,7 @@ class PermissionActivity : AppCompatActivity() {
                 if (!existing.isNullOrEmpty()) {
                     putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, Uri.parse(existing))
                 } else {
-                    putExtra(
-                        RingtoneManager.EXTRA_RINGTONE_DEFAULT_URI,
-                        RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                    )
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_DEFAULT_URI, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
                 }
             }
             startActivityForResult(intent, REQ_RINGTONE)
@@ -216,16 +201,5 @@ class PermissionActivity : AppCompatActivity() {
             }
             updateSoundLabel()
         }
-    }
-
-    private fun runFlightTest() {
-        val svc = PayPalAccessibilityService.instance
-        if (svc == null) {
-            Toast.makeText(this, "Accessibility service ON nahi hai", Toast.LENGTH_LONG).show()
-            return
-        }
-        Thread {
-            AirplaneModeController.toggleCycle(svc)
-        }.start()
     }
 }
