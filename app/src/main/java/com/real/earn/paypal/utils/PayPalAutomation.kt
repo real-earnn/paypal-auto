@@ -33,8 +33,9 @@ object PayPalAutomation {
             }
         }
 
+        // 🟢 Pass PayPal Package name here
         val clearOk = StepUtils.retryStep("Clear data") {
-            PayPalClearData.strictClear(service)
+            PayPalClearData.strictClear(service, "com.paypal.android.p2pmobile")
         }
         if (!clearOk) {
             AutomationState.log("✘ [ABORT] Clear data")
@@ -128,8 +129,6 @@ object PayPalAutomation {
             }
 
             when (finalResult) {
-
-                // ─── SUCCESS: OTP screen ───
                 PayPalActions.Result.OTP_SCREEN -> {
                     AutomationState.log("✔ OTP screen — SUCCESS: $num")
                     onNumberSuccess(num); success++
@@ -144,34 +143,32 @@ object PayPalAutomation {
                         consecutiveFails++
                         PayPalActions.closeResendPopup(service)
                         PayPalActions.clearNumberField(service)
-                        StepUtils.sleepMs(200) // 🟢 Fast transition
+                        StepUtils.sleepMs(200)
                         continue
                     }
 
                     AutomationState.log("ℹ No error — closing resend popup + clearing field")
                     PayPalActions.closeResendPopup(service)
                     PayPalActions.clearNumberField(service)
-                    StepUtils.sleepMs(200) // 🟢 Fast transition
+                    StepUtils.sleepMs(200)
                 }
 
-                // ─── FAIL: Red error on Continue ───
                 PayPalActions.Result.ERROR -> {
                     AutomationState.log("✘ Red error on Continue — clearing & trying next number")
                     onNumberFail(num); fail++
                     consecutiveFails++
                     PayPalActions.closeResendPopup(service)
                     PayPalActions.clearNumberField(service)
-                    StepUtils.sleepMs(200) // 🟢 Fast transition
+                    StepUtils.sleepMs(200)
                 }
 
-                // ─── TIMEOUT ───
                 PayPalActions.Result.TIMEOUT -> {
                     AutomationState.log("⏱ Timeout — clearing & trying next number")
                     onNumberFail(num); fail++
                     consecutiveFails++
                     PayPalActions.closeResendPopup(service)
                     PayPalActions.clearNumberField(service)
-                    StepUtils.sleepMs(200) // 🟢 Fast transition
+                    StepUtils.sleepMs(200)
                 }
 
                 else -> {
