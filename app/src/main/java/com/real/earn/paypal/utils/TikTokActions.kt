@@ -85,13 +85,16 @@ object TikTokActions {
                     AutomationState.log("  ↳ Video feed detected — waiting 5 seconds...")
                     StepUtils.sleepMs(5000) 
                     waitedForVideo = true
+                    // 🟢 DEBUG: Print all screen texts when video loads
+                    printScreenTexts(root)
                     continue
                 }
 
                 val profileTab = findStrictBottomTab(root, "Profile")
 
                 if (profileTab != null) {
-                    AutomationState.log("  ↳ Clicking Profile Tab (Bottom Bar)")
+                    val r = Rect(); profileTab.getBoundsInScreen(r)
+                    AutomationState.log("  ↳ Clicking Profile Tab at (${r.centerX()}, ${r.centerY()})")
                     tapNode(service, profileTab)
                     StepUtils.sleepMs(3000)
                     waitedForVideo = false 
@@ -118,11 +121,38 @@ object TikTokActions {
         return false
     }
 
+    // 🟢 DEBUG HELPER: Logs all texts and their coordinates on the current screen
+    private fun printScreenTexts(root: AccessibilityNodeInfo) {
+        val textList = mutableListOf<String>()
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val n = queue.removeFirst()
+            val t = n.text?.toString()?.trim() ?: ""
+            val d = n.contentDescription?.toString()?.trim() ?: ""
+            
+            if (t.isNotEmpty() || d.isNotEmpty()) {
+                val r = Rect(); n.getBoundsInScreen(r)
+                // Only log visible items
+                if (r.width() > 0 && r.height() > 0 && n.isVisibleToUser) {
+                    textList.add("[Y:${r.centerY()}] '${t.ifEmpty { d }}'")
+                }
+            }
+            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
+        }
+        // Log in chunks to avoid console overflow
+        val chunkSize = 5
+        for (i in textList.indices step chunkSize) {
+            val chunk = textList.subList(i, minOf(i + chunkSize, textList.size)).joinToString(" | ")
+            AutomationState.log("  [SCREEN] $chunk")
+        }
+    }
+
     private fun findStrictBottomTab(root: AccessibilityNodeInfo, tabName: String): AccessibilityNodeInfo? {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         val rootR = Rect(); root.getBoundsInScreen(rootR)
-        val strictBottomThreshold = rootR.height() * 0.90 
+        val strictBottomThreshold = rootR.height() * 0.85 // Thora aur neeche laya hai (85%)
 
         while (queue.isNotEmpty()) {
             val n = queue.removeFirst()
@@ -131,6 +161,10 @@ object TikTokActions {
             
             if ((text.equals(tabName, true) || desc.equals(tabName, true)) && n.isVisibleToUser) {
                 val r = Rect(); n.getBoundsInScreen(r)
+                // 🟢 DEBUG: Log if we found "Profile" but it was too high
+                if (r.centerY() <= strictBottomThreshold) {
+                    AutomationState.log("  [DEBUG] Ignored '$tabName' at Y:${r.centerY()} (Too high)")
+                }
                 if (r.centerY() > strictBottomThreshold) {
                     return n
                 }
@@ -300,7 +334,8 @@ object TikTokActions {
         for (text in texts) {
             val node = NodeFinder.findByText(root, text) ?: NodeFinder.findByTextContains(root, text)
             if (node != null && node.isVisibleToUser) {
-                AutomationState.log("  ↳ Clicking: '$text'")
+                val r = Rect(); node.getBoundsInScreen(r)
+                AutomationState.log("  ↳ Clicking '$text' at (${r.centerX()}, ${r.centerY()})")
                 tapNode(service, node)
                 return true
             }
@@ -308,12 +343,25 @@ object TikTokActions {
         return false
     }
 
+    // 🟢 FIXED: Explicitly log which method is clicking and coordinates
     private fun tapNode(service: AccessibilityService, node: AccessibilityNodeInfo): Boolean {
-        if (node.isClickable && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+        val textDesc = node.text?.toString() ?: node.contentDescription?.toString() ?: "Unknown"
+        
+        if (node.isClickable && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            AutomationState.log("    ↳ ACTION_CLICK success on '$textDesc'")
+            return true
+        }
         val parent = NodeFinder.findClickableParent(node)
-        if (parent != null && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+        if (parent != null && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            AutomationState.log("    ↳ Parent ACTION_CLICK success on '$textDesc'")
+            return true
+        }
+        
         val bounds = Rect(); node.getBoundsInScreen(bounds)
-        if (bounds.width() > 0 && bounds.height() > 0) return tapAt(service, bounds.centerX(), bounds.centerY())
+        if (bounds.width() > 0 && bounds.height() > 0) {
+            AutomationState.log("    ↳ Coordinate tap at (${bounds.centerX()}, ${bounds.centerY()}) for '$textDesc'")
+            return tapAt(service, bounds.centerX(), bounds.centerY())
+        }
         return false
     }
 
@@ -334,7 +382,7 @@ object TikTokActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  🟢 FIXED: Swipe ONLY in the middle 55% (skips Top 20% & Bottom 25%)
+    //  🟢 FIXED: Swipe from 60% to 20% (Middle 40% only)
     // ══════════════════════════════════════════════════════
     private fun swipeUp(service: AccessibilityService) {
         try {
@@ -342,18 +390,19 @@ object TikTokActions {
             val bounds = Rect(); root.getBoundsInScreen(bounds)
             val x = bounds.centerX()
             
-            // 🟢 Start at 75% (leaves bottom 25% for music/nav bar)
-            val startY = bounds.height() * 0.75f
-            // 🟢 End at 25% (leaves top 20% for tabs)
-            val endY = bounds.height() * 0.25f
+            // 🟢 Start at 60% (Middle screen)
+            val startY = bounds.height() * 0.60f
+            // 🟢 End at 20% (Below top tabs)
+            val endY = bounds.height() * 0.20f
+
+            AutomationState.log("  ↳ Swiping from Y:${startY.toInt()} to Y:${endY.toInt()}")
 
             val path = Path().apply {
                 moveTo(x.toFloat(), startY)
                 lineTo(x.toFloat(), endY)
             }
             
-            // 600ms duration for a natural finger drag
-            val stroke = GestureDescription.StrokeDescription(path, 0, 600) 
+            val stroke = GestureDescription.StrokeDescription(path, 0, 500) 
             val gesture = GestureDescription.Builder().addStroke(stroke).build()
             
             val latch = CountDownLatch(1)
