@@ -7,7 +7,7 @@ import android.util.Log
 
 class MyDeviceAdminReceiver : DeviceAdminReceiver() {
 
-    // 🟢 پروفائل مکمل ہونے کا سگنل
+    // 🟢 پروفائل مکمل ہونے کا سگنل وصول کریں
     override fun onProfileProvisioningComplete(context: Context, intent: Intent) {
         super.onProfileProvisioningComplete(context, intent)
         Log.d("WorkProfile", "Provisioning Complete Broadcast Received!")
