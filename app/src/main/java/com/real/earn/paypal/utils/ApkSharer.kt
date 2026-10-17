@@ -1,5 +1,6 @@
 package com.real.earn.paypal.utils
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.CrossProfileApps
@@ -12,8 +13,11 @@ import java.io.FileOutputStream
 
 object ApkSharer {
 
-    fun shareApkToWorkProfile(context: Context, packageName: String, workProfileUserHandle: UserHandle) {
+    // 🟢 FIX: Context ki jagah Activity accept kar raha hai
+    fun shareApkToWorkProfile(activity: Activity, packageName: String, workProfileUserHandle: UserHandle) {
         try {
+            val context = activity.applicationContext
+
             // 1. APK کا راستہ حاصل کریں
             val appInfo = context.packageManager.getApplicationInfo(packageName, 0)
             val sourceApkPath = appInfo.sourceDir
@@ -38,8 +42,8 @@ object ApkSharer {
                 sharedApkFile
             )
 
-            // 4. ایکٹیویٹی لانچ کرنے کا انٹینٹ (کیونکہ CrossProfileApps صرف Activities کے لیے ہے)
-            val intent = Intent(context, WorkProfileInstallerActivity::class.java).apply {
+            // 4. ایکٹیویٹی لانچ کرنے کا انٹینٹ
+            val intent = Intent(activity, WorkProfileInstallerActivity::class.java).apply {
                 putExtra("apk_uri", apkUri.toString())
                 putExtra("package_name", packageName)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -48,8 +52,8 @@ object ApkSharer {
             // 5. CrossProfileApps کے ذریعے ورک پروفائل میں لانچ کریں
             val crossProfileApps = context.getSystemService(Context.CROSS_PROFILE_APPS_SERVICE) as CrossProfileApps
             
-            // 🟢 FIX: Arguments order is (Intent, UserHandle)
-            crossProfileApps.startActivity(intent, workProfileUserHandle)
+            // 🟢 FIX: تیسرا آرگیومنٹ Activity دیا ہے
+            crossProfileApps.startActivity(intent, workProfileUserHandle, activity)
 
         } catch (e: Exception) {
             e.printStackTrace()
