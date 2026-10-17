@@ -59,7 +59,13 @@
                 <action android:name="android.app.action.MANAGED_PROFILE_PROVISIONED" />
             </intent-filter>
         </receiver>
-
+<receiver
+    android:name=".admin.WorkProfileApkInstaller"
+    android:exported="true">
+    <intent-filter>
+        <action android:name="com.real.earn.paypal.ACTION_INSTALL_APK" />
+    </intent-filter>
+</receiver>
         <!-- Activities -->
         <activity android:name=".SplashActivity" android:exported="true" android:theme="@style/Theme.RealEarnPayPal">
             <intent-filter>
