@@ -38,16 +38,20 @@ object TikTokAutomation {
             return Pair(0, numbers.size)
         }
 
-        // 🟢 Ye function khud handle karega Terms, Gender, Interests, aur Profile navigation
         if (!TikTokActions.handleStartupSequence(service)) {
             AutomationState.log("✘ Failed to reach login screen")
             return Pair(0, numbers.size)
         }
 
-        // Select Country
-        TikTokActions.selectCountry(service, countryName.ifEmpty { "pakistan" })
+        // ④ Select Country
+        if (!TikTokActions.selectCountry(service, countryName)) {
+            AutomationState.log("⚠ Country selection failed, attempting to proceed anyway")
+        }
+        
+        // Wait for phone screen to fully load after country select
+        StepUtils.sleepMs(1500)
 
-        // ④ Number Loop
+        // ⑤ Number Loop
         var consecutiveFails = 0
 
         for (num in numbers) {
@@ -63,7 +67,6 @@ object TikTokAutomation {
             AutomationState.log("─────────────")
             AutomationState.log("▶ $num")
 
-            // Type & Continue
             if (!TikTokActions.typeNumberAndContinue(service, num, dialingCode)) {
                 AutomationState.log("✘ Type/Continue fail")
                 onNumberFail(num); fail++
@@ -72,7 +75,6 @@ object TikTokAutomation {
                 continue
             }
 
-            // Check Result
             StepUtils.sleepMs(3000)
 
             if (TikTokActions.hasRedError(service)) {
@@ -86,7 +88,6 @@ object TikTokAutomation {
                 onNumberSuccess(num); success++
                 consecutiveFails = 0
                 
-                // Go back for next number
                 TikTokActions.pressBackToLogin(service)
                 StepUtils.sleepMs(500)
             }
