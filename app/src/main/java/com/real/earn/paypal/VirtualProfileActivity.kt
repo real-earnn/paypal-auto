@@ -1,5 +1,8 @@
 package com.real.earn.paypal
 
+import android.content.pm.PackageManager
+import androidx.appcompat.app.AlertDialog
+import com.real.earn.paypal.utils.ApkSharer
 import android.app.admin.DevicePolicyManager
 import android.content.BroadcastReceiver
 import android.content.ComponentName
