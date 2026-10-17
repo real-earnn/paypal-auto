@@ -46,26 +46,25 @@ class DashboardActivity : AppCompatActivity() {
         updateVirtualProfileButtonText()
     }
 
-    private fun updateVirtualProfileButtonText() {
-        // 🟢 LauncherApps se profile detect karein
-        val launcherApps = getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
-        val myHandle = Process.myUserHandle()
-        val hasWorkProfile = launcherApps.profiles.any { it != myHandle }
+private fun updateVirtualProfileButtonText() {
+    val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+    val isOwner = dpm.isProfileOwnerApp(packageName)
+    
+    val launcherApps = getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
+    val myHandle = Process.myUserHandle()
+    val hasWorkProfile = launcherApps.profiles.any { it != myHandle } || isOwner
+    
+    val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
+    val prefCreated = prefs.getBoolean("profile_created", false)
 
-        val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-        val isOwner = dpm.isProfileOwnerApp(packageName)
-        
-        val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
-        val prefCreated = prefs.getBoolean("profile_created", false)
-
-        if (hasWorkProfile || isOwner || prefCreated) {
-            binding.btnVirtualProfile.text = "Show Virtual Android Setup"
-            binding.btnVirtualProfile.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#4CAF50")) // Green
-        } else {
-            binding.btnVirtualProfile.text = "Create Virtual Android"
-            binding.btnVirtualProfile.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#673AB7")) // Purple
-        }
+    if (hasWorkProfile || prefCreated) {
+        binding.btnVirtualProfile.text = "Show Virtual Android Setup"
+        binding.btnVirtualProfile.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#4CAF50")) // Green
+    } else {
+        binding.btnVirtualProfile.text = "Create Virtual Android"
+        binding.btnVirtualProfile.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#673AB7")) // Purple
     }
+}
 
     private fun loadMe() {
         lifecycleScope.launch {
