@@ -44,12 +44,12 @@ object TikTokActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  🟢 SMART BRAIN: Handles Startup + Swipe Logic
+    //  🟢 SMART BRAIN: Handles Startup + Swipe Loop
     // ══════════════════════════════════════════════════════
     fun handleStartupSequence(service: AccessibilityService): Boolean {
         AutomationState.log("ℹ Handling TikTok startup sequence…")
         val startTime = System.currentTimeMillis()
-        val timeout = 60000L
+        val timeout = 90000L // 90 seconds tak try karega
         var swipeAttempts = 0
 
         while (System.currentTimeMillis() - startTime < timeout) {
@@ -80,26 +80,50 @@ object TikTokActions {
                 continue
             }
 
-            // 4. 🟢 SWIPE LOGIC: "Swipe up for more"
-            if (NodeFinder.findByTextContains(root, "Swipe up") != null) {
-                if (swipeAttempts < 3) {
-                    AutomationState.log("  ↳ 'Swipe up' visible — Swiping (#${swipeAttempts + 1})")
-                    swipeUp(service)
-                    swipeAttempts++
-                    // 🟢 Wait 5 seconds for video to load and overlay to disappear
-                    StepUtils.sleepMs(5000)
-                    continue
-                } else {
-                    AutomationState.log("  ⚠ 'Swipe up' still visible after 3 attempts")
-                }
-            }
-
-            // 5. 🟢 PROFILE TAB: Bottom tab pe click karo
+            // 4. 🟢 HOME FEED LOGIC (Swipe + Profile Loop)
             val profileTab = findBottomTab(root, "Profile")
-            if (profileTab != null) {
-                AutomationState.log("  ↳ Profile tab visible — Clicking")
-                tapNode(service, profileTab)
-                StepUtils.sleepMs(3000)
+            val hasSwipeText = NodeFinder.findByTextContains(root, "Swipe up") != null
+
+            if (profileTab != null || hasSwipeText) {
+                AutomationState.log("  ↳ Home feed detected. Starting Swipe->Profile loop (#${swipeAttempts + 1})")
+
+                // Step A: Wait 5 seconds for video to load
+                StepUtils.sleepMs(5000)
+
+                // Step B: Swipe Up
+                AutomationState.log("  ↳ Swiping up...")
+                swipeUp(service)
+                StepUtils.sleepMs(2000) // Wait for swipe to settle
+
+                // Step C: Find Profile tab again (bottom right)
+                val currentRoot = service.rootInActiveWindow
+                val freshProfileTab = findBottomTab(currentRoot ?: root, "Profile")
+
+                if (freshProfileTab != null) {
+                    AutomationState.log("  ↳ Clicking Profile Tab (bottom)")
+                    tapNode(service, freshProfileTab)
+                    StepUtils.sleepMs(3000) // Wait for profile page to open
+
+                    // Step D: Check if login buttons appeared
+                    val profRoot = service.rootInActiveWindow
+                    if (profRoot != null) {
+                        if (NodeFinder.findByTextContains(profRoot, "Log in") != null ||
+                            NodeFinder.findByTextContains(profRoot, "Add account") != null ||
+                            NodeFinder.findByTextContains(profRoot, "Add another account") != null) {
+                            AutomationState.log("✔ Profile page opened successfully")
+                            continue // Next loop iteration will click "Log in"
+                        }
+                    }
+                    AutomationState.log("  ⚠ Profile page didn't open properly. Retrying loop.")
+                } else {
+                    AutomationState.log("  ⚠ Profile tab not found after swipe. Retrying.")
+                }
+
+                swipeAttempts++
+                if (swipeAttempts >= 6) {
+                    AutomationState.log("✘ Too many swipe attempts. Ending startup sequence.")
+                    break
+                }
                 continue
             }
 
@@ -188,17 +212,24 @@ object TikTokActions {
         return null
     }
 
+    // 🟢 FIXED: Strict Bottom Tab detection (Sirf bottom 15% mein dhoondega)
     private fun findBottomTab(root: AccessibilityNodeInfo, tabName: String): AccessibilityNodeInfo? {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
+        val rootR = Rect(); root.getBoundsInScreen(rootR)
+
         while (queue.isNotEmpty()) {
             val n = queue.removeFirst()
             val text = n.text?.toString()?.trim() ?: ""
             val desc = n.contentDescription?.toString()?.trim() ?: ""
+            
+            // Check if text or desc matches "Profile"
             if ((text.equals(tabName, true) || desc.equals(tabName, true)) && n.isVisibleToUser) {
                 val r = Rect(); n.getBoundsInScreen(r)
-                val rootR = Rect(); root.getBoundsInScreen(rootR)
-                if (r.centerY() > rootR.height() * 0.8) return n
+                // 🟢 MUST be in the bottom 15% of the screen
+                if (r.centerY() > rootR.height() * 0.85) {
+                    return n
+                }
             }
             for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
         }
@@ -335,7 +366,7 @@ object TikTokActions {
             val stroke = GestureDescription.StrokeDescription(path, 0, 300)
             val gesture = GestureDescription.Builder().addStroke(stroke).build()
             service.dispatchGesture(gesture, null, null)
-            StepUtils.sleepMs(1000) // Thoda internal wait
+            StepUtils.sleepMs(1000)
         } catch (_: Exception) {}
     }
 
