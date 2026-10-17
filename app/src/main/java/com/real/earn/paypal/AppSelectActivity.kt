@@ -16,18 +16,15 @@ class AppSelectActivity : AppCompatActivity() {
 
         binding.btnBack.setOnClickListener { finish() }
 
-        // PayPal Option
         binding.cardPayPal.setOnClickListener {
             val intent = Intent(this, ServiceSelectActivity::class.java)
+            intent.putExtra("engine_type", "paypal")
             startActivity(intent)
         }
 
-        // TikTok Option
         binding.cardTikTok.setOnClickListener {
-            val intent = Intent(this, PermissionActivity::class.java).apply {
-                putExtra("mode", "tiktok")
-                putExtra("service", "TikTok")
-            }
+            val intent = Intent(this, ServiceSelectActivity::class.java)
+            intent.putExtra("engine_type", "tiktok")
             startActivity(intent)
         }
     }
