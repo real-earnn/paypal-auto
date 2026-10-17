@@ -1,30 +1,58 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="wrap_content"
-    android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:background="@drawable/bg_overlay_panel"
-    android:padding="3dp">
+    android:layout_height="wrap_content">
 
+    <!-- 🟢 Expanded Controls -->
+    <LinearLayout
+        android:id="@+id/llExpanded"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="end"
+        android:background="#80000000"
+        android:padding="8dp">
+
+        <ImageButton
+            android:id="@+id/btnToggle"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="@android:color/transparent"
+            android:src="@drawable/ic_pause"
+            android:contentDescription="Pause/Resume"
+            android:tint="#FFFFFF"/>
+
+        <ImageButton
+            android:id="@+id/btnClose"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginTop="4dp"
+            android:background="@android:color/transparent"
+            android:src="@android:drawable/ic_menu_close_clear_cancel"
+            android:contentDescription="Stop"
+            android:tint="#FF0000"/>
+
+        <!-- Minimize Button -->
+        <ImageButton
+            android:id="@+id/btnMinimize"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="4dp"
+            android:background="@android:color/transparent"
+            android:src="@android:drawable/arrow_down_float"
+            android:tint="#FFFFFF"/>
+    </LinearLayout>
+
+    <!-- 🟢 Minimized Icon -->
     <ImageView
-        android:id="@+id/btnToggle"
-        android:layout_width="38dp"
-        android:layout_height="38dp"
-        android:background="@drawable/bg_round_blue"
-        android:padding="10dp"
-        android:scaleType="fitCenter"
-        android:src="@drawable/ic_pause"
-        android:contentDescription="Pause" />
+        android:id="@+id/ivMinimized"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:visibility="gone"
+        android:src="@android:drawable/ic_menu_compass"
+        android:background="#80000000"
+        android:padding="8dp"
+        android:tint="#00FF00"/>
 
-    <ImageView
-        android:id="@+id/btnClose"
-        android:layout_width="38dp"
-        android:layout_height="38dp"
-        android:layout_marginTop="3dp"
-        android:background="@drawable/bg_round_red"
-        android:padding="10dp"
-        android:scaleType="fitCenter"
-        android:src="@drawable/ic_close"
-        android:contentDescription="Stop and close" />
-
-</LinearLayout>
+</FrameLayout>
