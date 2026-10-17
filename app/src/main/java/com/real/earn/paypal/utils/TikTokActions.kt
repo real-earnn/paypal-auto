@@ -16,10 +16,14 @@ import com.real.earn.paypal.service.AutomationState
 object TikTokActions {
 
     // TikTok Global & Asia packages
-    private val TIKTOK_PKGS = listOf(
-        "com.zhiliaoapp.musically", // Global
-        "com.ss.android.ugc.trill"  // Asia
-    )
+    val TIKTOK_PKGS = listOf("com.zhiliaoapp.musically", "com.ss.android.ugc.trill")
+
+    fun getInstalledPackage(service: AccessibilityService): String {
+        for (pkg in TIKTOK_PKGS) {
+            if (service.packageManager.getLaunchIntentForPackage(pkg) != null) return pkg
+        }
+        return TIKTOK_PKGS[0]
+    }
 
     fun launch(service: AccessibilityService): Boolean {
         return try {
@@ -67,23 +71,45 @@ object TikTokActions {
         AutomationState.log("ℹ Selecting country: $countryName")
         
         // 1. Click the country code button (e.g., "US +1")
-        val root = service.rootInActiveWindow ?: return false
-        val usButton = NodeFinder.findByTextContains(root, "US") 
-            ?: NodeFinder.findByTextContains(root, "+1")
+        var root = service.rootInActiveWindow ?: return false
         
-        if (usButton == null) {
+        // Try to find the button by looking for common country code patterns
+        var countryBtn = NodeFinder.findByTextContains(root, "US") 
+            ?: NodeFinder.findByTextContains(root, "+1")
+            ?: NodeFinder.findByTextContains(root, "+92")
+            
+        if (countryBtn == null) {
+            // Fallback: Find the first clickable node in the top half of the screen near the input field
+            // Usually the country code is a clickable text or dropdown next to the phone number input
+            val inputField = NodeFinder.findEditText(root)
+            if (inputField != null) {
+                // Try to find a sibling or nearby clickable node
+                val parent = inputField.parent
+                if (parent != null) {
+                    for (i in 0 until parent.childCount) {
+                        val child = parent.getChild(i)
+                        if (child != null && child.isClickable && child.text?.toString()?.contains("+") == true) {
+                            countryBtn = child
+                            break
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (countryBtn == null) {
             AutomationState.log("✘ Country button not found")
             return false
         }
         
         AutomationState.log("✔ Clicking Country selector")
-        tapNode(service, usButton)
+        tapNode(service, countryBtn)
         StepUtils.sleepMs(1500)
         
-        // 2. Search Country
-        val searchRoot = service.rootInActiveWindow
-        val searchField = NodeFinder.findByTextContains(searchRoot, "Search countries")
-            ?: NodeFinder.findEditText(searchRoot)
+        // 2. Search Country (Wait for "Select country/region" screen)
+        root = service.rootInActiveWindow ?: return false
+        val searchField = NodeFinder.findByTextContains(root, "Search countries")
+            ?: NodeFinder.findEditText(root)
             
         if (searchField != null) {
             AutomationState.log("ℹ Typing country in search field")
@@ -92,7 +118,7 @@ object TikTokActions {
             pasteText(service, countryName, "country_search")
             StepUtils.sleepMs(2000)
             
-            // 3. Click the result
+            // 3. Click the result (e.g., "Pakistan +92")
             val resRoot = service.rootInActiveWindow
             val result = NodeFinder.findByTextContains(resRoot, countryName)
             if (result != null) {
@@ -114,8 +140,8 @@ object TikTokActions {
         }
         AutomationState.log("ℹ Entering number: $national")
 
-        // 1. Type Number
         val root = service.rootInActiveWindow
+        // Usually the input field is an EditText, or has hint "Phone number"
         val inputField = NodeFinder.findByTextContains(root, "Phone number") 
             ?: NodeFinder.findEditText(root)
             
@@ -127,18 +153,18 @@ object TikTokActions {
         tapNode(service, inputField)
         StepUtils.sleepMs(500)
         
-        // Clear existing
+        // Clear existing & Set new
         val setArgs = Bundle()
         setArgs.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, national)
         inputField.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, setArgs)
         StepUtils.sleepMs(1000)
 
-        // 2. Click Continue
+        // Click Continue
         val continueBtn = NodeFinder.findByText(service.rootInActiveWindow, "Continue")
         if (continueBtn != null) {
             AutomationState.log("ℹ Clicking Continue")
             tapNode(service, continueBtn)
-            StepUtils.sleepMs(3000) // Wait for response
+            StepUtils.sleepMs(3000)
             return true
         }
         
@@ -147,7 +173,6 @@ object TikTokActions {
     }
 
     fun pressBackToLogin(service: AccessibilityService) {
-        // Used to go back to number input screen for the next number
         AutomationState.log("ℹ Pressing Back to return to input")
         service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
         StepUtils.sleepMs(1500)
@@ -155,7 +180,6 @@ object TikTokActions {
 
     fun hasRedError(service: AccessibilityService): Boolean {
         val root = service.rootInActiveWindow ?: return false
-        // TikTok shows red text below the field on invalid number
         return NodeFinder.containsAny(
             root,
             "Try a different number",
