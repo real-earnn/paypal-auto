@@ -17,9 +17,6 @@ object PayPalActions {
 
     const val PAYPAL_PKG = "com.paypal.android.p2pmobile"
 
-    // ══════════════════════════════════════════════════════
-    //  LAUNCH
-    // ══════════════════════════════════════════════════════
     fun launch(service: AccessibilityService): Boolean {
         return try {
             val intent = service.packageManager.getLaunchIntentForPackage(PAYPAL_PKG) ?: return false
@@ -32,9 +29,6 @@ object PayPalActions {
         }
     }
 
-    // ══════════════════════════════════════════════════════
-    //  TAP GET STARTED
-    // ══════════════════════════════════════════════════════
     fun tapGetStarted(service: AccessibilityService, timeoutMs: Long = 15000): Boolean {
         val end = SystemClock.uptimeMillis() + timeoutMs
         var lastLog = 0L
@@ -73,9 +67,6 @@ object PayPalActions {
         return true
     }
 
-    // ══════════════════════════════════════════════════════
-    //  CLICK US
-    // ══════════════════════════════════════════════════════
     fun clickUsButton(service: AccessibilityService, timeoutMs: Long = 20000): Boolean {
         AutomationState.log("ℹ Searching for US button…")
         val end = SystemClock.uptimeMillis() + timeoutMs
@@ -176,9 +167,6 @@ object PayPalActions {
         return false
     }
 
-    // ══════════════════════════════════════════════════════
-    //  TYPE + SELECT COUNTRY
-    // ══════════════════════════════════════════════════════
     fun typeAndSelectCountry(
         service: AccessibilityService,
         countryNameRaw: String,
@@ -333,9 +321,6 @@ object PayPalActions {
         return fallback
     }
 
-    // ══════════════════════════════════════════════════════
-    //  hasRedError
-    // ══════════════════════════════════════════════════════
     fun hasRedError(service: AccessibilityService): Boolean {
         val root = service.rootInActiveWindow ?: return false
         return NodeFinder.containsAny(
@@ -345,9 +330,6 @@ object PayPalActions {
         )
     }
 
-    // ══════════════════════════════════════════════════════
-    //  closeResendPopup
-    // ══════════════════════════════════════════════════════
     fun closeResendPopup(service: AccessibilityService): Boolean {
         val root = service.rootInActiveWindow ?: return false
         val closeTexts = arrayOf("Close", "Cancel", "Dismiss", "✕", "✖", "×", "X")
@@ -370,9 +352,6 @@ object PayPalActions {
         return false
     }
 
-    // ══════════════════════════════════════════════════════
-    //  clearNumberField
-    // ══════════════════════════════════════════════════════
     fun clearNumberField(service: AccessibilityService): Boolean {
         val root = service.rootInActiveWindow ?: return false
         val edit = findFocusedEditable(root) ?: findEditableUnder(root) ?: return false
@@ -388,9 +367,6 @@ object PayPalActions {
         return false
     }
 
-    // ══════════════════════════════════════════════════════
-    //  🟢 TYPE NUMBER — BULLETPROOF (Focus-independent)
-    // ══════════════════════════════════════════════════════
     fun typeNumber(service: AccessibilityService, fullNumber: String, dialingCode: String): Boolean {
         var national = fullNumber.trim().removePrefix("+")
         if (dialingCode.isNotEmpty() && national.startsWith(dialingCode)) {
@@ -407,7 +383,6 @@ object PayPalActions {
         val verifyTail = nationalDigits.takeLast(6)
         AutomationState.log("ℹ Target: '$national' (tail: $verifyTail)")
 
-        // ① Wait for phone field to appear
         var phoneLabel: AccessibilityNodeInfo? = null
         val labelEnd = SystemClock.uptimeMillis() + 8000
         while (SystemClock.uptimeMillis() < labelEnd) {
@@ -432,14 +407,11 @@ object PayPalActions {
         val delays = longArrayOf(2000L, 3000L, 5000L, 5000L, 5000L)
         for (attempt in 0 until 5) {
             if (StepUtils.shouldStop()) return false
-            
-            // 🟢 Wait for popups to disappear (Gmail popup fix)
-            StepUtils.sleepMs(500) 
+            StepUtils.sleepMs(500)
 
             val root = service.rootInActiveWindow
             val edit = findEditableUnder(root)
-            
-            // ① Check if already filled
+
             if (edit != null) {
                 val preText = edit.text?.toString() ?: ""
                 val preDigits = preText.replace(Regex("\\D"), "")
@@ -450,22 +422,18 @@ object PayPalActions {
             }
 
             AutomationState.log("ℹ Attempt #${attempt + 1}/5 — focusing field")
-            
-            // ② Tap field to focus (even if popup is there, we wait after)
             tapAt(service, x, y)
             StepUtils.sleepMs(600)
-            
-            // ③ Get fresh edit node (popup might have closed by now)
+
             val freshRoot = service.rootInActiveWindow
             val freshEdit = findEditableUnder(freshRoot)
-            
+
             if (freshEdit == null) {
                 AutomationState.log("⚠ Edit field missing (popup?) — retrying")
                 StepUtils.sleepMs(delays[attempt])
                 continue
             }
 
-            // ④ Clear existing text directly via Node (no keyboard needed)
             val existing = freshEdit.text?.toString() ?: ""
             if (existing.isNotEmpty()) {
                 val args = Bundle()
@@ -474,14 +442,12 @@ object PayPalActions {
                 StepUtils.sleepMs(300)
             }
 
-            // ⑤ Set text directly via Node (Focus-independent)
             val setArgs = Bundle()
             setArgs.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, national)
             val setOk = freshEdit.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, setArgs)
-            
+
             StepUtils.sleepMs(800)
 
-            // ⑥ Verify
             val vRoot = service.rootInActiveWindow
             val vEdit = findEditableUnder(vRoot)
             val vText = vEdit?.text?.toString() ?: ""
@@ -497,7 +463,6 @@ object PayPalActions {
                 return true
             }
 
-            // Fallback: If setText didn't work, try clipboard paste
             if (!setOk) {
                 AutomationState.log("⚠ setText failed — trying clipboard")
                 pasteText(service, national, "phone")
@@ -548,15 +513,11 @@ object PayPalActions {
         }
     }
 
-    // ══════════════════════════════════════════════════════
-    //  🟢 CONTINUE — Auto-close keyboard if button hidden
-    // ══════════════════════════════════════════════════════
     fun tapContinue(service: AccessibilityService): Boolean {
         var root = service.rootInActiveWindow ?: return false
         var node = NodeFinder.findByText(root, "Continue", "Next")
 
         if (node == null) {
-            // Maybe keyboard is hiding the button
             AutomationState.log("ℹ Continue not found — pressing BACK to close keyboard")
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
             StepUtils.sleepMs(500)
@@ -576,13 +537,16 @@ object PayPalActions {
     // ══════════════════════════════════════════════════════
     enum class Result { OTP_SCREEN, ERROR, TIMEOUT, RETRY_CONTINUE }
 
+    // ══════════════════════════════════════════════════════════════════════
+    //  🟢 checkResult — Post-captcha popup-aware logic
+    // ══════════════════════════════════════════════════════════════════════
     fun checkResult(service: AccessibilityService, timeoutMs: Long = 20000): Result {
         var deadline = SystemClock.uptimeMillis() + timeoutMs
-        var captchaEverSeen = false
-        var captchaClearedAt = 0L
-        var lastCaptchaSeenAt = 0L
+        var captchaSeen = false
+        var captchaClosedAt = 0L
         var lastLog = 0L
         var errorSeenAt = 0L
+        var continueVisibleAt = 0L
 
         while (SystemClock.uptimeMillis() < deadline) {
             if (StepUtils.shouldStop()) return Result.TIMEOUT
@@ -594,19 +558,22 @@ object PayPalActions {
                 continue
             }
 
-            // ① SUCCESS
+            // ═══════════════════════════════════════════════════════════════
+            //  ① RESEND (SUCCESS) — highest priority
+            // ═══════════════════════════════════════════════════════════════
             if (NodeFinder.containsAny(root, "Resend Code", "Resend code", "Resend")) {
                 AutomationState.log("  ✔ Resend visible → OTP_SCREEN")
                 return Result.OTP_SCREEN
             }
 
-            // ② CAPTCHA
-            val captchaVisible = isCaptchaPresent(root)
-            if (captchaVisible) {
-                captchaEverSeen = true
-                captchaClearedAt = 0L
-                lastCaptchaSeenAt = now
+            // ═══════════════════════════════════════════════════════════════
+            //  ② CAPTCHA visible — extend
+            // ═══════════════════════════════════════════════════════════════
+            if (isCaptchaPresent(root)) {
+                captchaSeen = true
+                captchaClosedAt = 0L
                 errorSeenAt = 0L
+                continueVisibleAt = 0L
                 val ext = now + 60_000
                 if (ext > deadline) deadline = ext
                 val humanNode = NodeFinder.findByTextContains(root, "I am human")
@@ -618,58 +585,98 @@ object PayPalActions {
                 continue
             }
 
-            // ③ ERROR
-            val errorVisible = NodeFinder.containsAny(root,
-                "Something went wrong", "can't be used", "not valid",
-                "invalid", "Enter a valid", "try again", "Try again")
+            // ═══════════════════════════════════════════════════════════════
+            //  ③ CAPTCHA JUST CLOSED — start post-captcha tracking
+            // ═══════════════════════════════════════════════════════════════
+            if (captchaSeen && captchaClosedAt == 0L) {
+                captchaClosedAt = now
+                AutomationState.log("  ℹ Captcha closed — post-captcha phase")
+            }
 
-            if (errorVisible) {
+            if (captchaSeen && captchaClosedAt > 0L) {
+                // ③a POPUP — check first (blocks everything underneath)
+                if (isGmailPopupVisible(root)) {
+                    val popupDuration = now - captchaClosedAt
+                    if (popupDuration > 10000) {
+                        AutomationState.log("  ✘ Popup stuck ${popupDuration}ms → ERROR")
+                        return Result.ERROR
+                    }
+                    if (now - lastLog > 2000) {
+                        AutomationState.log("  ⏳ Post-captcha: Gmail popup blocking — waiting")
+                        lastLog = now
+                    }
+                    StepUtils.sleepMs(StepUtils.POLL_MS)
+                    continue
+                }
+
+                // ③b ERROR — check after popup gone
+                if (NodeFinder.containsAny(root,
+                        "Something went wrong", "can't be used", "not valid",
+                        "invalid", "Enter a valid", "try again", "Try again")) {
+                    if (errorSeenAt == 0L) {
+                        errorSeenAt = now
+                        AutomationState.log("  ⚠ Post-captcha: error detected — verifying")
+                    } else if (now - errorSeenAt >= 400) {
+                        AutomationState.log("  ✘ Post-captcha: error confirmed → ERROR")
+                        return Result.ERROR
+                    }
+                    StepUtils.sleepMs(StepUtils.POLL_MS)
+                    continue
+                } else if (errorSeenAt > 0L && now - errorSeenAt > 1500) {
+                    errorSeenAt = 0L
+                    AutomationState.log("  ℹ Post-captcha: error gone")
+                }
+
+                // ③c READY for retry? Continue + input field visible
+                val continueBtn = NodeFinder.findByText(root, "Continue", "Next")
+                val hasContinue = continueBtn != null && continueBtn.isVisibleToUser
+                val hasInput = findEditableUnder(root) != null
+
+                if (hasContinue && hasInput) {
+                    if (continueVisibleAt == 0L) {
+                        continueVisibleAt = now
+                        AutomationState.log("  ℹ Post-captcha: Continue + input visible — confirming")
+                    } else if (now - continueVisibleAt > 800) {
+                        AutomationState.log("  ✔ Post-captcha ready → RETRY_CONTINUE")
+                        return Result.RETRY_CONTINUE
+                    }
+                } else {
+                    continueVisibleAt = 0L
+                    // Hard timeout for post-captcha loading
+                    val postDuration = now - captchaClosedAt
+                    if (postDuration > 22000) {
+                        AutomationState.log("  ✘ Post-captcha stuck ${postDuration}ms (Continue=$hasContinue, Input=$hasInput) → TIMEOUT")
+                        return Result.TIMEOUT
+                    }
+                    if (now - lastLog > 3000) {
+                        AutomationState.log("  ⏳ Post-captcha loading (Continue=$hasContinue, Input=$hasInput) — waiting")
+                        lastLog = now
+                    }
+                }
+                StepUtils.sleepMs(StepUtils.POLL_MS)
+                continue
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            //  ④ NORMAL processing (no captcha ever seen)
+            // ═══════════════════════════════════════════════════════════════
+            if (NodeFinder.containsAny(root,
+                    "Something went wrong", "can't be used", "not valid",
+                    "invalid", "Enter a valid", "try again", "Try again")) {
                 if (errorSeenAt == 0L) {
                     errorSeenAt = now
                     AutomationState.log("  ⚠ Error text detected — verifying…")
                 } else if (now - errorSeenAt >= 400) {
-                    AutomationState.log("  ✘ Error confirmed (${now - errorSeenAt}ms) → ERROR")
+                    AutomationState.log("  ✘ Error confirmed → ERROR")
                     return Result.ERROR
                 }
-                StepUtils.sleepMs(StepUtils.POLL_MS)
-                continue
-            } else {
-                if (errorSeenAt > 0L) {
-                    if (now - errorSeenAt > 1500) {
-                        AutomationState.log("  ℹ Error text gone — continuing")
-                        errorSeenAt = 0L
-                    }
-                }
+            } else if (errorSeenAt > 0L && now - errorSeenAt > 1500) {
+                errorSeenAt = 0L
+                AutomationState.log("  ℹ Error text gone — continuing")
             }
 
-            // ④ POST-CAPTCHA
-            if (captchaEverSeen) {
-                val continueBtn = NodeFinder.findByText(root, "Continue", "Next")
-                val hasContinue = continueBtn != null && continueBtn.isVisibleToUser
-
-                if (hasContinue) {
-                    if (captchaClearedAt == 0L) {
-                        captchaClearedAt = now
-                    } else if (now - captchaClearedAt > 1500) {
-                        AutomationState.log("  ✔ Captcha cleared + Continue visible → RETRY")
-                        return Result.RETRY_CONTINUE
-                    }
-                } else {
-                    captchaClearedAt = 0L
-                    if (now - lastCaptchaSeenAt < 45_000) {
-                        val ext = now + 15_000
-                        if (ext > deadline) deadline = ext
-                        if (now - lastLog > 4000) {
-                            AutomationState.log("  ⏳ Post-captcha processing — waiting")
-                            lastLog = now
-                        }
-                    }
-                }
-            }
-
-            // ⑤ MID-PROCESSING
             val hasNumberField = findEditableUnder(root) != null
-            if (hasNumberField && !captchaEverSeen && errorSeenAt == 0L) {
+            if (hasNumberField && errorSeenAt == 0L) {
                 val ext = now + 5000
                 if (ext > deadline) deadline = ext
                 if (now - lastLog > 4000) {
@@ -711,6 +718,18 @@ object PayPalActions {
         )
     }
 
+    // 🟢 Gmail popup detection (mirrors PopupWatcher logic)
+    private fun isGmailPopupVisible(root: AccessibilityNodeInfo?): Boolean {
+        if (root == null) return false
+        return NodeFinder.containsAny(
+            root,
+            "Choose an account for PayPal",
+            "Choose an account",
+            "Sign-in options",
+            "Sign in with Google"
+        )
+    }
+
     fun tapResendTwice(service: AccessibilityService) {
         repeat(2) { attempt ->
             val root = service.rootInActiveWindow
@@ -729,9 +748,6 @@ object PayPalActions {
         } catch (_: Exception) {}
     }
 
-    // ══════════════════════════════════════════════════════
-    //  HELPERS
-    // ══════════════════════════════════════════════════════
     private fun findByTextEquals(root: AccessibilityNodeInfo?, target: String): AccessibilityNodeInfo? {
         if (root == null) return null
         val queue = ArrayDeque<AccessibilityNodeInfo>()
