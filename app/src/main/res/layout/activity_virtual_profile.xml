@@ -6,7 +6,6 @@
     android:background="#121212"
     android:padding="16dp">
 
-    <!-- Back Button -->
     <ImageButton
         android:id="@+id/btnBack"
         android:layout_width="48dp"
@@ -29,7 +28,6 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/btnBack" />
 
-    <!-- 🟢 NAYA: Permission Card (Sirf tab dikhega jab Admin active nahi hoga) -->
     <androidx.cardview.widget.CardView
         android:id="@+id/cardPermission"
         android:layout_width="match_parent"
@@ -74,7 +72,6 @@
         </LinearLayout>
     </androidx.cardview.widget.CardView>
 
-    <!-- Status Text (Active/Not Active) -->
     <TextView
         android:id="@+id/tvStatus"
         android:layout_width="match_parent"
@@ -85,7 +82,6 @@
         android:textSize="16sp"
         app:layout_constraintTop_toBottomOf="@id/cardPermission" />
 
-    <!-- App List -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerApps"
         android:layout_width="match_parent"
@@ -95,7 +91,6 @@
         app:layout_constraintBottom_toTopOf="@+id/layoutButtons"
         app:layout_constraintTop_toBottomOf="@id/tvStatus" />
 
-    <!-- Main Buttons Layout -->
     <LinearLayout
         android:id="@+id/layoutButtons"
         android:layout_width="match_parent"
@@ -112,7 +107,7 @@
             android:textColor="@android:color/white"
             android:textSize="18sp"
             android:textStyle="bold"
-            android:visibility="gone" <!-- Default GONE, will show when admin is active -->
+            android:visibility="gone"
             app:cornerRadius="16dp" />
 
         <Button
