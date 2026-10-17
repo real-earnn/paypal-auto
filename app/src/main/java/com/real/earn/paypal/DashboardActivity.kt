@@ -1,7 +1,9 @@
 package com.real.earn.paypal
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.UserManager
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -22,15 +24,40 @@ class DashboardActivity : AppCompatActivity() {
 
         authManager = AuthManager(this)
 
+        // Listeners
         binding.btnRefresh.setOnClickListener { loadMe() }
         binding.btnLogout.setOnClickListener { logout() }
-
-        // 🟢 Start Automation -> AppSelectActivity (PayPal / TikTok)
+        
+        // Start Automation -> AppSelectActivity
         binding.btnStartAutomation.setOnClickListener {
             startActivity(Intent(this, AppSelectActivity::class.java))
         }
 
+        // 🟢 Virtual Android Button Click
+        binding.btnVirtualProfile.setOnClickListener {
+            startActivity(Intent(this, VirtualProfileActivity::class.java))
+        }
+
         loadMe()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 🟢 Check Work Profile status every time screen comes to foreground
+        updateVirtualProfileButtonText()
+    }
+
+    // 🟢 Dynamic Button Text Logic
+    private fun updateVirtualProfileButtonText() {
+        val userManager = getSystemService(Context.USER_SERVICE) as UserManager
+        // userProfiles.size > 1 means Work Profile is already created
+        if (userManager.userProfiles.size > 1) {
+            binding.btnVirtualProfile.text = "Show Virtual Android Setup"
+            binding.btnVirtualProfile.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#4CAF50")) // Green color if active
+        } else {
+            binding.btnVirtualProfile.text = "Create Virtual Android"
+            binding.btnVirtualProfile.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#673AB7")) // Purple color if not created
+        }
     }
 
     private fun loadMe() {
