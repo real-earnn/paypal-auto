@@ -45,12 +45,16 @@ object TikTokActions {
         }
     }
 
+    // ══════════════════════════════════════════════════════
+    //  🟢 SMART BRAIN: Video Feed Mode locks out onboarding
+    // ══════════════════════════════════════════════════════
     fun handleStartupSequence(service: AccessibilityService): Boolean {
         AutomationState.log("ℹ Handling TikTok startup sequence…")
         val startTime = System.currentTimeMillis()
         val timeout = 90000L 
         var swipeAttempts = 0
         var waitedForVideo = false 
+        var isVideoFeedMode = false // 🟢 Lock flag
 
         while (System.currentTimeMillis() - startTime < timeout) {
             if (StepUtils.shouldStop()) return false
@@ -61,35 +65,33 @@ object TikTokActions {
                 continue
             }
 
+            // 1. SUCCESS: Phone Number Screen?
             if (findCountryCodeNode(root) != null || NodeFinder.findByTextContains(root, "Phone number") != null) {
                 AutomationState.log("✔ Reached Phone Number screen")
                 return true
             }
 
-            if (clickNode(service, root, "Use phone / email / username", "Use phone")) { StepUtils.sleepMs(2000); continue }
-            if (clickNode(service, root, "Agree and continue", "Agree", "Accept", "I Agree")) { StepUtils.sleepMs(1500); continue }
-            if (clickNode(service, root, "Allow", "While using the app", "OK", "Allow all")) { StepUtils.sleepMs(1500); continue }
-            if (clickNode(service, root, "Man", "Woman", "Non-binary", "Prefer not to say")) { StepUtils.sleepMs(1500); continue }
-            if (clickNode(service, root, "Skip")) { StepUtils.sleepMs(1500); continue }
+            // 2. Detect Video Feed (Home, Friends, Inbox, Profile tabs in bottom)
+            val hasHomeTab = findStrictBottomTab(root, "Home") != null
+            val hasProfileTab = findStrictBottomTab(root, "Profile") != null
+            val hasInboxTab = findStrictBottomTab(root, "Inbox") != null
+            val hasForYou = NodeFinder.findByText(root, "For You") != null
 
-            if (clickNode(service, root, "Log in", "Add another account", "Add account")) {
-                StepUtils.sleepMs(2000)
-                continue
+            // 🟢 If bottom tabs OR For You text exists, we are definitely on video feed
+            if (hasHomeTab || hasInboxTab || hasForYou || NodeFinder.findByTextContains(root, "Swipe up") != null) {
+                isVideoFeedMode = true
             }
 
-            val isVideoFeed = NodeFinder.findByTextContains(root, "Swipe up") != null || 
-                              findStrictBottomTab(root, "Home") != null
-
-            if (isVideoFeed) {
+            if (isVideoFeedMode) {
+                // 🟢 WE ARE ON VIDEO FEED. FORGET EVERYTHING ELSE.
                 if (!waitedForVideo) {
                     AutomationState.log("  ↳ Video feed detected — waiting 5 seconds...")
                     StepUtils.sleepMs(5000) 
                     waitedForVideo = true
-                    // 🟢 DEBUG: Print all screen texts when video loads
-                    printScreenTexts(root)
                     continue
                 }
 
+                // Find Profile tab strictly
                 val profileTab = findStrictBottomTab(root, "Profile")
 
                 if (profileTab != null) {
@@ -98,8 +100,10 @@ object TikTokActions {
                     tapNode(service, profileTab)
                     StepUtils.sleepMs(3000)
                     waitedForVideo = false 
+                    isVideoFeedMode = false // Unlock if we move to profile page
                     continue
                 } else {
+                    // No profile tab? Swipe.
                     AutomationState.log("  ↳ Profile tab not found — Swiping up (#${swipeAttempts + 1})")
                     swipeUp(service)
                     StepUtils.sleepMs(3000)
@@ -111,6 +115,21 @@ object TikTokActions {
                         break
                     }
                 }
+                continue // 🟢 CRITICAL: Skip all onboarding checks below!
+            }
+
+            // ══════════════════════════════════════════════════════
+            // 🟢 ONBOARDING MODE (Only runs if NOT on video feed)
+            // ══════════════════════════════════════════════════════
+            if (clickNode(service, root, "Use phone / email / username", "Use phone")) { StepUtils.sleepMs(2000); continue }
+            if (clickNode(service, root, "Agree and continue", "Agree", "Accept", "I Agree")) { StepUtils.sleepMs(1500); continue }
+            if (clickNode(service, root, "Allow", "While using the app", "OK", "Allow all")) { StepUtils.sleepMs(1500); continue }
+            if (clickNode(service, root, "Man", "Woman", "Non-binary", "Prefer not to say")) { StepUtils.sleepMs(1500); continue }
+            if (clickNode(service, root, "Skip")) { StepUtils.sleepMs(1500); continue }
+            
+            // Profile Page (Log in / Add account)
+            if (clickNode(service, root, "Log in", "Add another account", "Add account")) {
+                StepUtils.sleepMs(2000)
                 continue
             }
 
@@ -121,38 +140,11 @@ object TikTokActions {
         return false
     }
 
-    // 🟢 DEBUG HELPER: Logs all texts and their coordinates on the current screen
-    private fun printScreenTexts(root: AccessibilityNodeInfo) {
-        val textList = mutableListOf<String>()
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val n = queue.removeFirst()
-            val t = n.text?.toString()?.trim() ?: ""
-            val d = n.contentDescription?.toString()?.trim() ?: ""
-            
-            if (t.isNotEmpty() || d.isNotEmpty()) {
-                val r = Rect(); n.getBoundsInScreen(r)
-                // Only log visible items
-                if (r.width() > 0 && r.height() > 0 && n.isVisibleToUser) {
-                    textList.add("[Y:${r.centerY()}] '${t.ifEmpty { d }}'")
-                }
-            }
-            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
-        }
-        // Log in chunks to avoid console overflow
-        val chunkSize = 5
-        for (i in textList.indices step chunkSize) {
-            val chunk = textList.subList(i, minOf(i + chunkSize, textList.size)).joinToString(" | ")
-            AutomationState.log("  [SCREEN] $chunk")
-        }
-    }
-
     private fun findStrictBottomTab(root: AccessibilityNodeInfo, tabName: String): AccessibilityNodeInfo? {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         val rootR = Rect(); root.getBoundsInScreen(rootR)
-        val strictBottomThreshold = rootR.height() * 0.85 // Thora aur neeche laya hai (85%)
+        val strictBottomThreshold = rootR.height() * 0.85 
 
         while (queue.isNotEmpty()) {
             val n = queue.removeFirst()
@@ -161,10 +153,6 @@ object TikTokActions {
             
             if ((text.equals(tabName, true) || desc.equals(tabName, true)) && n.isVisibleToUser) {
                 val r = Rect(); n.getBoundsInScreen(r)
-                // 🟢 DEBUG: Log if we found "Profile" but it was too high
-                if (r.centerY() <= strictBottomThreshold) {
-                    AutomationState.log("  [DEBUG] Ignored '$tabName' at Y:${r.centerY()} (Too high)")
-                }
                 if (r.centerY() > strictBottomThreshold) {
                     return n
                 }
@@ -332,36 +320,33 @@ object TikTokActions {
 
     private fun clickNode(service: AccessibilityService, root: AccessibilityNodeInfo, vararg texts: String): Boolean {
         for (text in texts) {
-            val node = NodeFinder.findByText(root, text) ?: NodeFinder.findByTextContains(root, text)
-            if (node != null && node.isVisibleToUser) {
-                val r = Rect(); node.getBoundsInScreen(r)
-                AutomationState.log("  ↳ Clicking '$text' at (${r.centerX()}, ${r.centerY()})")
-                tapNode(service, node)
-                return true
+            if (text.length <= 5) {
+                val exactNode = NodeFinder.findByText(root, text)
+                if (exactNode != null && exactNode.isVisibleToUser) {
+                    val r = Rect(); exactNode.getBoundsInScreen(r)
+                    AutomationState.log("  ↳ Clicking EXACT '$text' at (${r.centerX()}, ${r.centerY()})")
+                    tapNode(service, exactNode)
+                    return true
+                }
+            } else {
+                val node = NodeFinder.findByText(root, text) ?: NodeFinder.findByTextContains(root, text)
+                if (node != null && node.isVisibleToUser) {
+                    val r = Rect(); node.getBoundsInScreen(r)
+                    AutomationState.log("  ↳ Clicking '$text' at (${r.centerX()}, ${r.centerY()})")
+                    tapNode(service, node)
+                    return true
+                }
             }
         }
         return false
     }
 
-    // 🟢 FIXED: Explicitly log which method is clicking and coordinates
     private fun tapNode(service: AccessibilityService, node: AccessibilityNodeInfo): Boolean {
-        val textDesc = node.text?.toString() ?: node.contentDescription?.toString() ?: "Unknown"
-        
-        if (node.isClickable && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-            AutomationState.log("    ↳ ACTION_CLICK success on '$textDesc'")
-            return true
-        }
+        if (node.isClickable && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
         val parent = NodeFinder.findClickableParent(node)
-        if (parent != null && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-            AutomationState.log("    ↳ Parent ACTION_CLICK success on '$textDesc'")
-            return true
-        }
-        
+        if (parent != null && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
         val bounds = Rect(); node.getBoundsInScreen(bounds)
-        if (bounds.width() > 0 && bounds.height() > 0) {
-            AutomationState.log("    ↳ Coordinate tap at (${bounds.centerX()}, ${bounds.centerY()}) for '$textDesc'")
-            return tapAt(service, bounds.centerX(), bounds.centerY())
-        }
+        if (bounds.width() > 0 && bounds.height() > 0) return tapAt(service, bounds.centerX(), bounds.centerY())
         return false
     }
 
@@ -381,21 +366,14 @@ object TikTokActions {
         } catch (e: Exception) { false }
     }
 
-    // ══════════════════════════════════════════════════════
-    //  🟢 FIXED: Swipe from 60% to 20% (Middle 40% only)
-    // ══════════════════════════════════════════════════════
     private fun swipeUp(service: AccessibilityService) {
         try {
             val root = service.rootInActiveWindow ?: return
             val bounds = Rect(); root.getBoundsInScreen(bounds)
             val x = bounds.centerX()
             
-            // 🟢 Start at 60% (Middle screen)
             val startY = bounds.height() * 0.60f
-            // 🟢 End at 20% (Below top tabs)
             val endY = bounds.height() * 0.20f
-
-            AutomationState.log("  ↳ Swiping from Y:${startY.toInt()} to Y:${endY.toInt()}")
 
             val path = Path().apply {
                 moveTo(x.toFloat(), startY)
@@ -412,13 +390,6 @@ object TikTokActions {
                 override fun onCancelled(d: GestureDescription?) { ok = false; latch.countDown() }
             }, null)
             latch.await(2, TimeUnit.SECONDS)
-            
-            if (ok) {
-                AutomationState.log("  ↳ Swipe completed successfully")
-                StepUtils.sleepMs(1000)
-            } else {
-                AutomationState.log("  ↳ Swipe gesture cancelled")
-            }
         } catch (_: Exception) {}
     }
 
