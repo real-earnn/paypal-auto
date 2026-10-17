@@ -22,7 +22,7 @@ import com.real.earn.paypal.utils.CaptchaWatcher
 import com.real.earn.paypal.utils.OverlayManager
 import com.real.earn.paypal.utils.PayPalAutomation
 import com.real.earn.paypal.utils.PopupWatcher
-import com.real.earn.paypal.utils.TikTokAutomation // 🟢 NAYA IMPORT
+import com.real.earn.paypal.utils.TikTokAutomation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -36,11 +36,11 @@ class AutomationService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var loopJob: Job? = null
     private var overlay: OverlayManager? = null
-
     private var wakeLock: PowerManager.WakeLock? = null
     private var screenLock: PowerManager.WakeLock? = null
 
     private var mode: String = "service"
+    private var engineType: String = "paypal" // 🟢 New
     private var serviceName: String = "PayPal"
     private var countryName: String = ""
     private var countryCodeIso: String = ""
@@ -65,7 +65,8 @@ class AutomationService : Service() {
             countryCode: String = "",
             dialingCode: String = "",
             prefix: String = "",
-            file: String = ""
+            file: String = "",
+            engineType: String = "paypal" // 🟢 Receive Engine
         ) {
             val i = Intent(context, AutomationService::class.java).apply {
                 action = ACTION_START
@@ -76,20 +77,17 @@ class AutomationService : Service() {
                 putExtra("dialingCode", dialingCode)
                 putExtra("prefix", prefix)
                 putExtra("file", file)
+                putExtra("engine_type", engineType) // 🟢 Pass Engine
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(i)
             } else context.startService(i)
         }
 
-        fun pause(context: Context) = context.startService(
-            Intent(context, AutomationService::class.java).setAction(ACTION_PAUSE))
-        fun resume(context: Context) = context.startService(
-            Intent(context, AutomationService::class.java).setAction(ACTION_RESUME))
-        fun stop(context: Context) = context.startService(
-            Intent(context, AutomationService::class.java).setAction(ACTION_STOP))
-        fun stopAndClose(context: Context) = context.startService(
-            Intent(context, AutomationService::class.java).setAction(ACTION_STOP_AND_CLOSE))
+        fun pause(context: Context) = context.startService(Intent(context, AutomationService::class.java).setAction(ACTION_PAUSE))
+        fun resume(context: Context) = context.startService(Intent(context, AutomationService::class.java).setAction(ACTION_RESUME))
+        fun stop(context: Context) = context.startService(Intent(context, AutomationService::class.java).setAction(ACTION_STOP))
+        fun stopAndClose(context: Context) = context.startService(Intent(context, AutomationService::class.java).setAction(ACTION_STOP_AND_CLOSE))
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -145,6 +143,7 @@ class AutomationService : Service() {
         when (intent?.action) {
             ACTION_START -> {
                 mode = intent.getStringExtra("mode") ?: "service"
+                engineType = intent.getStringExtra("engine_type") ?: "paypal" // 🟢
                 serviceName = intent.getStringExtra("service") ?: "PayPal"
                 countryName = intent.getStringExtra("country") ?: ""
                 countryCodeIso = intent.getStringExtra("countryCode") ?: ""
@@ -186,12 +185,11 @@ class AutomationService : Service() {
         AutomationState.reset()
         AutomationState.setStatus(AutomationState.Status.RUNNING)
 
-        // 🟢 Correct Log for Modes
+        val engineName = if (engineType == "tiktok") "TikTok" else "PayPal"
         when (mode) {
-            "tiktok" -> AutomationState.log("🚀 Automation: TikTok / $countryName")
-            "auto" -> AutomationState.log("🚀 Automation: $serviceName · Auto Prefix")
-            "prefix" -> AutomationState.log("🚀 Automation: $serviceName · $prefix / $file")
-            else -> AutomationState.log("🚀 Automation: $serviceName / $countryName")
+            "auto" -> AutomationState.log("🚀 $engineName: Auto Prefix")
+            "prefix" -> AutomationState.log("🚀 $engineName: $prefix / $file")
+            else -> AutomationState.log("🚀 $engineName: $serviceName / $countryName")
         }
         updateNotification("Running")
 
@@ -230,16 +228,18 @@ class AutomationService : Service() {
                     }
                     AutomationState.log("✔ ${nums.size} numbers")
 
-                    // 🟢 ROUTING BASED ON MODE
-                    val (s, f) = if (mode == "tiktok") {
-                        AutomationState.log("🎵 Running TikTok Automation Batch")
+                    // ═══════════════════════════════════════════════════════════════
+                    // 🟢 ROUTING BASED ON ENGINE TYPE
+                    // ═══════════════════════════════════════════════════════════════
+                    val (s, f) = if (engineType == "tiktok") {
+                        AutomationState.log("🎵 Running TikTok Engine")
                         TikTokAutomation.runBatch(
                             service = a11y,
                             numbers = nums,
                             dialingCode = dialingCode.ifEmpty { "92" },
                             autoFlightMode = autoFlight,
                             onNumberStart = { num ->
-                                AutomationState.updateStats { it.copy(totalAttempts = it.totalAttempts + 1, currentService = "TikTok", currentCountry = countryName, currentNumber = num) }
+                                AutomationState.updateStats { it.copy(totalAttempts = it.totalAttempts + 1, currentService = serviceName, currentCountry = countryName, currentNumber = num) }
                             },
                             onNumberSuccess = { _ ->
                                 AutomationState.updateStats { it.copy(successCount = it.successCount + 1) }
@@ -250,7 +250,7 @@ class AutomationService : Service() {
                             }
                         )
                     } else {
-                        AutomationState.log("💳 Running PayPal Automation Batch")
+                        AutomationState.log("💳 Running PayPal Engine")
                         PayPalAutomation.runBatch(
                             service = a11y,
                             numbers = nums,
@@ -304,22 +304,6 @@ class AutomationService : Service() {
     private suspend fun fetchNumbers(auth: AuthManager): List<String> {
         return try {
             when (mode) {
-                "tiktok", "service" -> {
-                    // Fetch for TikTok (or default service)
-                    val sName = if (mode == "tiktok") "TikTok" else serviceName
-                    val res = ApiClient.service(auth).getNumbers(
-                        GetNumberBody(service = sName, country = countryName, count = 5)
-                    )
-                    if (res.isSuccessful && res.body()?.success == true) {
-                        val body = res.body()!!
-                        countryCodeIso = body.countryCode
-                        dialingCode = body.dialingCode
-                        body.numbers ?: emptyList()
-                    } else {
-                        AutomationState.log("✘ getNumber HTTP ${res.code()}")
-                        emptyList()
-                    }
-                }
                 "auto" -> {
                     val res = ApiClient.service(auth).getNumbersByPrefix(
                         GetNumberByPrefixBody(service = serviceName, auto = true, count = 5)
@@ -351,7 +335,20 @@ class AutomationService : Service() {
                         emptyList()
                     }
                 }
-                else -> emptyList()
+                else -> { // "service"
+                    val res = ApiClient.service(auth).getNumbers(
+                        GetNumberBody(service = serviceName, country = countryName, count = 5)
+                    )
+                    if (res.isSuccessful && res.body()?.success == true) {
+                        val body = res.body()!!
+                        countryCodeIso = body.countryCode
+                        dialingCode = body.dialingCode
+                        body.numbers ?: emptyList()
+                    } else {
+                        AutomationState.log("✘ getNumber HTTP ${res.code()}")
+                        emptyList()
+                    }
+                }
             }
         } catch (e: Exception) {
             AutomationState.log("✘ fetch error: ${e.message}")
