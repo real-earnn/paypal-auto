@@ -24,6 +24,9 @@ class VirtualProfileActivity : AppCompatActivity() {
     private lateinit var adminComponent: ComponentName
     private var workProfileUser: UserHandle? = null
 
+    // Request code for Device Admin activation
+    private val REQUEST_CODE_ENABLE_ADMIN = 101
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityVirtualProfileBinding.inflate(layoutInflater)
@@ -33,6 +36,17 @@ class VirtualProfileActivity : AppCompatActivity() {
         adminComponent = ComponentName(this, MyDeviceAdminReceiver::class.java)
 
         binding.btnBack.setOnClickListener { finish() }
+
+        // 🟢 Device Admin Allow Button ka Listener
+        binding.btnAllowAdmin.setOnClickListener {
+            if (!dpm.isAdminActive(adminComponent)) {
+                val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                    putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent)
+                    putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Virtual Android banane ke liye is permission ki zaroorat hai.")
+                }
+                startActivityForResult(intent, REQUEST_CODE_ENABLE_ADMIN)
+            }
+        }
     }
 
     override fun onResume() {
@@ -41,23 +55,33 @@ class VirtualProfileActivity : AppCompatActivity() {
     }
 
     private fun checkProfileState() {
-        // 🟢 سب سے مضبوط طریقہ: کیا ہماری ایپ اس پروفائل کی مالک ہے؟
-        val isOwner = dpm.isProfileOwnerApp(packageName)
-
-        // بیک اپ کے طور پر SharedPreferences چیک کریں
+        val isAdmin = dpm.isAdminActive(adminComponent)
+        val userManager = getSystemService(Context.USER_SERVICE) as UserManager
         val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
+        
+        // Profile ka status check karein
+        val isProfileOwner = dpm.isProfileOwnerApp(packageName)
         val prefCreated = prefs.getBoolean("profile_created", false)
 
-        if (isOwner || prefCreated) {
-            val userManager = getSystemService(Context.USER_SERVICE) as UserManager
-            
-            // 🟢 صحیح UserHandle تلاش کریں
-            workProfileUser = userManager.userProfiles.find { it != Process.myUserHandle() }
+        // 🟢 Step 1: Agar Admin active nahi hai, to sirf Permission Card dikhayein
+        if (!isAdmin) {
+            binding.cardPermission.visibility = View.VISIBLE
+            binding.btnCreateProfile.visibility = View.GONE
+            binding.btnAddApps.visibility = View.GONE
+            binding.btnDeleteProfile.visibility = View.GONE
+            binding.recyclerApps.visibility = View.GONE
+            binding.tvStatus.text = "Please allow Device Admin permission first."
+            return
+        }
 
+        // 🟢 Step 2: Admin active hai, ab check karein ke profile bani hai ya nahi
+        binding.cardPermission.visibility = View.GONE
+
+        if (isProfileOwner || prefCreated) {
+            workProfileUser = userManager.userProfiles.find { it != Process.myUserHandle() }
             if (workProfileUser != null) {
                 showManagerState()
             } else {
-                // اگر پروفائل نہیں ملا لیکن pref موجود ہے، تو pref صاف کریں
                 prefs.edit().putBoolean("profile_created", false).apply()
                 showCreateState()
             }
@@ -67,13 +91,14 @@ class VirtualProfileActivity : AppCompatActivity() {
     }
 
     private fun showCreateState() {
-        binding.tvStatus.text = "Virtual Android is not active.\nCreate a new profile to use apps in a separate environment."
+        binding.tvStatus.text = "Device Admin is active ✅\nNow you can create Virtual Android."
         binding.btnCreateProfile.visibility = View.VISIBLE
         binding.btnAddApps.visibility = View.GONE
         binding.btnDeleteProfile.visibility = View.GONE
         binding.recyclerApps.visibility = View.GONE
 
         binding.btnCreateProfile.setOnClickListener {
+            // Ab seedha profile create karein kyunke admin pehle se active hai
             val intent = Intent(DevicePolicyManager.ACTION_PROVISION_MANAGED_PROFILE)
             intent.putExtra(DevicePolicyManager.EXTRA_PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME, adminComponent)
             
@@ -100,7 +125,6 @@ class VirtualProfileActivity : AppCompatActivity() {
                 .setMessage("Ye poora virtual space aur iske andar ki saari apps delete ho jayengi. Kya aap sure hain?")
                 .setPositiveButton("Delete") { _, _ ->
                     try {
-                        // پروفائل ڈیلیٹ کرنے کا عمل
                         val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
                         prefs.edit().putBoolean("profile_created", false).apply()
                         Toast.makeText(this, "Profile deleted! (Restart device if apps still show)", Toast.LENGTH_LONG).show()
@@ -123,7 +147,6 @@ class VirtualProfileActivity : AppCompatActivity() {
         val workUser = workProfileUser ?: return
 
         try {
-            // 🟢 getActivityList اب null پیکیج نیم کے ساتھ استعمال ہو رہا ہے
             val activities = launcherApps.getActivityList(null, workUser)
             val uniquePackages = mutableSetOf<String>()
             val appList = mutableListOf<VirtualAppAdapter.AppInfoData>()
@@ -162,10 +185,20 @@ class VirtualProfileActivity : AppCompatActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        
+        // 🟢 Device Admin activation ka result
+        if (requestCode == REQUEST_CODE_ENABLE_ADMIN) {
+            if (resultCode == RESULT_OK) {
+                Toast.makeText(this, "Device Admin Activated!", Toast.LENGTH_SHORT).show()
+                checkProfileState() // UI refresh karein, ab Create button nazar aayega
+            } else {
+                Toast.makeText(this, "Device Admin permission denied.", Toast.LENGTH_SHORT).show()
+            }
+        }
+        
+        // Work Profile creation ka result
         if (requestCode == 100) {
             if (resultCode == RESULT_OK) {
-                // 🟢 فوری طور پر UI اپ ڈیٹ نہ کریں، کیونکہ پروفائل ابھی مکمل نہیں ہوا
-                // براڈکاسٹ کا انتظار کریں، یا صرف pref سیٹ کریں
                 val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
                 prefs.edit().putBoolean("profile_created", true).apply()
                 Toast.makeText(this, "Setting up Virtual Android... Please wait.", Toast.LENGTH_SHORT).show()
