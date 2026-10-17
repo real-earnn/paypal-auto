@@ -45,63 +45,88 @@ object TikTokActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  🟢 SMART: Handle Startup Popups & Onboarding
+    //  🟢 SMART BRAIN: Handles Random Startup Screens
     // ══════════════════════════════════════════════════════
     fun handleStartupSequence(service: AccessibilityService): Boolean {
         AutomationState.log("ℹ Handling TikTok startup sequence…")
-        
-        for (i in 1..15) {
+        val startTime = System.currentTimeMillis()
+        val timeout = 60000L // Max 60 seconds to reach login screen
+
+        while (System.currentTimeMillis() - startTime < timeout) {
             if (StepUtils.shouldStop()) return false
             val root = service.rootInActiveWindow
             
-            if (root != null) {
-                // 1. Terms & Conditions
-                if (clickIfFound(service, root, "Agree and continue", "Agree", "Accept")) continue
-                
-                // 2. Permissions
-                if (clickIfFound(service, root, "Allow", "While using the app", "OK")) continue
-                
-                // 3. Gender
-                if (clickIfFound(service, root, "Man", "Woman", "Non-binary")) continue
-                
-                // 4. Interests (Skip)
-                if (clickIfFound(service, root, "Skip")) continue
-                
-                // 5. Home Feed -> Swipe up to dismiss overlay
-                if (findByTextContains(root, "Swipe up for more") != null) {
-                    swipeUp(service)
-                    continue
-                }
-
-                // 6. Already logged in / Home feed -> Go to Profile
-                if (findByTextContains(root, "Home") != null && findByTextContains(root, "Profile") != null) {
-                    AutomationState.log("✔ On Home feed — opening Profile")
-                    val profileTab = findByText(root, "Profile")
-                    if (profileTab != null) {
-                        tapNode(service, profileTab)
-                        StepUtils.sleepMs(2000)
-                        continue
-                    }
-                }
-
-                // 7. Profile Page -> Log in / Add account
-                if (clickIfFound(service, root, "Log in", "Add another account")) {
-                    StepUtils.sleepMs(1500)
-                    continue
-                }
-
-                // 8. Use phone / email / username
-                if (clickIfFound(service, root, "Use phone / email / username", "Use phone")) {
-                    StepUtils.sleepMs(2000)
-                    return true // Successfully reached login screen
-                }
-
-                // 9. If we are already on the "Log in" screen with country code, we are done
-                if (findByTextContains(root, "Phone number") != null || findCountryCodeNode(root) != null) {
-                    AutomationState.log("✔ Reached Phone Number screen")
-                    return true
-                }
+            if (root == null) {
+                StepUtils.sleepMs(1000)
+                continue
             }
+
+            // ═══ 1. SUCCESS: Phone Number Screen? ═══
+            if (findCountryCodeNode(root) != null || NodeFinder.findByTextContains(root, "Phone number") != null) {
+                AutomationState.log("✔ Reached Phone Number screen")
+                return true
+            }
+
+            // ═══ 2. "Use phone / email / username" Button? ═══
+            if (clickNode(service, root, "Use phone / email / username", "Use phone")) {
+                StepUtils.sleepMs(2000)
+                continue
+            }
+
+            // ═══ 3. Profile Page (Log in / Add account)? ═══
+            if (clickNode(service, root, "Log in", "Add another account", "Add account")) {
+                StepUtils.sleepMs(2000)
+                continue
+            }
+
+            // ═══ 4. Home Feed? (Click "Profile" tab) ═══
+            val profileTab = findBottomTab(root, "Profile")
+            if (profileTab != null) {
+                AutomationState.log("  ↳ Clicking Profile tab")
+                tapNode(service, profileTab)
+                StepUtils.sleepMs(2000)
+                continue
+            }
+
+            // ═══ 5. Tutorial Overlay? ("Swipe up") ═══
+            if (NodeFinder.findByTextContains(root, "Swipe up") != null) {
+                AutomationState.log("  ↳ Swiping up to dismiss overlay")
+                swipeUp(service)
+                StepUtils.sleepMs(1500)
+                continue
+            }
+
+            // ═══ 6. Terms & Conditions ═══
+            if (clickNode(service, root, "Agree and continue", "Agree", "Accept", "I Agree", "Continue")) {
+                StepUtils.sleepMs(1500)
+                continue
+            }
+
+            // ═══ 7. Permissions ═══
+            if (clickNode(service, root, "Allow", "While using the app", "OK", "Allow all")) {
+                StepUtils.sleepMs(1500)
+                continue
+            }
+
+            // ═══ 8. Gender Selection ═══
+            if (clickNode(service, root, "Man", "Woman", "Non-binary", "Prefer not to say")) {
+                StepUtils.sleepMs(1500)
+                continue
+            }
+
+            // ═══ 9. Interests (Skip) ═══
+            if (clickNode(service, root, "Skip")) {
+                StepUtils.sleepMs(1500)
+                continue
+            }
+
+            // ═══ 10. Next Button (in onboarding) ═══
+            if (clickNode(service, root, "Next")) {
+                StepUtils.sleepMs(1500)
+                continue
+            }
+
+            // Agar upar ka kuch bhi nahi mila, toh 1 second wait karke dobara dekho
             StepUtils.sleepMs(1000)
         }
         
@@ -109,26 +134,15 @@ object TikTokActions {
         return false
     }
 
-    private fun clickIfFound(service: AccessibilityService, root: AccessibilityNodeInfo, vararg texts: String): Boolean {
-        val node = NodeFinder.findByText(root, *texts)
-        if (node != null && node.isVisibleToUser) {
-            AutomationState.log("  ↳ Clicking: ${node.text}")
-            tapNode(service, node)
-            StepUtils.sleepMs(1500)
-            return true
-        }
-        return false
-    }
-
     // ══════════════════════════════════════════════════════
-    //  🟢 SMART: Country Code Detection (e.g., "US +1")
+    //  🟢 SMART: Country Code Detection (e.g., "US +1", "PK +92")
     // ══════════════════════════════════════════════════════
     fun selectCountry(service: AccessibilityService, countryName: String): Boolean {
         AutomationState.log("ℹ Selecting country: $countryName")
         
         val root = service.rootInActiveWindow ?: return false
         
-        // Find the country code button (e.g., "PK +92", "US +1", "NO +47")
+        // Find the country code button
         val countryBtn = findCountryCodeNode(root)
         
         if (countryBtn == null) {
@@ -168,7 +182,7 @@ object TikTokActions {
     }
 
     /**
-     * 🟢 Jugaad Logic: Find text matching "ABC +123" or containing "+"
+     * 🟢 Jugaad Logic: Find any node containing "+" and digits (e.g., "PK +92")
      */
     private fun findCountryCodeNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
@@ -177,21 +191,37 @@ object TikTokActions {
         while (queue.isNotEmpty()) {
             val n = queue.removeFirst()
             val text = n.text?.toString()?.trim() ?: ""
-            
-            // Check if text contains "+" and a number
-            if (text.contains("+") && text.any { it.isDigit() }) {
-                // Ensure it's not a long phone number
-                if (text.length < 15 && n.isVisibleToUser) {
-                    return n
-                }
-            }
-            
-            // Also check for content description (sometimes used by TikTok)
             val desc = n.contentDescription?.toString()?.trim() ?: ""
-            if (desc.contains("+") && desc.any { it.isDigit() } && desc.length < 15 && n.isVisibleToUser) {
+            
+            // Text must contain "+" and at least one digit. Length < 15 to avoid phone numbers.
+            if ((text.contains("+") || desc.contains("+")) && 
+                (text.any { it.isDigit() } || desc.any { it.isDigit() }) &&
+                text.length < 15 && desc.length < 15 && n.isVisibleToUser) {
                 return n
             }
 
+            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
+        }
+        return null
+    }
+
+    // Find the bottom tab exactly (Home, Friends, Profile)
+    private fun findBottomTab(root: AccessibilityNodeInfo, tabName: String): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val n = queue.removeFirst()
+            val text = n.text?.toString()?.trim() ?: ""
+            val desc = n.contentDescription?.toString()?.trim() ?: ""
+            
+            if ((text.equals(tabName, true) || desc.equals(tabName, true)) && n.isVisibleToUser) {
+                // Ensure it's at the bottom of the screen
+                val r = Rect(); n.getBoundsInScreen(r)
+                val rootR = Rect(); root.getBoundsInScreen(rootR)
+                if (r.centerY() > rootR.height() * 0.8) {
+                    return n
+                }
+            }
             for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
         }
         return null
@@ -256,6 +286,20 @@ object TikTokActions {
     // ══════════════════════════════════════════════════════
     //  HELPERS
     // ══════════════════════════════════════════════════════
+    
+    // Helper: Checks multiple text options and clicks the first one found
+    private fun clickNode(service: AccessibilityService, root: AccessibilityNodeInfo, vararg texts: String): Boolean {
+        for (text in texts) {
+            val node = NodeFinder.findByText(root, text) ?: NodeFinder.findByTextContains(root, text)
+            if (node != null && node.isVisibleToUser) {
+                AutomationState.log("  ↳ Clicking: '$text'")
+                tapNode(service, node)
+                return true
+            }
+        }
+        return false
+    }
+
     private fun tapNode(service: AccessibilityService, node: AccessibilityNodeInfo): Boolean {
         if (node.isClickable && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
         val parent = NodeFinder.findClickableParent(node)
@@ -315,33 +359,5 @@ object TikTokActions {
             args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
             edit.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
         }
-    }
-    
-    // FindByText helper for exact match
-    private fun findByText(root: AccessibilityNodeInfo?, target: String): AccessibilityNodeInfo? {
-        if (root == null) return null
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val n = queue.removeFirst()
-            val t = n.text?.toString()?.trim() ?: ""
-            if (t.equals(target, ignoreCase = true) && n.isVisibleToUser) return n
-            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
-        }
-        return null
-    }
-
-    private fun findByTextContains(root: AccessibilityNodeInfo?, needle: String): AccessibilityNodeInfo? {
-        if (root == null) return null
-        val lower = needle.lowercase()
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val n = queue.removeFirst()
-            val t = n.text?.toString()?.lowercase() ?: ""
-            if (t.contains(lower) && n.isVisibleToUser) return n
-            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
-        }
-        return null
     }
 }
