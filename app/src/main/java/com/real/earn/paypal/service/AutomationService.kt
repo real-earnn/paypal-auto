@@ -22,6 +22,7 @@ import com.real.earn.paypal.utils.CaptchaWatcher
 import com.real.earn.paypal.utils.OverlayManager
 import com.real.earn.paypal.utils.PayPalAutomation
 import com.real.earn.paypal.utils.PopupWatcher
+import com.real.earn.paypal.utils.TikTokAutomation // 🟢 NAYA IMPORT
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -103,9 +104,6 @@ class AutomationService : Service() {
         acquireScreenLock()
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    //  🟢 CPU Wake Lock (already existing)
-    // ══════════════════════════════════════════════════════════════════════
     private fun acquireWakeLock() {
         try {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -119,18 +117,10 @@ class AutomationService : Service() {
         } catch (_: Exception) {}
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    //  🟢 NEW: Screen Wake Lock — screen kabhi off nahi hogi
-    //  FULL_WAKE_LOCK = screen ON at full brightness (deprecated but works)
-    //  Fallback: SCREEN_BRIGHT_WAKE_LOCK on older devices
-    // ══════════════════════════════════════════════════════════════════════
     @Suppress("DEPRECATION")
     private fun acquireScreenLock() {
         try {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-
-            // ACQUIRE_CAUSES_WAKEUP — agar screen already off hai to turant on karega
-            // ON_AFTER_RELEASE — release ke baad screen timeout reset
             val flags = PowerManager.FULL_WAKE_LOCK or
                     PowerManager.ACQUIRE_CAUSES_WAKEUP or
                     PowerManager.ON_AFTER_RELEASE
@@ -140,15 +130,13 @@ class AutomationService : Service() {
                 "RealEarnPayPal::ScreenOnLock"
             ).apply {
                 setReferenceCounted(false)
-                acquire(2 * 60 * 60 * 1000L) // 2 hours max
+                acquire(2 * 60 * 60 * 1000L)
             }
         } catch (_: Exception) {
-            // Fallback: SCREEN_BRIGHT_WAKE_LOCK (kuch devices pe better)
             try {
                 val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
                 screenLock = pm.newWakeLock(
-                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
-                            PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
                     "RealEarnPayPal::ScreenOnLock"
                 ).apply {
                     setReferenceCounted(false)
@@ -214,6 +202,7 @@ class AutomationService : Service() {
         AutomationState.setStatus(AutomationState.Status.RUNNING)
 
         when (mode) {
+            "tiktok" -> AutomationState.log("🚀 Automation: TikTok")
             "auto" -> AutomationState.log("🚀 Automation: $serviceName · Auto Prefix")
             "prefix" -> AutomationState.log("🚀 Automation: $serviceName · $prefix / $file")
             else -> AutomationState.log("🚀 Automation: $serviceName / $countryName")
@@ -255,31 +244,62 @@ class AutomationService : Service() {
                     }
                     AutomationState.log("✔ ${nums.size} numbers")
 
-                    val (s, f) = PayPalAutomation.runBatch(
-                        service = a11y,
-                        numbers = nums,
-                        countryName = countryName,
-                        countryIso = countryCodeIso,
-                        dialingCode = dialingCode,
-                        autoFlightMode = autoFlight,
-                        onNumberStart = { num ->
-                            AutomationState.updateStats {
-                                it.copy(
-                                    totalAttempts = it.totalAttempts + 1,
-                                    currentService = serviceName,
-                                    currentCountry = countryName,
-                                    currentNumber = num
-                                )
+                    // ═══════════════════════════════════════════════════════════
+                    // 🟢 MODE-BASED ROUTING
+                    // ═══════════════════════════════════════════════════════════
+                    val (s, f) = if (mode == "tiktok") {
+                        AutomationState.log("🎵 Running TikTok Automation Batch")
+                        TikTokAutomation.runBatch(
+                            service = a11y,
+                            numbers = nums,
+                            dialingCode = dialingCode.ifEmpty { "92" }, // Default PK code
+                            autoFlightMode = autoFlight,
+                            onNumberStart = { num ->
+                                AutomationState.updateStats {
+                                    it.copy(
+                                        totalAttempts = it.totalAttempts + 1,
+                                        currentService = "TikTok",
+                                        currentCountry = countryName,
+                                        currentNumber = num
+                                    )
+                                }
+                            },
+                            onNumberSuccess = { _ ->
+                                AutomationState.updateStats { it.copy(successCount = it.successCount + 1) }
+                            },
+                            onNumberFail = { num ->
+                                AutomationState.updateStats { it.copy(failCount = it.failCount + 1) }
+                                releaseNumbers(auth, listOf(num), "otp_failed")
                             }
-                        },
-                        onNumberSuccess = { _ ->
-                            AutomationState.updateStats { it.copy(successCount = it.successCount + 1) }
-                        },
-                        onNumberFail = { num ->
-                            AutomationState.updateStats { it.copy(failCount = it.failCount + 1) }
-                            releaseNumbers(auth, listOf(num), "otp_failed")
-                        }
-                    )
+                        )
+                    } else {
+                        AutomationState.log("💳 Running PayPal/Other Automation Batch")
+                        PayPalAutomation.runBatch(
+                            service = a11y,
+                            numbers = nums,
+                            countryName = countryName,
+                            countryIso = countryCodeIso,
+                            dialingCode = dialingCode,
+                            autoFlightMode = autoFlight,
+                            onNumberStart = { num ->
+                                AutomationState.updateStats {
+                                    it.copy(
+                                        totalAttempts = it.totalAttempts + 1,
+                                        currentService = serviceName,
+                                        currentCountry = countryName,
+                                        currentNumber = num
+                                    )
+                                }
+                            },
+                            onNumberSuccess = { _ ->
+                                AutomationState.updateStats { it.copy(successCount = it.successCount + 1) }
+                            },
+                            onNumberFail = { num ->
+                                AutomationState.updateStats { it.copy(failCount = it.failCount + 1) }
+                                releaseNumbers(auth, listOf(num), "otp_failed")
+                            }
+                        )
+                    }
 
                     AutomationState.log("📊 Batch: Success=$s Fail=$f")
                     if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
@@ -304,7 +324,7 @@ class AutomationService : Service() {
                 updateNotification("Stopped")
                 overlay?.hide(); overlay = null
                 releaseWakeLock()
-                releaseScreenLock()   // 🟢 screen lock release
+                releaseScreenLock()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             } catch (_: Exception) {}
@@ -314,6 +334,18 @@ class AutomationService : Service() {
     private suspend fun fetchNumbers(auth: AuthManager): List<String> {
         return try {
             when (mode) {
+                "tiktok" -> {
+                    // TikTok abhi default "service" mode fetch use karega (country wise)
+                    val res = ApiClient.service(auth).getNumbers(
+                        GetNumberBody(service = "TikTok", country = countryName, count = 5)
+                    )
+                    if (res.isSuccessful && res.body()?.success == true) {
+                        res.body()?.numbers ?: emptyList()
+                    } else {
+                        AutomationState.log("✘ getNumber TikTok HTTP ${res.code()}")
+                        emptyList()
+                    }
+                }
                 "auto" -> {
                     val res = ApiClient.service(auth).getNumbersByPrefix(
                         GetNumberByPrefixBody(
@@ -450,7 +482,7 @@ class AutomationService : Service() {
         loopJob?.cancel(); scope.cancel()
         overlay?.hide(); overlay = null
         releaseWakeLock()
-        releaseScreenLock()   // 🟢 release screen lock
+        releaseScreenLock()
         super.onDestroy()
     }
 }
