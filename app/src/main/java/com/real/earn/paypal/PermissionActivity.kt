@@ -26,11 +26,7 @@ class PermissionActivity : AppCompatActivity() {
     private var price: Double = 0.0
     private var prefix: String = ""
     private var file: String = ""
-    private var engineType: String = "paypal" // 🟢 New
-
-    companion object {
-        private const val REQ_RINGTONE = 5001
-    }
+    private var engineType: String = "paypal"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,12 +43,19 @@ class PermissionActivity : AppCompatActivity() {
         price = intent.getDoubleExtra("price", 0.0)
         prefix = intent.getStringExtra("prefix") ?: ""
         file = intent.getStringExtra("file") ?: ""
-        engineType = intent.getStringExtra("engine_type") ?: "paypal" // 🟢 Read Engine
+        engineType = intent.getStringExtra("engine_type") ?: "paypal"
 
         binding.tvTitle.text = when (mode) {
             "auto" -> "$serviceName — Auto Prefix"
             "prefix" -> "$serviceName — $prefix ($file)"
             else -> "$serviceName — $countryName"
+        }
+
+        // 🟢 Agar TikTok hai to Old Account Method ka option dikhayein
+        if (engineType == "tiktok") {
+            binding.rowOldAccountMethod.visibility = android.view.View.VISIBLE
+        } else {
+            binding.rowOldAccountMethod.visibility = android.view.View.GONE
         }
 
         binding.btnBack.setOnClickListener { finish() }
@@ -91,7 +94,8 @@ class PermissionActivity : AppCompatActivity() {
         }
         startActivity(actIntent)
 
-        // 🟢 Pass Engine Type to Service
+        val isOldAccount = binding.switchOldAccountMethod.isChecked
+
         AutomationService.start(
             context = this,
             mode = mode,
@@ -101,7 +105,8 @@ class PermissionActivity : AppCompatActivity() {
             dialingCode = dialingCode,
             prefix = prefix,
             file = file,
-            engineType = engineType
+            engineType = engineType,
+            oldAccountMethod = isOldAccount // 🟢 Pass the flag
         )
     }
 
@@ -176,7 +181,7 @@ class PermissionActivity : AppCompatActivity() {
                     putExtra(RingtoneManager.EXTRA_RINGTONE_DEFAULT_URI, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
                 }
             }
-            startActivityForResult(intent, REQ_RINGTONE)
+            startActivityForResult(intent, 5001)
         } catch (e: Exception) {
             Toast.makeText(this, "Ringtone picker not available: ${e.message}", Toast.LENGTH_LONG).show()
         }
@@ -184,7 +189,7 @@ class PermissionActivity : AppCompatActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ_RINGTONE && resultCode == Activity.RESULT_OK) {
+        if (requestCode == 5001 && resultCode == Activity.RESULT_OK) {
             val uri = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                 data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java)
             } else {
