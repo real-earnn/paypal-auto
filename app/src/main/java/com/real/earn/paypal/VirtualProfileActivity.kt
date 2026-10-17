@@ -6,7 +6,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.CrossProfileApps
 import android.content.pm.LauncherApps
 import android.os.Build
 import android.os.Bundle
@@ -15,13 +14,20 @@ import android.os.Looper
 import android.os.Process
 import android.os.UserHandle
 import android.os.UserManager
+import android.view.Menu
 import android.view.View
+import android.widget.PopupMenu
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.real.earn.paypal.admin.MyDeviceAdminReceiver
+import com.real.earn.paypal.admin.WorkProfileProvisioningManager
+import com.real.earn.paypal.admin.WorkProfileSetupState
 import com.real.earn.paypal.databinding.ActivityVirtualProfileBinding
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class VirtualProfileActivity : AppCompatActivity() {
 
@@ -29,21 +35,19 @@ class VirtualProfileActivity : AppCompatActivity() {
     private lateinit var dpm: DevicePolicyManager
     private lateinit var adminComponent: ComponentName
     private var workProfileUser: UserHandle? = null
+    private var timeoutJob: Job? = null
 
-    // Loader aur Polling
-    private val handler = Handler(Looper.getMainLooper())
-    private var pollCount = 0
-    private val maxPolls = 30 // 30 seconds timeout
-
-    // Broadcast Receiver for Profile Provisioning Complete
-    private val profileProvisionReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == DevicePolicyManager.ACTION_MANAGED_PROFILE_PROVISIONED) {
-                runOnUiThread {
-                    hideLoader()
-                    Toast.makeText(this@VirtualProfileActivity, "Virtual Android Setup Complete!", Toast.LENGTH_SHORT).show()
-                    checkProfileState()
+    // 🟢 سسٹم لیول براڈکاسٹ (جب پروفائل واقعی بن جائے)
+    private val profileAddedReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == Intent.ACTION_MANAGED_PROFILE_ADDED) {
+                val newProfileHandle = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_USER, UserHandle::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(Intent.EXTRA_USER)
                 }
+                WorkProfileProvisioningManager.markSuccess(newProfileHandle)
             }
         }
     }
@@ -68,74 +72,71 @@ class VirtualProfileActivity : AppCompatActivity() {
             }
         }
 
-        // Broadcast register karein
-        val filter = IntentFilter(DevicePolicyManager.ACTION_MANAGED_PROFILE_PROVISIONED)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(profileProvisionReceiver, filter, Context.RECEIVER_EXPORTED)
-        } else {
-            registerReceiver(profileProvisionReceiver, filter)
-        }
+        // 🟢 مینو بٹن سیٹ اپ
+        binding.btnMenu.setOnClickListener { showPopupMenu(it) }
+
+        // 🟢 سٹیٹ فلوز کو سنیں
+        observeProvisioningState()
     }
 
     override fun onResume() {
         super.onResume()
-        // Agar loader chal raha hai to checkProfileState ko disturb na karein
-        if (binding.layoutLoader.visibility != View.VISIBLE) {
+        if (WorkProfileProvisioningManager.setupState.value !is WorkProfileSetupState.InProgress) {
             checkProfileState()
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        try { unregisterReceiver(profileProvisionReceiver) } catch (_: Exception) {}
-        handler.removeCallbacksAndMessages(null)
+        try { unregisterReceiver(profileAddedReceiver) } catch (_: Exception) {}
+        timeoutJob?.cancel()
+    }
+
+    private fun observeProvisioningState() {
+        lifecycleScope.launch {
+            WorkProfileProvisioningManager.setupState.collect { state ->
+                when (state) {
+                    is WorkProfileSetupState.InProgress -> showLoader()
+                    is WorkProfileSetupState.Success -> {
+                        timeoutJob?.cancel()
+                        WorkProfileProvisioningManager.reset()
+                        Toast.makeText(this@VirtualProfileActivity, "Virtual Android Setup Complete!", Toast.LENGTH_SHORT).show()
+                        
+                        // 🟢 SharedPreferences کو فورس اپ ڈیٹ کریں
+                        val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
+                        prefs.edit().putBoolean("profile_created", true).apply()
+
+                        // ہینڈل سیٹ کریں (اگر ملا ہے تو)
+                        if (state.profileUserHandle != null) {
+                            workProfileUser = state.profileUserHandle
+                        }
+                        
+                        // UI کو فورس اپ ڈیٹ کریں
+                        showManagerState()
+                    }
+                    is WorkProfileSetupState.Failed -> {
+                        timeoutJob?.cancel()
+                        WorkProfileProvisioningManager.reset()
+                        hideLoader()
+                        Toast.makeText(this@VirtualProfileActivity, state.reason, Toast.LENGTH_LONG).show()
+                        checkProfileState()
+                    }
+                    is WorkProfileSetupState.Idle -> hideLoader()
+                }
+            }
+        }
     }
 
     private fun checkProfileState() {
         val isAdmin = dpm.isAdminActive(adminComponent)
-        
-        // 🟢 طریقہ 1: CrossProfileApps (API 28+)
-        var hasWorkProfile = false
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val crossProfileApps = getSystemService(CrossProfileApps::class.java)
-            if (crossProfileApps != null) {
-                val targets = crossProfileApps.targetUserProfiles
-                if (targets.isNotEmpty()) {
-                    hasWorkProfile = true
-                }
-            }
-        }
-
-        // 🟢 طریقہ 2: LauncherApps
-        if (!hasWorkProfile) {
-            val launcherApps = getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
-            val myHandle = Process.myUserHandle()
-            hasWorkProfile = launcherApps.profiles.any { it != myHandle }
-        }
-
-        // 🟢 طریقہ 3: getActiveAdmins + isProfileOwnerApp (fallback)
-        if (!hasWorkProfile) {
-            val activeAdmins = dpm.activeAdmins
-            if (activeAdmins != null) {
-                for (admin in activeAdmins) {
-                    if (dpm.isProfileOwnerApp(admin.packageName)) {
-                        hasWorkProfile = true
-                        break
-                    }
-                }
-            }
-        }
-
-        // 🟢 طریقہ 4: SharedPreferences
         val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
         val prefCreated = prefs.getBoolean("profile_created", false)
 
-        // Agar Admin active nahi hai, to permission mangwayein
         if (!isAdmin) {
             binding.cardPermission.visibility = View.VISIBLE
             binding.btnCreateProfile.visibility = View.GONE
             binding.btnAddApps.visibility = View.GONE
-            binding.btnDeleteProfile.visibility = View.GONE
+            binding.btnMenu.visibility = View.GONE
             binding.recyclerApps.visibility = View.GONE
             binding.layoutLoader.visibility = View.GONE
             binding.tvStatus.text = "Please allow Device Admin permission first."
@@ -144,23 +145,27 @@ class VirtualProfileActivity : AppCompatActivity() {
 
         binding.cardPermission.visibility = View.GONE
 
-        // 🟢 Profile Detect Karein
-        if (hasWorkProfile || prefCreated) {
-            // Work profile user handle تلاش کریں
-            val launcherApps = getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
-            val myHandle = Process.myUserHandle()
-            workProfileUser = launcherApps.profiles.firstOrNull { it != myHandle }
+        // 🟢 چیک کریں کہ پروفائل موجود ہے یا نہیں
+        val launcherApps = getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
+        val myHandle = Process.myUserHandle()
+        var hasProfile = launcherApps.profiles.any { it != myHandle }
 
+        if (!hasProfile) {
+            val userManager = getSystemService(Context.USER_SERVICE) as UserManager
+            hasProfile = userManager.userProfiles.any { it != myHandle }
+        }
+
+        if (hasProfile || prefCreated) {
+            // Handle ڈھونڈیں
             if (workProfileUser == null) {
-                val userManager = getSystemService(Context.USER_SERVICE) as UserManager
-                workProfileUser = userManager.userProfiles.firstOrNull { it != myHandle }
+                workProfileUser = launcherApps.profiles.firstOrNull { it != myHandle }
             }
-
+            
             if (workProfileUser != null) {
                 showManagerState()
             } else {
-                prefs.edit().putBoolean("profile_created", false).apply()
-                showCreateState()
+                // اگر پروفائل بن گئی ہے لیکن Handle نہیں ملا، پھر بھی UI مینیجر والا دکھائیں
+                showManagerState() 
             }
         } else {
             showCreateState()
@@ -171,7 +176,7 @@ class VirtualProfileActivity : AppCompatActivity() {
         binding.tvStatus.text = "Device Admin is active ✅\nNow you can create Virtual Android."
         binding.btnCreateProfile.visibility = View.VISIBLE
         binding.btnAddApps.visibility = View.GONE
-        binding.btnDeleteProfile.visibility = View.GONE
+        binding.btnMenu.visibility = View.GONE
         binding.recyclerApps.visibility = View.GONE
         binding.layoutLoader.visibility = View.GONE
 
@@ -179,6 +184,7 @@ class VirtualProfileActivity : AppCompatActivity() {
             val intent = Intent(DevicePolicyManager.ACTION_PROVISION_MANAGED_PROFILE)
             intent.putExtra(DevicePolicyManager.EXTRA_PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME, adminComponent)
             if (intent.resolveActivity(packageManager) != null) {
+                WorkProfileProvisioningManager.markStarted()
                 startActivityForResult(intent, 100)
             } else {
                 Toast.makeText(this, "Device doesn't support Work Profile.", Toast.LENGTH_LONG).show()
@@ -190,100 +196,73 @@ class VirtualProfileActivity : AppCompatActivity() {
         binding.tvStatus.text = "Virtual Android is Active ✅\nApps installed in Virtual Space:"
         binding.btnCreateProfile.visibility = View.GONE
         binding.btnAddApps.visibility = View.VISIBLE
-        binding.btnDeleteProfile.visibility = View.VISIBLE
+        binding.btnMenu.visibility = View.VISIBLE
         binding.recyclerApps.visibility = View.VISIBLE
         binding.layoutLoader.visibility = View.GONE
 
         loadAppsFromWorkProfile()
-
-        binding.btnDeleteProfile.setOnClickListener {
-            AlertDialog.Builder(this)
-                .setTitle("Delete Virtual Android?")
-                .setMessage("Ye poora virtual space aur iske andar ki saari apps delete ho jayengi. Kya aap sure hain?")
-                .setPositiveButton("Delete") { _, _ ->
-                    val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
-                    prefs.edit().putBoolean("profile_created", false).apply()
-                    Toast.makeText(this, "Profile deletion initiated. Please restart device.", Toast.LENGTH_LONG).show()
-                    checkProfileState()
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
-        }
 
         binding.btnAddApps.setOnClickListener {
             showAppPickerDialog()
         }
     }
 
-    // 🟢 LOADER SHOW
     private fun showLoader() {
         binding.layoutLoader.visibility = View.VISIBLE
         binding.btnCreateProfile.visibility = View.GONE
         binding.btnAddApps.visibility = View.GONE
-        binding.btnDeleteProfile.visibility = View.GONE
+        binding.btnMenu.visibility = View.GONE
         binding.recyclerApps.visibility = View.GONE
-        binding.tvStatus.text = "Setting up your Virtual Android...\nThis may take up to 30 seconds."
-        
-        pollCount = 0
-        startPollingForProfile()
+        binding.tvStatus.text = "Setting up your Virtual Android...\nThis may take up to 90 seconds."
+
+        // 🟢 ڈائنامک ریسیور رجسٹر کریں (ACTION_MANAGED_PROFILE_ADDED)
+        val filter = IntentFilter(Intent.ACTION_MANAGED_PROFILE_ADDED)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(profileAddedReceiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            registerReceiver(profileAddedReceiver, filter)
+        }
+
+        // 🟢 90 سیکنڈ کا حقیقی ٹائم آؤٹ (جمینائی کی تجویز کے مطابق)
+        timeoutJob?.cancel()
+        timeoutJob = lifecycleScope.launch {
+            delay(90_000)
+            if (WorkProfileProvisioningManager.setupState.value is WorkProfileSetupState.InProgress) {
+                WorkProfileProvisioningManager.markFailed("Setup timed out. Please try again or restart device.")
+            }
+        }
     }
 
     private fun hideLoader() {
         binding.layoutLoader.visibility = View.GONE
-        handler.removeCallbacksAndMessages(null)
+        try { unregisterReceiver(profileAddedReceiver) } catch (_: Exception) {}
     }
 
-    // 🟢 POLLING: Har second check karein
-    private fun startPollingForProfile() {
-        handler.postDelayed(object : Runnable {
-            override fun run() {
-                pollCount++
-                
-                // Check via LauncherApps
-                val launcherApps = getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
-                val myHandle = Process.myUserHandle()
-                var hasProfile = launcherApps.profiles.any { it != myHandle }
+    // 🟢 تھری ڈاٹ مینو
+    private fun showPopupMenu(view: View) {
+        val popup = PopupMenu(this, view)
+        popup.menu.add(Menu.NONE, 1, 1, "Delete Virtual Android")
+        popup.setOnMenuItemClickListener { item ->
+            if (item.itemId == 1) {
+                showDeleteConfirmation()
+                true
+            } else false
+        }
+        popup.show()
+    }
 
-                // Check via CrossProfileApps (API 28+)
-                if (!hasProfile && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    val crossProfileApps = getSystemService(CrossProfileApps::class.java)
-                    if (crossProfileApps != null) {
-                        hasProfile = crossProfileApps.targetUserProfiles.isNotEmpty()
-                    }
-                }
-
-                // Check via getActiveAdmins + isProfileOwnerApp
-                if (!hasProfile) {
-                    val activeAdmins = dpm.activeAdmins
-                    if (activeAdmins != null) {
-                        for (admin in activeAdmins) {
-                            if (dpm.isProfileOwnerApp(admin.packageName)) {
-                                hasProfile = true
-                                break
-                            }
-                        }
-                    }
-                }
-
-                if (hasProfile) {
-                    // Profile ban gayi!
-                    hideLoader()
-                    val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
-                    prefs.edit().putBoolean("profile_created", true).apply()
-                    Toast.makeText(this@VirtualProfileActivity, "Virtual Android Setup Complete!", Toast.LENGTH_SHORT).show()
-                    checkProfileState()
-                } else if (pollCount < maxPolls) {
-                    // Abhi nahi bani, dobara check karein
-                    handler.postDelayed(this, 1000)
-                } else {
-                    // Timeout
-                    hideLoader()
-                    binding.tvStatus.text = "Setup timed out. Please try again or restart device."
-                    showCreateState()
-                    Toast.makeText(this@VirtualProfileActivity, "Setup timed out. Please restart device.", Toast.LENGTH_LONG).show()
-                }
+    private fun showDeleteConfirmation() {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Delete Virtual Android?")
+            .setMessage("Ye poora virtual space aur iske andar ki saari apps delete ho jayengi. Kya aap sure hain?")
+            .setPositiveButton("Delete") { _, _ ->
+                val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
+                prefs.edit().putBoolean("profile_created", false).apply()
+                Toast.makeText(this, "Please restart your device to complete deletion.", Toast.LENGTH_LONG).show()
+                checkProfileState()
             }
-        }, 1000)
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun loadAppsFromWorkProfile() {
@@ -330,7 +309,7 @@ class VirtualProfileActivity : AppCompatActivity() {
         
         val appNames = userApps.map { it.loadLabel(pm).toString() }.toTypedArray()
         
-        AlertDialog.Builder(this)
+        androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Select App to Add")
             .setItems(appNames) { _, which ->
                 val selectedApp = userApps[which]
@@ -348,9 +327,11 @@ class VirtualProfileActivity : AppCompatActivity() {
             }
         }
         if (requestCode == 100) {
-            // Jab system se wapis aayein, to loader dikhayein
             if (resultCode == RESULT_OK) {
+                // سسٹم ونڈو بند ہو گئی، لوڈر دکھائیں اور اصل سگنل کا انتظار کریں
                 showLoader()
+            } else {
+                WorkProfileProvisioningManager.markFailed("Provisioning cancelled by user.")
             }
         }
     }
