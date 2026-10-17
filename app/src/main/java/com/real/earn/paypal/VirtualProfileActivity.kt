@@ -6,6 +6,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.CrossProfileApps
 import android.content.pm.LauncherApps
 import android.os.Build
 import android.os.Bundle
@@ -29,18 +30,18 @@ class VirtualProfileActivity : AppCompatActivity() {
     private lateinit var adminComponent: ComponentName
     private var workProfileUser: UserHandle? = null
 
-    // 🟢 Loader aur Polling ke liye
+    // Loader aur Polling
     private val handler = Handler(Looper.getMainLooper())
     private var pollCount = 0
-    private val maxPolls = 15 // 15 seconds timeout
+    private val maxPolls = 30 // 30 seconds timeout
 
-    // 🟢 Broadcast Receiver for Profile Provisioning Complete
+    // Broadcast Receiver for Profile Provisioning Complete
     private val profileProvisionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == DevicePolicyManager.ACTION_MANAGED_PROFILE_PROVISIONED) {
                 runOnUiThread {
-                    Toast.makeText(this@VirtualProfileActivity, "Virtual Android Setup Complete!", Toast.LENGTH_SHORT).show()
                     hideLoader()
+                    Toast.makeText(this@VirtualProfileActivity, "Virtual Android Setup Complete!", Toast.LENGTH_SHORT).show()
                     checkProfileState()
                 }
             }
@@ -78,26 +79,54 @@ class VirtualProfileActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        checkProfileState()
+        // Agar loader chal raha hai to checkProfileState ko disturb na karein
+        if (binding.layoutLoader.visibility != View.VISIBLE) {
+            checkProfileState()
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        try {
-            unregisterReceiver(profileProvisionReceiver)
-        } catch (_: Exception) {}
+        try { unregisterReceiver(profileProvisionReceiver) } catch (_: Exception) {}
         handler.removeCallbacksAndMessages(null)
     }
 
     private fun checkProfileState() {
         val isAdmin = dpm.isAdminActive(adminComponent)
         
-        // 🟢 Personal side pe sirf LauncherApps aur CrossProfileApps use karein
-        val launcherApps = getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
-        val myHandle = Process.myUserHandle()
-        val launcherProfiles = launcherApps.profiles
-        val hasWorkProfileViaLauncher = launcherProfiles.any { it != myHandle }
-        
+        // 🟢 طریقہ 1: CrossProfileApps (API 28+)
+        var hasWorkProfile = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val crossProfileApps = getSystemService(CrossProfileApps::class.java)
+            if (crossProfileApps != null) {
+                val targets = crossProfileApps.targetUserProfiles
+                if (targets.isNotEmpty()) {
+                    hasWorkProfile = true
+                }
+            }
+        }
+
+        // 🟢 طریقہ 2: LauncherApps
+        if (!hasWorkProfile) {
+            val launcherApps = getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
+            val myHandle = Process.myUserHandle()
+            hasWorkProfile = launcherApps.profiles.any { it != myHandle }
+        }
+
+        // 🟢 طریقہ 3: getActiveAdmins + isProfileOwnerApp (fallback)
+        if (!hasWorkProfile) {
+            val activeAdmins = dpm.activeAdmins
+            if (activeAdmins != null) {
+                for (admin in activeAdmins) {
+                    if (dpm.isProfileOwnerApp(admin.packageName)) {
+                        hasWorkProfile = true
+                        break
+                    }
+                }
+            }
+        }
+
+        // 🟢 طریقہ 4: SharedPreferences
         val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
         val prefCreated = prefs.getBoolean("profile_created", false)
 
@@ -116,13 +145,20 @@ class VirtualProfileActivity : AppCompatActivity() {
         binding.cardPermission.visibility = View.GONE
 
         // 🟢 Profile Detect Karein
-        if (hasWorkProfileViaLauncher || prefCreated) {
-            workProfileUser = launcherProfiles.firstOrNull { it != myHandle }
-            
+        if (hasWorkProfile || prefCreated) {
+            // Work profile user handle تلاش کریں
+            val launcherApps = getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
+            val myHandle = Process.myUserHandle()
+            workProfileUser = launcherApps.profiles.firstOrNull { it != myHandle }
+
+            if (workProfileUser == null) {
+                val userManager = getSystemService(Context.USER_SERVICE) as UserManager
+                workProfileUser = userManager.userProfiles.firstOrNull { it != myHandle }
+            }
+
             if (workProfileUser != null) {
                 showManagerState()
             } else {
-                // Agar pref true hai lekin profile nahi mili, to pref clear karein
                 prefs.edit().putBoolean("profile_created", false).apply()
                 showCreateState()
             }
@@ -179,14 +215,14 @@ class VirtualProfileActivity : AppCompatActivity() {
         }
     }
 
-    // 🟢 LOADER SHOW KARNE KA FUNCTION
+    // 🟢 LOADER SHOW
     private fun showLoader() {
         binding.layoutLoader.visibility = View.VISIBLE
         binding.btnCreateProfile.visibility = View.GONE
         binding.btnAddApps.visibility = View.GONE
         binding.btnDeleteProfile.visibility = View.GONE
         binding.recyclerApps.visibility = View.GONE
-        binding.tvStatus.text = "Setting up your Virtual Android..."
+        binding.tvStatus.text = "Setting up your Virtual Android...\nThis may take up to 30 seconds."
         
         pollCount = 0
         startPollingForProfile()
@@ -197,14 +233,37 @@ class VirtualProfileActivity : AppCompatActivity() {
         handler.removeCallbacksAndMessages(null)
     }
 
-    // 🟢 POLLING LOGIC: Har second check karein ke profile ban gayi ya nahi
+    // 🟢 POLLING: Har second check karein
     private fun startPollingForProfile() {
         handler.postDelayed(object : Runnable {
             override fun run() {
                 pollCount++
+                
+                // Check via LauncherApps
                 val launcherApps = getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
                 val myHandle = Process.myUserHandle()
-                val hasProfile = launcherApps.profiles.any { it != myHandle }
+                var hasProfile = launcherApps.profiles.any { it != myHandle }
+
+                // Check via CrossProfileApps (API 28+)
+                if (!hasProfile && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    val crossProfileApps = getSystemService(CrossProfileApps::class.java)
+                    if (crossProfileApps != null) {
+                        hasProfile = crossProfileApps.targetUserProfiles.isNotEmpty()
+                    }
+                }
+
+                // Check via getActiveAdmins + isProfileOwnerApp
+                if (!hasProfile) {
+                    val activeAdmins = dpm.activeAdmins
+                    if (activeAdmins != null) {
+                        for (admin in activeAdmins) {
+                            if (dpm.isProfileOwnerApp(admin.packageName)) {
+                                hasProfile = true
+                                break
+                            }
+                        }
+                    }
+                }
 
                 if (hasProfile) {
                     // Profile ban gayi!
