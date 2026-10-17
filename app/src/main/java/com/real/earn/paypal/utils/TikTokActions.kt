@@ -45,16 +45,13 @@ object TikTokActions {
         }
     }
 
-    // ══════════════════════════════════════════════════════
-    //  🟢 SMART BRAIN: Video Feed Mode locks out onboarding
-    // ══════════════════════════════════════════════════════
     fun handleStartupSequence(service: AccessibilityService): Boolean {
         AutomationState.log("ℹ Handling TikTok startup sequence…")
         val startTime = System.currentTimeMillis()
         val timeout = 90000L 
         var swipeAttempts = 0
         var waitedForVideo = false 
-        var isVideoFeedMode = false // 🟢 Lock flag
+        var isVideoFeedMode = false 
 
         while (System.currentTimeMillis() - startTime < timeout) {
             if (StepUtils.shouldStop()) return false
@@ -71,19 +68,18 @@ object TikTokActions {
                 return true
             }
 
-            // 2. Detect Video Feed (Home, Friends, Inbox, Profile tabs in bottom)
+            // 2. Detect Video Feed
             val hasHomeTab = findStrictBottomTab(root, "Home") != null
-            val hasProfileTab = findStrictBottomTab(root, "Profile") != null
             val hasInboxTab = findStrictBottomTab(root, "Inbox") != null
             val hasForYou = NodeFinder.findByText(root, "For You") != null
+            val hasSwipeText = NodeFinder.findByTextContains(root, "Swipe up") != null
 
-            // 🟢 If bottom tabs OR For You text exists, we are definitely on video feed
-            if (hasHomeTab || hasInboxTab || hasForYou || NodeFinder.findByTextContains(root, "Swipe up") != null) {
+            if (hasHomeTab || hasInboxTab || hasForYou || hasSwipeText) {
                 isVideoFeedMode = true
             }
 
             if (isVideoFeedMode) {
-                // 🟢 WE ARE ON VIDEO FEED. FORGET EVERYTHING ELSE.
+                // 🟢 1. Wait for Video Load (5 seconds)
                 if (!waitedForVideo) {
                     AutomationState.log("  ↳ Video feed detected — waiting 5 seconds...")
                     StepUtils.sleepMs(5000) 
@@ -91,35 +87,60 @@ object TikTokActions {
                     continue
                 }
 
-                // Find Profile tab strictly
-                val profileTab = findStrictBottomTab(root, "Profile")
+                // 🟢 2. If "Swipe up" text is visible, WE MUST SWIPE.
+                // Clicking Profile tab won't work if the overlay is blocking it.
+                if (hasSwipeText) {
+                    AutomationState.log("  ↳ 'Swipe up' overlay visible — Swiping up (#${swipeAttempts + 1})")
+                    swipeUp(service)
+                    StepUtils.sleepMs(3000)
+                    swipeAttempts++
+                    waitedForVideo = false
+                    continue
+                }
 
+                // 🟢 3. No Swipe text? Click Profile tab.
+                val profileTab = findStrictBottomTab(root, "Profile")
                 if (profileTab != null) {
                     val r = Rect(); profileTab.getBoundsInScreen(r)
                     AutomationState.log("  ↳ Clicking Profile Tab at (${r.centerX()}, ${r.centerY()})")
                     tapNode(service, profileTab)
                     StepUtils.sleepMs(3000)
-                    waitedForVideo = false 
-                    isVideoFeedMode = false // Unlock if we move to profile page
-                    continue
-                } else {
-                    // No profile tab? Swipe.
-                    AutomationState.log("  ↳ Profile tab not found — Swiping up (#${swipeAttempts + 1})")
-                    swipeUp(service)
-                    StepUtils.sleepMs(3000)
-                    swipeAttempts++
-                    waitedForVideo = false 
                     
-                    if (swipeAttempts >= 6) {
-                        AutomationState.log("✘ Too many swipe attempts.")
-                        break
+                    // 🟢 4. Verify: Did we actually move to Profile page?
+                    val checkRoot = service.rootInActiveWindow
+                    val stillOnFeed = checkRoot != null && (
+                        findStrictBottomTab(checkRoot, "Home") != null || 
+                        NodeFinder.findByTextContains(checkRoot, "Swipe up") != null
+                    )
+
+                    if (stillOnFeed) {
+                        AutomationState.log("  ⚠ Profile click didn't work (overlay blocking). Swiping instead.")
+                        swipeUp(service)
+                        StepUtils.sleepMs(3000)
+                        waitedForVideo = false
+                    } else {
+                        AutomationState.log("  ✔ Left video feed successfully.")
+                        isVideoFeedMode = false
                     }
+                    continue
                 }
-                continue // 🟢 CRITICAL: Skip all onboarding checks below!
+
+                // 🟢 5. Fallback: Nothing found, just swipe.
+                AutomationState.log("  ↳ Fallback: Swiping up (#${swipeAttempts + 1})")
+                swipeUp(service)
+                StepUtils.sleepMs(3000)
+                swipeAttempts++
+                waitedForVideo = false
+                
+                if (swipeAttempts >= 8) {
+                    AutomationState.log("✘ Too many swipe attempts.")
+                    break
+                }
+                continue 
             }
 
             // ══════════════════════════════════════════════════════
-            // 🟢 ONBOARDING MODE (Only runs if NOT on video feed)
+            // ONBOARDING MODE (Only runs if NOT on video feed)
             // ══════════════════════════════════════════════════════
             if (clickNode(service, root, "Use phone / email / username", "Use phone")) { StepUtils.sleepMs(2000); continue }
             if (clickNode(service, root, "Agree and continue", "Agree", "Accept", "I Agree")) { StepUtils.sleepMs(1500); continue }
@@ -127,7 +148,6 @@ object TikTokActions {
             if (clickNode(service, root, "Man", "Woman", "Non-binary", "Prefer not to say")) { StepUtils.sleepMs(1500); continue }
             if (clickNode(service, root, "Skip")) { StepUtils.sleepMs(1500); continue }
             
-            // Profile Page (Log in / Add account)
             if (clickNode(service, root, "Log in", "Add another account", "Add account")) {
                 StepUtils.sleepMs(2000)
                 continue
