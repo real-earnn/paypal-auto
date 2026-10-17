@@ -9,6 +9,7 @@ object TikTokAutomation {
     suspend fun runBatch(
         service: AccessibilityService,
         numbers: List<String>,
+        countryName: String,
         dialingCode: String,
         autoFlightMode: Boolean,
         onNumberStart: suspend (String) -> Unit,
@@ -20,30 +21,30 @@ object TikTokAutomation {
         var fail = 0
         if (numbers.isEmpty()) return Pair(0, 0)
 
-        // ① Flight & Clear Data (Standard)
+        // ① Flight Mode
         if (autoFlightMode) {
             StepUtils.retryStep("Flight cycle") { AirplaneModeController.strictToggle(service) }
         }
         
-        // Note: For TikTok, we use its package name for clear data
-        val clearOk = StepUtils.retryStep("Clear data") { 
-            // You might need to adjust PayPalClearData to accept package name dynamically
-            // For now, assuming you have a dynamic clear data function. 
-            PayPalClearData.strictClear(service) 
+        // ② Clear Data (TikTok Package)
+        val tiktokPkg = TikTokActions.getInstalledPackage(service)
+        StepUtils.retryStep("Clear TikTok data") { 
+            PayPalClearData.strictClear(service, tiktokPkg) 
         }
         StepUtils.sleepMs(800)
 
-        // ② Launch & Setup
+        // ③ Launch & Setup
         if (!StepUtils.retryStep("Launch TikTok") { TikTokActions.launch(service) }) {
             return Pair(0, numbers.size)
         }
 
-        // Wait for login page
         StepUtils.sleepMs(2000)
         TikTokActions.tapUsePhoneOrEmail(service)
-        TikTokActions.selectCountry(service, "pakistan") // Default country from prompt
+        
+        // Select Country (uses the country name passed from app)
+        TikTokActions.selectCountry(service, countryName.ifEmpty { "pakistan" })
 
-        // ③ Number Loop
+        // ④ Number Loop
         var consecutiveFails = 0
 
         for (num in numbers) {
@@ -68,7 +69,7 @@ object TikTokAutomation {
                 continue
             }
 
-            // Check Result (Wait 3s for TikTok's UI response)
+            // Check Result
             StepUtils.sleepMs(3000)
 
             if (TikTokActions.hasRedError(service)) {
@@ -82,13 +83,12 @@ object TikTokAutomation {
                 onNumberSuccess(num); success++
                 consecutiveFails = 0
                 
-                // TikTok showed OTP screen or similar. Go back for next number.
+                // Go back for next number
                 TikTokActions.pressBackToLogin(service)
                 StepUtils.sleepMs(500)
             }
         }
 
-        // Cleanup
         try { service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME) } catch (_: Exception) {}
         return Pair(success, fail)
     }
