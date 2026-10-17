@@ -33,15 +33,18 @@ object TikTokAutomation {
         }
         StepUtils.sleepMs(800)
 
-        // ③ Launch & Setup
+        // ③ Launch & Smart Setup
         if (!StepUtils.retryStep("Launch TikTok") { TikTokActions.launch(service) }) {
             return Pair(0, numbers.size)
         }
 
-        StepUtils.sleepMs(2000)
-        TikTokActions.tapUsePhoneOrEmail(service)
-        
-        // Select Country (uses the country name passed from app)
+        // 🟢 Ye function khud handle karega Terms, Gender, Interests, aur Profile navigation
+        if (!TikTokActions.handleStartupSequence(service)) {
+            AutomationState.log("✘ Failed to reach login screen")
+            return Pair(0, numbers.size)
+        }
+
+        // Select Country
         TikTokActions.selectCountry(service, countryName.ifEmpty { "pakistan" })
 
         // ④ Number Loop
