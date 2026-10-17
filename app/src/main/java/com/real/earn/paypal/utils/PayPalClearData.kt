@@ -13,7 +13,6 @@ import com.real.earn.paypal.service.AutomationState
 
 object PayPalClearData {
 
-    // 🟢 Ab targetPackage parameter accept karega
     fun strictClear(service: AccessibilityService, targetPackage: String): Boolean {
         try {
             AutomationState.log("🧹 Clear data for $targetPackage…")
@@ -209,11 +208,49 @@ object PayPalClearData {
             AutomationState.log("  ✘ Clear button click failed")
             return false
         }
-        StepUtils.sleepMs(1000)
-
-        handleSubMenu(service)
-        handleConfirmDialog(service)
+        
+        // 🟢 FIX: Wait up to 10 seconds for the confirm dialog
+        waitAndConfirmClearData(service)
         return true
+    }
+
+    // 🟢 NEW: Robust dialog waiter (replaces old handleSubMenu/handleConfirmDialog)
+    private fun waitAndConfirmClearData(service: AccessibilityService) {
+        AutomationState.log("  ⏳ Waiting up to 10s for confirmation dialog...")
+        val end = SystemClock.uptimeMillis() + 10_000 // 10 seconds
+        var dialogSeen = false
+        
+        while (SystemClock.uptimeMillis() < end) {
+            if (StepUtils.shouldStop()) return
+            val root = service.rootInActiveWindow
+            if (root != null) {
+                // Check if dialog or submenu options are visible
+                val hasSubMenu = NodeFinder.containsAny(root, "Clear cache", "Clear all data", "Clear app data", "Cancel")
+                val hasConfirmText = NodeFinder.containsAny(root, "Delete all data", "Delete app data", "All app data", "Clear app data", "Clear all data", "Delete all app data")
+                
+                if (hasSubMenu || hasConfirmText) {
+                    dialogSeen = true
+                    
+                    // Try to click affirmative button
+                    val okOptions = arrayOf("OK", "Delete", "Clear", "Yes", "Confirm", "Erase", "Continue", "Clear all data", "Clear app data", "Clear data")
+                    for (opt in okOptions) {
+                        val node = NodeFinder.findByText(root, opt)
+                        if (node != null && node.isVisibleToUser && clickNodeRobust(service, node)) {
+                            AutomationState.log("  ✔ Confirmed: tapped '$opt'")
+                            StepUtils.sleepMs(2000) // Wait for deletion animation
+                            return
+                        }
+                    }
+                }
+            }
+            StepUtils.sleepMs(300)
+        }
+        
+        if (dialogSeen) {
+            AutomationState.log("  ⚠ Dialog seen but could not click button")
+        } else {
+            AutomationState.log("  ℹ No dialog appeared within 10s")
+        }
     }
 
     private fun findStorageRow(service: AccessibilityService, timeoutMs: Long): AccessibilityNodeInfo? {
@@ -372,47 +409,6 @@ object PayPalClearData {
             StepUtils.sleepMs(300)
         }
         return false
-    }
-
-    private fun handleSubMenu(service: AccessibilityService) {
-        StepUtils.sleepMs(600)
-        val root = service.rootInActiveWindow ?: return
-        if (!NodeFinder.containsAny(root, "Clear cache", "Clear all data", "Cancel")) return
-
-        AutomationState.log("  ℹ Sub-menu detected")
-        val options = arrayOf("Clear all data", "Clear app data", "Clear data", "Delete data")
-        for (opt in options) {
-            val node = NodeFinder.findByText(root, opt)
-            if (node != null && node.isVisibleToUser && clickNodeRobust(service, node)) {
-                AutomationState.log("  ✔ Sub-menu: '$opt'")
-                StepUtils.sleepMs(1200)
-                handleConfirmDialog(service)
-                return
-            }
-        }
-    }
-
-    private fun handleConfirmDialog(service: AccessibilityService) {
-        StepUtils.sleepMs(800)
-        val end = SystemClock.uptimeMillis() + 3500
-        while (SystemClock.uptimeMillis() < end) {
-            if (StepUtils.shouldStop()) return
-            val root = service.rootInActiveWindow
-            if (root != null) {
-                if (NodeFinder.containsAny(root, "Delete all data", "Delete app data", "All app data", "Clear app data", "Clear all data", "Delete all app data")) {
-                    val okOptions = arrayOf("OK", "Delete", "Clear", "Yes", "Confirm", "Erase", "Continue")
-                    for (opt in okOptions) {
-                        val node = NodeFinder.findByText(root, opt)
-                        if (node != null && node.isVisibleToUser && clickNodeRobust(service, node)) {
-                            AutomationState.log("  ✔ Confirm: '$opt'")
-                            StepUtils.sleepMs(2000)
-                            return
-                        }
-                    }
-                }
-            }
-            StepUtils.sleepMs(250)
-        }
     }
 
     private fun exitHome(service: AccessibilityService) {
