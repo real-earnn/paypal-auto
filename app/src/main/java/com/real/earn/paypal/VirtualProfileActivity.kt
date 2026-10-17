@@ -123,8 +123,8 @@ class VirtualProfileActivity : AppCompatActivity() {
         val workUser = workProfileUser ?: return
 
         try {
-            // Get all activities in work profile
-            val activities = launcherApps.getActivities(workUser)
+            // 🟢 FIXED: Use getActivityList instead of getActivities
+            val activities = launcherApps.getActivityList(null, workUser)
             val uniquePackages = mutableSetOf<String>()
             val appList = mutableListOf<VirtualAppAdapter.AppInfoData>()
 
@@ -142,14 +142,14 @@ class VirtualProfileActivity : AppCompatActivity() {
             binding.recyclerApps.adapter = VirtualAppAdapter(appList) { app ->
                 // 🟢 OPEN APP IN WORK PROFILE
                 try {
-                    val launchIntent = packageManager.getLaunchIntentForPackage(app.packageName)
-                    // To launch in work profile, we use LauncherApps
-                    val activitiesList = launcherApps.getActivities(workUser)
-                    val targetActivity = activitiesList.find { it.applicationInfo.packageName == app.packageName }
+                    val activitiesList = launcherApps.getActivityList(app.packageName, workUser)
+                    val targetActivity = activitiesList.firstOrNull()
                     
                     if (targetActivity != null) {
                         launcherApps.startMainActivity(targetActivity.componentName, workUser, null, null)
                         Toast.makeText(this, "Opening ${app.name} in Virtual Space...", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this, "App not found in Virtual Space.", Toast.LENGTH_SHORT).show()
                     }
                 } catch (e: Exception) {
                     Toast.makeText(this, "Failed to open app: ${e.message}", Toast.LENGTH_SHORT).show()
