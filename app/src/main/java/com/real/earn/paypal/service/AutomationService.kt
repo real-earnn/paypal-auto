@@ -40,7 +40,7 @@ class AutomationService : Service() {
     private var screenLock: PowerManager.WakeLock? = null
 
     private var mode: String = "service"
-    private var engineType: String = "paypal" // 🟢 New
+    private var engineType: String = "paypal"
     private var serviceName: String = "PayPal"
     private var countryName: String = ""
     private var countryCodeIso: String = ""
@@ -66,7 +66,7 @@ class AutomationService : Service() {
             dialingCode: String = "",
             prefix: String = "",
             file: String = "",
-            engineType: String = "paypal" // 🟢 Receive Engine
+            engineType: String = "paypal"
         ) {
             val i = Intent(context, AutomationService::class.java).apply {
                 action = ACTION_START
@@ -77,7 +77,7 @@ class AutomationService : Service() {
                 putExtra("dialingCode", dialingCode)
                 putExtra("prefix", prefix)
                 putExtra("file", file)
-                putExtra("engine_type", engineType) // 🟢 Pass Engine
+                putExtra("engine_type", engineType)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(i)
@@ -143,7 +143,7 @@ class AutomationService : Service() {
         when (intent?.action) {
             ACTION_START -> {
                 mode = intent.getStringExtra("mode") ?: "service"
-                engineType = intent.getStringExtra("engine_type") ?: "paypal" // 🟢
+                engineType = intent.getStringExtra("engine_type") ?: "paypal"
                 serviceName = intent.getStringExtra("service") ?: "PayPal"
                 countryName = intent.getStringExtra("country") ?: ""
                 countryCodeIso = intent.getStringExtra("countryCode") ?: ""
@@ -228,14 +228,12 @@ class AutomationService : Service() {
                     }
                     AutomationState.log("✔ ${nums.size} numbers")
 
-                    // ═══════════════════════════════════════════════════════════════
-                    // 🟢 ROUTING BASED ON ENGINE TYPE
-                    // ═══════════════════════════════════════════════════════════════
                     val (s, f) = if (engineType == "tiktok") {
                         AutomationState.log("🎵 Running TikTok Engine")
                         TikTokAutomation.runBatch(
                             service = a11y,
                             numbers = nums,
+                            countryName = countryName,
                             dialingCode = dialingCode.ifEmpty { "92" },
                             autoFlightMode = autoFlight,
                             onNumberStart = { num ->
@@ -335,7 +333,7 @@ class AutomationService : Service() {
                         emptyList()
                     }
                 }
-                else -> { // "service"
+                else -> {
                     val res = ApiClient.service(auth).getNumbers(
                         GetNumberBody(service = serviceName, country = countryName, count = 5)
                     )
