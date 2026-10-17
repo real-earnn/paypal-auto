@@ -68,7 +68,7 @@ object TikTokActions {
         if (recentsRoot != null) {
             // Try to find TikTok by text or content description
             val tiktokNode = NodeFinder.findByTextContains(recentsRoot, "TikTok") 
-                ?: NodeFinder.findByContentDescContains(recentsRoot, "TikTok")
+                ?: findByContentDescContains(recentsRoot, "TikTok") // 🟢 FIXED
             
             if (tiktokNode != null && tiktokNode.isVisibleToUser) {
                 AutomationState.log("  ↳ Found TikTok in Recents — clicking")
@@ -222,6 +222,21 @@ object TikTokActions {
         
         AutomationState.log("⚠ Startup sequence timed out")
         return false
+    }
+
+    // 🟢 FIXED: Local helper to prevent build error
+    private fun findByContentDescContains(root: AccessibilityNodeInfo?, needle: String): AccessibilityNodeInfo? {
+        if (root == null) return null
+        val lower = needle.lowercase()
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val n = queue.removeFirst()
+            val d = n.contentDescription?.toString()?.lowercase() ?: ""
+            if (d.contains(lower) && n.isVisibleToUser) return n
+            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
+        }
+        return null
     }
 
     private fun findStrictBottomTab(root: AccessibilityNodeInfo, tabName: String): AccessibilityNodeInfo? {
