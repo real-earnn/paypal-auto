@@ -1,280 +1,131 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg_dark"
-    android:fillViewport="true">
+    android:background="#121212">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="24dp">
 
-        <TextView
+        <ImageButton
             android:id="@+id/btnBack"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:padding="6dp"
-            android:text="← Back"
-            android:textColor="@color/paypal_blue"
-            android:textSize="14sp"
-            android:textStyle="bold" />
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_arrow_back"
+            app:tint="@android:color/white" />
 
         <TextView
             android:id="@+id/tvTitle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="PayPal — Pakistan"
-            android:textColor="@color/text_light"
-            android:textSize="22sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="Automation se pehle permissions enable karo:"
-            android:textColor="@color/text_dim"
-            android:textSize="13sp" />
-
-        <!-- 1. Accessibility -->
-        <LinearLayout
-            android:id="@+id/rowAccessibility"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:background="@color/bg_card"
-            android:orientation="vertical"
-            android:padding="14dp">
+            android:text="Permission Required"
+            android:textColor="@android:color/white"
+            android:textSize="24sp"
+            android:textStyle="bold" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="1. Accessibility Service"
-                android:textColor="@color/text_light"
-                android:textSize="15sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:text="PayPal ki UI automate karne ke liye"
-                android:textColor="@color/text_dim"
-                android:textSize="11sp" />
-
-            <TextView
-                android:id="@+id/tvAccessibilityState"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:text="✘ Tap to enable"
-                android:textColor="@color/error_red"
-                android:textSize="13sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <!-- 2. Overlay -->
-        <LinearLayout
-            android:id="@+id/rowOverlay"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:background="@color/bg_card"
-            android:orientation="vertical"
-            android:padding="14dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="2. Display Over Other Apps"
-                android:textColor="@color/text_light"
-                android:textSize="15sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:text="Floating controls (Pause/Stop)"
-                android:textColor="@color/text_dim"
-                android:textSize="11sp" />
-
-            <TextView
-                android:id="@+id/tvOverlayState"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:text="✘ Tap to enable"
-                android:textColor="@color/error_red"
-                android:textSize="13sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <!-- 3. Battery -->
-        <LinearLayout
-            android:id="@+id/rowBattery"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:background="@color/bg_card"
-            android:orientation="vertical"
-            android:padding="14dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="3. Battery Optimization OFF"
-                android:textColor="@color/text_light"
-                android:textSize="15sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:text="Background automation ke liye"
-                android:textColor="@color/text_dim"
-                android:textSize="11sp" />
-
-            <TextView
-                android:id="@+id/tvBatteryState"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:text="✘ Tap to enable"
-                android:textColor="@color/error_red"
-                android:textSize="13sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <!-- 4. Auto Flight Mode -->
+        <!-- Permissions List -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:background="@color/bg_card"
-            android:orientation="vertical"
-            android:padding="14dp">
+            android:layout_marginTop="24dp"
+            android:orientation="vertical">
 
+            <!-- Accessibility -->
             <LinearLayout
+                android:id="@+id/rowAccessibility"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:background="?attr/selectableItemBackground"
                 android:orientation="horizontal"
-                android:gravity="center_vertical">
+                android:padding="12dp">
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Accessibility Service" android:textColor="@android:color/white" android:textSize="16sp"/>
+                <TextView android:id="@+id/tvAccessibilityState" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="✘ Tap to enable" android:textColor="#FF5252"/>
+            </LinearLayout>
 
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
+            <!-- Overlay -->
+            <LinearLayout
+                android:id="@+id/rowOverlay"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?attr/selectableItemBackground"
+                android:orientation="horizontal"
+                android:padding="12dp">
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Draw Over Other Apps" android:textColor="@android:color/white" android:textSize="16sp"/>
+                <TextView android:id="@+id/tvOverlayState" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="✘ Tap to enable" android:textColor="#FF5252"/>
+            </LinearLayout>
 
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="4. Auto Flight Mode"
-                        android:textColor="@color/text_light"
-                        android:textSize="15sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="PayPal se pehle Airplane ON/OFF karega (IP refresh)"
-                        android:textColor="@color/text_dim"
-                        android:textSize="11sp" />
-
-                </LinearLayout>
-
-                <androidx.appcompat.widget.SwitchCompat
-                    android:id="@+id/switchAutoFlight"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" />
+            <!-- Battery -->
+            <LinearLayout
+                android:id="@+id/rowBattery"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?attr/selectableItemBackground"
+                android:orientation="horizontal"
+                android:padding="12dp">
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Ignore Battery Optimization" android:textColor="@android:color/white" android:textSize="16sp"/>
+                <TextView android:id="@+id/tvBatteryState" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="✘ Tap to enable" android:textColor="#FF5252"/>
             </LinearLayout>
         </LinearLayout>
 
-        <!-- 5. Captcha Auto Alarm -->
+        <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginVertical="16dp" android:background="#333333"/>
+
+        <!-- 🟢 Old Account Method Toggle (Sirf TikTok ke liye) -->
         <LinearLayout
+            android:id="@+id/rowOldAccountMethod"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:background="@color/bg_card"
-            android:orientation="vertical"
-            android:padding="14dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="5. Captcha Auto Alarm"
-                        android:textColor="@color/text_light"
-                        android:textSize="15sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="Picture captcha aaye to alarm bajega (aap solve karein)"
-                        android:textColor="@color/text_dim"
-                        android:textSize="11sp" />
-
-                </LinearLayout>
-
-                <androidx.appcompat.widget.SwitchCompat
-                    android:id="@+id/switchCaptchaAlarm"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" />
-            </LinearLayout>
-
-            <Button
-                android:id="@+id/btnChooseSound"
-                android:layout_width="match_parent"
-                android:layout_height="44dp"
-                android:layout_marginTop="10dp"
-                android:backgroundTint="@color/paypal_blue_dark"
-                android:text="🎵 Choose Alarm Sound"
-                android:textColor="@color/white"
-                android:textSize="13sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/tvSelectedSound"
+            android:orientation="horizontal"
+            android:padding="12dp"
+            android:visibility="gone">
+            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Old Account Method (Skip Flight/Data)" android:textColor="@android:color/white" android:textStyle="bold"/>
+            <Switch
+                android:id="@+id/switchOldAccountMethod"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:text="Default system alarm"
-                android:textColor="@color/text_dim"
-                android:textSize="11sp" />
-
+                android:layout_height="wrap_content"/>
         </LinearLayout>
 
-        <!-- Start button -->
+        <!-- Flight Mode Toggle -->
+        <LinearLayout
+            android:id="@+id/rowAutoFlight"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:padding="12dp">
+            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Auto Flight Mode" android:textColor="@android:color/white"/>
+            <Switch android:id="@+id/switchAutoFlight" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        </LinearLayout>
+
+        <!-- Captcha Alarm Toggle -->
+        <LinearLayout
+            android:id="@+id/rowCaptchaAlarm"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:padding="12dp">
+            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Captcha Alarm" android:textColor="@android:color/white"/>
+            <Switch android:id="@+id/switchCaptchaAlarm" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        </LinearLayout>
+
+        <TextView android:id="@+id/tvSelectedSound" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:paddingStart="12dp" android:text="Default system alarm" android:textColor="#AAAAAA" android:textSize="12sp" />
+        <Button android:id="@+id/btnChooseSound" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="12dp" android:layout_marginTop="8dp" android:backgroundTint="#333333" android:text="Choose Sound" android:textColor="@android:color/white" />
+
         <Button
             android:id="@+id/btnStart"
             android:layout_width="match_parent"
-            android:layout_height="56dp"
-            android:layout_marginTop="20dp"
-            android:backgroundTint="@color/paypal_blue"
-            android:enabled="false"
-            android:text="▶ Start Automation"
-            android:textColor="@color/white"
-            android:textSize="16sp"
-            android:textStyle="bold" />
+            android:layout_height="60dp"
+            android:layout_marginTop="32dp"
+            android:backgroundTint="#4CAF50"
+            android:text="Start Automation"
+            android:textColor="@android:color/white"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            app:cornerRadius="16dp" />
 
     </LinearLayout>
 </ScrollView>
