@@ -2,34 +2,77 @@ package com.real.earn.paypal
 
 import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import com.real.earn.paypal.databinding.ActivityAppSelectBinding
+import androidx.lifecycle.lifecycleScope
+import com.real.earn.paypal.api.ApiClient
+import com.real.earn.paypal.auth.AuthManager
+import com.real.earn.paypal.databinding.ActivityDashboardBinding
+import kotlinx.coroutines.launch
 
-class AppSelectActivity : AppCompatActivity() {
+class DashboardActivity : AppCompatActivity() {
 
-    private lateinit var binding: ActivityAppSelectBinding
+    private lateinit var binding: ActivityDashboardBinding
+    private lateinit var authManager: AuthManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityAppSelectBinding.inflate(layoutInflater)
+        binding = ActivityDashboardBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.btnBack.setOnClickListener { finish() }
+        authManager = AuthManager(this)
 
-        // PayPal Option -> Old Service Select Flow
-        binding.cardPayPal.setOnClickListener {
-            val intent = Intent(this, ServiceSelectActivity::class.java)
-            startActivity(intent)
+        binding.btnRefresh.setOnClickListener { loadMe() }
+        binding.btnLogout.setOnClickListener { logout() }
+
+        // 🟢 Start Automation -> AppSelectActivity (PayPal / TikTok)
+        binding.btnStartAutomation.setOnClickListener {
+            startActivity(Intent(this, AppSelectActivity::class.java))
         }
 
-        // 🟢 TikTok Option -> Direct PermissionActivity with mode="tiktok"
-        binding.cardTikTok.setOnClickListener {
-            val intent = Intent(this, PermissionActivity::class.java).apply {
-                putExtra("mode", "tiktok")
-                putExtra("service", "TikTok")
-                putExtra("country", "Norway12") // Default country for TikTok auto
+        loadMe()
+    }
+
+    private fun loadMe() {
+        lifecycleScope.launch {
+            try {
+                val response = ApiClient.service(authManager).getMe()
+                if (response.isSuccessful && response.body()?.success == true) {
+                    val user = response.body()?.user
+                    if (user != null) {
+                        binding.tvName.text = user.firstName.ifEmpty {
+                            user.username.ifEmpty { "User #${user.id}" }
+                        }
+                        binding.tvBalance.text = "%.2f %s".format(user.balance, user.currency)
+                        binding.tvTodayOtps.text = user.todayOtps.toString()
+                        binding.tvTotalOtps.text = user.totalOtps.toString()
+                        binding.tvTotalEarned.text = "%.2f %s".format(user.totalEarned, user.currency)
+                    }
+                } else if (response.code() == 401) {
+                    Toast.makeText(this@DashboardActivity, "Session khatam. Dobara login karo.", Toast.LENGTH_LONG).show()
+                    authManager.clear()
+                    goToLogin()
+                } else {
+                    Toast.makeText(this@DashboardActivity, "Data load nahi hua", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this@DashboardActivity, "Network error: ${e.message}", Toast.LENGTH_LONG).show()
             }
-            startActivity(intent)
         }
+    }
+
+    private fun logout() {
+        lifecycleScope.launch {
+            try { ApiClient.service(authManager).logout() } catch (_: Exception) {}
+            authManager.clear()
+            goToLogin()
+        }
+    }
+
+    private fun goToLogin() {
+        val intent = Intent(this, LoginActivity::class.java)
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        startActivity(intent)
+        finish()
     }
 }
