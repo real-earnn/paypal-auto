@@ -45,8 +45,53 @@ object TikTokActions {
         }
     }
 
+    // 🟢 NEW: Checks if TikTok is actually open, if not uses Recents Fallback
+    private fun ensureTikTokIsRunning(service: AccessibilityService): Boolean {
+        var root = service.rootInActiveWindow
+        var pkg = root?.packageName?.toString()?.lowercase() ?: ""
+        
+        if (TIKTOK_PKGS.any { pkg.contains(it) }) return true // Already open
+
+        AutomationState.log("  ↳ TikTok not in foreground — retrying launch...")
+        launch(service)
+
+        root = service.rootInActiveWindow
+        pkg = root?.packageName?.toString()?.lowercase() ?: ""
+        if (TIKTOK_PKGS.any { pkg.contains(it) }) return true
+
+        // 🟢 Recents Fallback
+        AutomationState.log("  ↳ Launch failed. Trying Recents fallback...")
+        service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_RECENTS)
+        StepUtils.sleepMs(2000)
+
+        val recentsRoot = service.rootInActiveWindow
+        if (recentsRoot != null) {
+            // Try to find TikTok by text or content description
+            val tiktokNode = NodeFinder.findByTextContains(recentsRoot, "TikTok") 
+                ?: NodeFinder.findByContentDescContains(recentsRoot, "TikTok")
+            
+            if (tiktokNode != null && tiktokNode.isVisibleToUser) {
+                AutomationState.log("  ↳ Found TikTok in Recents — clicking")
+                tapNode(service, tiktokNode)
+                StepUtils.sleepMs(4000)
+                return true
+            }
+        }
+        
+        service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+        StepUtils.sleepMs(1000)
+        return false
+    }
+
     fun handleStartupSequence(service: AccessibilityService): Boolean {
         AutomationState.log("ℹ Handling TikTok startup sequence…")
+        
+        // 🟢 Ensure TikTok is running first
+        if (!ensureTikTokIsRunning(service)) {
+            AutomationState.log("✘ Failed to bring TikTok to foreground")
+            return false
+        }
+
         val startTime = System.currentTimeMillis()
         val timeout = 90000L 
         var swipeAttempts = 0
@@ -62,13 +107,11 @@ object TikTokActions {
                 continue
             }
 
-            // 1. SUCCESS: Phone Number Screen?
             if (findCountryCodeNode(root) != null || NodeFinder.findByTextContains(root, "Phone number") != null) {
                 AutomationState.log("✔ Reached Phone Number screen")
                 return true
             }
 
-            // 2. Detect Video Feed
             val hasHomeTab = findStrictBottomTab(root, "Home") != null
             val hasInboxTab = findStrictBottomTab(root, "Inbox") != null
             val hasForYou = NodeFinder.findByText(root, "For You") != null
@@ -79,7 +122,6 @@ object TikTokActions {
             }
 
             if (isVideoFeedMode) {
-                // 🟢 1. Wait for Video Load (5 seconds)
                 if (!waitedForVideo) {
                     AutomationState.log("  ↳ Video feed detected — waiting 5 seconds...")
                     StepUtils.sleepMs(5000) 
@@ -87,8 +129,6 @@ object TikTokActions {
                     continue
                 }
 
-                // 🟢 2. If "Swipe up" text is visible, WE MUST SWIPE.
-                // Clicking Profile tab won't work if the overlay is blocking it.
                 if (hasSwipeText) {
                     AutomationState.log("  ↳ 'Swipe up' overlay visible — Swiping up (#${swipeAttempts + 1})")
                     swipeUp(service)
@@ -98,7 +138,6 @@ object TikTokActions {
                     continue
                 }
 
-                // 🟢 3. No Swipe text? Click Profile tab.
                 val profileTab = findStrictBottomTab(root, "Profile")
                 if (profileTab != null) {
                     val r = Rect(); profileTab.getBoundsInScreen(r)
@@ -106,7 +145,6 @@ object TikTokActions {
                     tapNode(service, profileTab)
                     StepUtils.sleepMs(3000)
                     
-                    // 🟢 4. Verify: Did we actually move to Profile page?
                     val checkRoot = service.rootInActiveWindow
                     val stillOnFeed = checkRoot != null && (
                         findStrictBottomTab(checkRoot, "Home") != null || 
@@ -114,7 +152,7 @@ object TikTokActions {
                     )
 
                     if (stillOnFeed) {
-                        AutomationState.log("  ⚠ Profile click didn't work (overlay blocking). Swiping instead.")
+                        AutomationState.log("  ⚠ Profile click didn't work. Swiping instead.")
                         swipeUp(service)
                         StepUtils.sleepMs(3000)
                         waitedForVideo = false
@@ -125,7 +163,6 @@ object TikTokActions {
                     continue
                 }
 
-                // 🟢 5. Fallback: Nothing found, just swipe.
                 AutomationState.log("  ↳ Fallback: Swiping up (#${swipeAttempts + 1})")
                 swipeUp(service)
                 StepUtils.sleepMs(3000)
@@ -140,12 +177,39 @@ object TikTokActions {
             }
 
             // ══════════════════════════════════════════════════════
-            // ONBOARDING MODE (Only runs if NOT on video feed)
+            // 🟢 ONBOARDING MODE (Handling Gender + Skip/Continue)
             // ══════════════════════════════════════════════════════
             if (clickNode(service, root, "Use phone / email / username", "Use phone")) { StepUtils.sleepMs(2000); continue }
             if (clickNode(service, root, "Agree and continue", "Agree", "Accept", "I Agree")) { StepUtils.sleepMs(1500); continue }
             if (clickNode(service, root, "Allow", "While using the app", "OK", "Allow all")) { StepUtils.sleepMs(1500); continue }
-            if (clickNode(service, root, "Man", "Woman", "Non-binary", "Prefer not to say")) { StepUtils.sleepMs(1500); continue }
+
+            // 🟢 SMART GENDER SELECTION
+            val genderNode = NodeFinder.findByText(root, "Man") 
+                ?: NodeFinder.findByText(root, "Woman") 
+                ?: NodeFinder.findByText(root, "Non-binary")
+                ?: NodeFinder.findByText(root, "Prefer not to say")
+
+            if (genderNode != null && genderNode.isVisibleToUser) {
+                AutomationState.log("  ↳ Clicking Gender: '${genderNode.text}'")
+                tapNode(service, genderNode)
+                StepUtils.sleepMs(2000) // Wait for auto-advance
+
+                // Check if we need to click Skip/Continue after clicking gender
+                val checkRoot = service.rootInActiveWindow
+                if (checkRoot != null) {
+                    val isStillOnGender = NodeFinder.findByText(checkRoot, "Man") != null || NodeFinder.findByText(checkRoot, "Woman") != null
+                    if (isStillOnGender) {
+                        val nextBtn = NodeFinder.findByText(checkRoot, "Skip") ?: NodeFinder.findByText(checkRoot, "Continue")
+                        if (nextBtn != null) {
+                            AutomationState.log("  ↳ Gender didn't auto-advance. Clicking '${nextBtn.text}'")
+                            tapNode(service, nextBtn)
+                            StepUtils.sleepMs(2000)
+                        }
+                    }
+                }
+                continue
+            }
+
             if (clickNode(service, root, "Skip")) { StepUtils.sleepMs(1500); continue }
             
             if (clickNode(service, root, "Log in", "Add another account", "Add account")) {
