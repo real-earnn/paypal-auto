@@ -118,12 +118,10 @@ object PayPalActions {
 
     private fun tapNode(service: AccessibilityService, node: AccessibilityNodeInfo): Boolean {
         if (node.isClickable && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-            AutomationState.log("  ↳ click: direct")
             return true
         }
         val parent = NodeFinder.findClickableParent(node)
         if (parent != null && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-            AutomationState.log("  ↳ click: parent")
             return true
         }
         val bounds = Rect(); node.getBoundsInScreen(bounds)
@@ -391,7 +389,7 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  TYPE NUMBER
+    //  🟢 TYPE NUMBER — BULLETPROOF (Focus-independent)
     // ══════════════════════════════════════════════════════
     fun typeNumber(service: AccessibilityService, fullNumber: String, dialingCode: String): Boolean {
         var national = fullNumber.trim().removePrefix("+")
@@ -409,6 +407,7 @@ object PayPalActions {
         val verifyTail = nationalDigits.takeLast(6)
         AutomationState.log("ℹ Target: '$national' (tail: $verifyTail)")
 
+        // ① Wait for phone field to appear
         var phoneLabel: AccessibilityNodeInfo? = null
         val labelEnd = SystemClock.uptimeMillis() + 8000
         while (SystemClock.uptimeMillis() < labelEnd) {
@@ -433,52 +432,85 @@ object PayPalActions {
         val delays = longArrayOf(2000L, 3000L, 5000L, 5000L, 5000L)
         for (attempt in 0 until 5) {
             if (StepUtils.shouldStop()) return false
-            val preRoot = service.rootInActiveWindow
-            val preEdit = findFocusedEditable(preRoot) ?: findEditableUnder(preRoot)
-            val preText = preEdit?.text?.toString() ?: ""
-            val preDigits = preText.replace(Regex("\\D"), "")
-            if (preDigits.contains(verifyTail)) {
-                AutomationState.log("✔ Already filled")
-                return true
+            
+            // 🟢 Wait for popups to disappear (Gmail popup fix)
+            StepUtils.sleepMs(500) 
+
+            val root = service.rootInActiveWindow
+            val edit = findEditableUnder(root)
+            
+            // ① Check if already filled
+            if (edit != null) {
+                val preText = edit.text?.toString() ?: ""
+                val preDigits = preText.replace(Regex("\\D"), "")
+                if (preDigits.contains(verifyTail)) {
+                    AutomationState.log("✔ Already filled: '$preText'")
+                    return true
+                }
             }
 
-            AutomationState.log("ℹ Attempt #${attempt + 1}/5")
-            tapAt(service, x, y); StepUtils.sleepMs(400)
-            tapAt(service, x, y); StepUtils.sleepMs(900)
-
-            val fRoot = service.rootInActiveWindow
-            val focused = findFocusedEditable(fRoot)
-            if (focused == null) {
-                AutomationState.log("⚠ Not focused")
-                StepUtils.sleepMs(delays[attempt]); continue
+            AutomationState.log("ℹ Attempt #${attempt + 1}/5 — focusing field")
+            
+            // ② Tap field to focus (even if popup is there, we wait after)
+            tapAt(service, x, y)
+            StepUtils.sleepMs(600)
+            
+            // ③ Get fresh edit node (popup might have closed by now)
+            val freshRoot = service.rootInActiveWindow
+            val freshEdit = findEditableUnder(freshRoot)
+            
+            if (freshEdit == null) {
+                AutomationState.log("⚠ Edit field missing (popup?) — retrying")
+                StepUtils.sleepMs(delays[attempt])
+                continue
             }
-            AutomationState.log("✔ Focused")
 
-            val existing = focused.text?.toString() ?: ""
+            // ④ Clear existing text directly via Node (no keyboard needed)
+            val existing = freshEdit.text?.toString() ?: ""
             if (existing.isNotEmpty()) {
                 val args = Bundle()
                 args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "")
-                focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-                StepUtils.sleepMs(400)
+                freshEdit.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+                StepUtils.sleepMs(300)
             }
 
-            pasteText(service, national, "phone")
-            StepUtils.sleepMs(1300)
+            // ⑤ Set text directly via Node (Focus-independent)
+            val setArgs = Bundle()
+            setArgs.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, national)
+            val setOk = freshEdit.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, setArgs)
+            
+            StepUtils.sleepMs(800)
 
+            // ⑥ Verify
             val vRoot = service.rootInActiveWindow
-            val vEdit = findFocusedEditable(vRoot) ?: findEditableUnder(vRoot)
+            val vEdit = findEditableUnder(vRoot)
             val vText = vEdit?.text?.toString() ?: ""
             val vDigits = vText.replace(Regex("\\D"), "")
-            AutomationState.log("ℹ After paste: '$vText' → '$vDigits'")
+            AutomationState.log("ℹ Field now: '$vText' → digits='$vDigits'")
 
             if (vDigits.isNotEmpty() && vDigits.contains(verifyTail)) {
-                AutomationState.log("✔ Verified")
+                AutomationState.log("✔ Number verified")
                 return true
             }
             if (vDigits.length >= 8) {
                 AutomationState.log("ℹ ${vDigits.length} digits — accepting")
                 return true
             }
+
+            // Fallback: If setText didn't work, try clipboard paste
+            if (!setOk) {
+                AutomationState.log("⚠ setText failed — trying clipboard")
+                pasteText(service, national, "phone")
+                StepUtils.sleepMs(800)
+                val cpRoot = service.rootInActiveWindow
+                val cpEdit = findEditableUnder(cpRoot)
+                if (cpEdit != null && (cpEdit.text?.toString() ?: "").contains(verifyTail)) {
+                    AutomationState.log("✔ Verified via clipboard")
+                    return true
+                }
+            }
+
+            AutomationState.log("⚠ Verify failed — waiting ${delays[attempt]}ms")
             StepUtils.sleepMs(delays[attempt])
         }
         AutomationState.log("✘ Number not entered")
@@ -517,12 +549,22 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  CONTINUE
+    //  🟢 CONTINUE — Auto-close keyboard if button hidden
     // ══════════════════════════════════════════════════════
     fun tapContinue(service: AccessibilityService): Boolean {
-        val root = service.rootInActiveWindow ?: return false
-        val node = NodeFinder.findByText(root, "Continue", "Next") ?: return false
-        if (tapNode(service, node)) {
+        var root = service.rootInActiveWindow ?: return false
+        var node = NodeFinder.findByText(root, "Continue", "Next")
+
+        if (node == null) {
+            // Maybe keyboard is hiding the button
+            AutomationState.log("ℹ Continue not found — pressing BACK to close keyboard")
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            StepUtils.sleepMs(500)
+            root = service.rootInActiveWindow ?: return false
+            node = NodeFinder.findByText(root, "Continue", "Next")
+        }
+
+        if (node != null && tapNode(service, node)) {
             AutomationState.log("ℹ Continue tapped")
             return true
         }
@@ -534,16 +576,6 @@ object PayPalActions {
     // ══════════════════════════════════════════════════════
     enum class Result { OTP_SCREEN, ERROR, TIMEOUT, RETRY_CONTINUE }
 
-    // ══════════════════════════════════════════════════════════════════════
-    //  🟢 checkResult — Priority-Based Logic
-    //
-    //  Priority:
-    //    ① Resend visible → OTP_SCREEN
-    //    ② Captcha visible → extend + wait
-    //    ③ ERROR visible → confirm 400ms → ERROR (STOPS everything else)
-    //    ④ Post-captcha Continue ready → RETRY
-    //    ⑤ Post-captcha processing → wait
-    // ══════════════════════════════════════════════════════════════════════
     fun checkResult(service: AccessibilityService, timeoutMs: Long = 20000): Result {
         var deadline = SystemClock.uptimeMillis() + timeoutMs
         var captchaEverSeen = false
@@ -562,23 +594,19 @@ object PayPalActions {
                 continue
             }
 
-            // ═══════════════════════════════════════════════════════════════
-            //  ① SUCCESS — Resend screen (HIGHEST PRIORITY)
-            // ═══════════════════════════════════════════════════════════════
+            // ① SUCCESS
             if (NodeFinder.containsAny(root, "Resend Code", "Resend code", "Resend")) {
                 AutomationState.log("  ✔ Resend visible → OTP_SCREEN")
                 return Result.OTP_SCREEN
             }
 
-            // ═══════════════════════════════════════════════════════════════
-            //  ② CAPTCHA visible — extend deadline, don't interfere
-            // ═══════════════════════════════════════════════════════════════
+            // ② CAPTCHA
             val captchaVisible = isCaptchaPresent(root)
             if (captchaVisible) {
                 captchaEverSeen = true
                 captchaClearedAt = 0L
                 lastCaptchaSeenAt = now
-                errorSeenAt = 0L  // reset error — captcha has priority
+                errorSeenAt = 0L
                 val ext = now + 60_000
                 if (ext > deadline) deadline = ext
                 val humanNode = NodeFinder.findByTextContains(root, "I am human")
@@ -590,9 +618,7 @@ object PayPalActions {
                 continue
             }
 
-            // ═══════════════════════════════════════════════════════════════
-            //  ③ ERROR — HIGH PRIORITY. Blocks everything else.
-            // ═══════════════════════════════════════════════════════════════
+            // ③ ERROR
             val errorVisible = NodeFinder.containsAny(root,
                 "Something went wrong", "can't be used", "not valid",
                 "invalid", "Enter a valid", "try again", "Try again")
@@ -602,27 +628,21 @@ object PayPalActions {
                     errorSeenAt = now
                     AutomationState.log("  ⚠ Error text detected — verifying…")
                 } else if (now - errorSeenAt >= 400) {
-                    // Persisted for 400ms → real error
                     AutomationState.log("  ✘ Error confirmed (${now - errorSeenAt}ms) → ERROR")
                     return Result.ERROR
                 }
-                // Don't fall through — keep checking same error
                 StepUtils.sleepMs(StepUtils.POLL_MS)
                 continue
             } else {
-                // Error disappeared?
                 if (errorSeenAt > 0L) {
                     if (now - errorSeenAt > 1500) {
                         AutomationState.log("  ℹ Error text gone — continuing")
                         errorSeenAt = 0L
                     }
-                    // else: give grace — UI may be transitioning (popup, etc.)
                 }
             }
 
-            // ═══════════════════════════════════════════════════════════════
-            //  ④ POST-CAPTCHA — Continue ready?
-            // ═══════════════════════════════════════════════════════════════
+            // ④ POST-CAPTCHA
             if (captchaEverSeen) {
                 val continueBtn = NodeFinder.findByText(root, "Continue", "Next")
                 val hasContinue = continueBtn != null && continueBtn.isVisibleToUser
@@ -647,9 +667,7 @@ object PayPalActions {
                 }
             }
 
-            // ═══════════════════════════════════════════════════════════════
-            //  ⑤ MID-PROCESSING — number field active
-            // ═══════════════════════════════════════════════════════════════
+            // ⑤ MID-PROCESSING
             val hasNumberField = findEditableUnder(root) != null
             if (hasNumberField && !captchaEverSeen && errorSeenAt == 0L) {
                 val ext = now + 5000
@@ -663,7 +681,6 @@ object PayPalActions {
             StepUtils.sleepMs(StepUtils.POLL_MS)
         }
 
-        // Final verdict
         if (errorSeenAt > 0L) {
             AutomationState.log("  ✘ Result: ERROR (timeout with error seen)")
             return Result.ERROR
