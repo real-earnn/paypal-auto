@@ -37,28 +37,27 @@ class VirtualProfileActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Har dafa screen pe aane par check karega
         checkProfileState()
     }
 
     private fun checkProfileState() {
-        val userManager = getSystemService(Context.USER_SERVICE) as UserManager
-        
-        // Check System API
-        var hasWorkProfile = userManager.userProfiles.size > 1
-        
-        // Fallback: SharedPreferences (Agar system API fail ho jaye)
-        val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
-        if (prefs.getBoolean("profile_created", false)) {
-            hasWorkProfile = true
-        }
+        // 🟢 سب سے مضبوط طریقہ: کیا ہماری ایپ اس پروفائل کی مالک ہے؟
+        val isOwner = dpm.isProfileOwnerApp(packageName)
 
-        if (hasWorkProfile) {
+        // بیک اپ کے طور پر SharedPreferences چیک کریں
+        val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
+        val prefCreated = prefs.getBoolean("profile_created", false)
+
+        if (isOwner || prefCreated) {
+            val userManager = getSystemService(Context.USER_SERVICE) as UserManager
+            
+            // 🟢 صحیح UserHandle تلاش کریں
             workProfileUser = userManager.userProfiles.find { it != Process.myUserHandle() }
+
             if (workProfileUser != null) {
                 showManagerState()
             } else {
-                // Agar SharedPrefs true hai lekin system mein user nahi hai (matlab delete ho chuka hai)
+                // اگر پروفائل نہیں ملا لیکن pref موجود ہے، تو pref صاف کریں
                 prefs.edit().putBoolean("profile_created", false).apply()
                 showCreateState()
             }
@@ -101,10 +100,11 @@ class VirtualProfileActivity : AppCompatActivity() {
                 .setMessage("Ye poora virtual space aur iske andar ki saari apps delete ho jayengi. Kya aap sure hain?")
                 .setPositiveButton("Delete") { _, _ ->
                     try {
+                        // پروفائل ڈیلیٹ کرنے کا عمل
                         val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
                         prefs.edit().putBoolean("profile_created", false).apply()
-                        Toast.makeText(this, "Profile deleted! (Please restart device if apps still show)", Toast.LENGTH_LONG).show()
-                        checkProfileState() // Refresh UI
+                        Toast.makeText(this, "Profile deleted! (Restart device if apps still show)", Toast.LENGTH_LONG).show()
+                        checkProfileState()
                     } catch (e: Exception) {
                         Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show()
                     }
@@ -123,7 +123,7 @@ class VirtualProfileActivity : AppCompatActivity() {
         val workUser = workProfileUser ?: return
 
         try {
-            // 🟢 FIXED: Use getActivityList instead of getActivities
+            // 🟢 getActivityList اب null پیکیج نیم کے ساتھ استعمال ہو رہا ہے
             val activities = launcherApps.getActivityList(null, workUser)
             val uniquePackages = mutableSetOf<String>()
             val appList = mutableListOf<VirtualAppAdapter.AppInfoData>()
@@ -140,7 +140,6 @@ class VirtualProfileActivity : AppCompatActivity() {
 
             binding.recyclerApps.layoutManager = LinearLayoutManager(this)
             binding.recyclerApps.adapter = VirtualAppAdapter(appList) { app ->
-                // 🟢 OPEN APP IN WORK PROFILE
                 try {
                     val activitiesList = launcherApps.getActivityList(app.packageName, workUser)
                     val targetActivity = activitiesList.firstOrNull()
@@ -163,13 +162,16 @@ class VirtualProfileActivity : AppCompatActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == 100 && resultCode == RESULT_OK) {
-            // Profile created successfully
-            val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
-            prefs.edit().putBoolean("profile_created", true).apply()
-            
-            checkProfileState()
-            Toast.makeText(this, "Virtual Android Created Successfully!", Toast.LENGTH_SHORT).show()
+        if (requestCode == 100) {
+            if (resultCode == RESULT_OK) {
+                // 🟢 فوری طور پر UI اپ ڈیٹ نہ کریں، کیونکہ پروفائل ابھی مکمل نہیں ہوا
+                // براڈکاسٹ کا انتظار کریں، یا صرف pref سیٹ کریں
+                val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
+                prefs.edit().putBoolean("profile_created", true).apply()
+                Toast.makeText(this, "Setting up Virtual Android... Please wait.", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Profile creation cancelled.", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 }
