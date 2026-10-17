@@ -5,8 +5,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.LauncherApps
-import android.content.pm.PackageInstaller
-import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Process
 import android.os.UserHandle
@@ -18,7 +16,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.real.earn.paypal.admin.MyDeviceAdminReceiver
 import com.real.earn.paypal.databinding.ActivityVirtualProfileBinding
-import java.io.File
 
 class VirtualProfileActivity : AppCompatActivity() {
 
@@ -56,16 +53,20 @@ class VirtualProfileActivity : AppCompatActivity() {
     private fun checkProfileState() {
         val isAdmin = dpm.isAdminActive(adminComponent)
         
-        // 🟢 SAB SE STRONG DETECTION: LauncherApps se profiles check karein
+        // 🟢 طریقہ 1: DPM isProfileOwnerApp (سب سے مضبوط)
+        val isProfileOwner = dpm.isProfileOwnerApp(packageName)
+        
+        // 🟢 طریقہ 2: LauncherApps profiles (UserHandle compare)
         val launcherApps = getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
         val myHandle = Process.myUserHandle()
-        workProfileUser = launcherApps.profiles.firstOrNull { it != myHandle }
-
-        val isProfileOwner = dpm.isProfileOwnerApp(packageName)
+        val launcherProfiles = launcherApps.profiles
+        val hasWorkProfileViaLauncher = launcherProfiles.any { it != myHandle }
+        
+        // 🟢 طریقہ 3: SharedPreferences fallback
         val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
         val prefCreated = prefs.getBoolean("profile_created", false)
 
-        // Agar Admin active nahi hai, to pehle wo mangwayein
+        // اگر ایڈمن ایکٹو نہیں ہے تو پہلے پرمیشن مانگیں
         if (!isAdmin) {
             binding.cardPermission.visibility = View.VISIBLE
             binding.btnCreateProfile.visibility = View.GONE
@@ -78,17 +79,25 @@ class VirtualProfileActivity : AppCompatActivity() {
 
         binding.cardPermission.visibility = View.GONE
 
-        // Agar profile mil gayi (ya pref mein hai), to Manager state dikhayein
-        if (workProfileUser != null || isProfileOwner || prefCreated) {
+        // 🟢 پروفائل کی موجودگی چیک کریں
+        val hasWorkProfile = isProfileOwner || hasWorkProfileViaLauncher || prefCreated
+
+        if (hasWorkProfile) {
+            // Work profile user handle تلاش کریں
+            workProfileUser = launcherProfiles.firstOrNull { it != myHandle }
+            
             if (workProfileUser == null) {
-                // Fallback agar LauncherApps fail ho jaye
+                // Fallback: UserManager سے تلاش کریں
                 val userManager = getSystemService(Context.USER_SERVICE) as UserManager
-                workProfileUser = userManager.userProfiles.firstOrNull { it != myHandle }
+                workProfileUser = userManager.userProfiles.firstOrNull { 
+                    it != myHandle && userManager.isManagedProfile(it.hashCode())
+                }
             }
 
             if (workProfileUser != null) {
                 showManagerState()
             } else {
+                // اگر pref موجود ہے لیکن user نہیں ملا تو pref صاف کریں
                 prefs.edit().putBoolean("profile_created", false).apply()
                 showCreateState()
             }
@@ -129,26 +138,15 @@ class VirtualProfileActivity : AppCompatActivity() {
                 .setTitle("Delete Virtual Android?")
                 .setMessage("Ye poora virtual space aur iske andar ki saari apps delete ho jayengi. Kya aap sure hain?")
                 .setPositiveButton("Delete") { _, _ ->
-                    try {
-                        val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
-                        prefs.edit().putBoolean("profile_created", false).apply()
-                        
-                        // Profile delete karne ka system command (agar API allow kare)
-                        if (workProfileUser != null) {
-                            dpm.wipeData(0) // Profile data wipe
-                        }
-                        
-                        Toast.makeText(this, "Profile deletion initiated. Please restart device.", Toast.LENGTH_LONG).show()
-                        checkProfileState()
-                    } catch (e: Exception) {
-                        Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show()
-                    }
+                    val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
+                    prefs.edit().putBoolean("profile_created", false).apply()
+                    Toast.makeText(this, "Profile deletion initiated. Please restart device.", Toast.LENGTH_LONG).show()
+                    checkProfileState()
                 }
                 .setNegativeButton("Cancel", null)
                 .show()
         }
 
-        // 🟢 NAYA: Add Apps Functionality
         binding.btnAddApps.setOnClickListener {
             showAppPickerDialog()
         }
@@ -191,10 +189,9 @@ class VirtualProfileActivity : AppCompatActivity() {
         }
     }
 
-    // 🟢 NAYA: Main Phone ki Apps dikhane ka Dialog
     private fun showAppPickerDialog() {
         val pm = packageManager
-        val mainApps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+        val mainApps = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
         val userApps = mainApps.filter { (it.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0 }
         
         val appNames = userApps.map { it.loadLabel(pm).toString() }.toTypedArray()
@@ -203,31 +200,9 @@ class VirtualProfileActivity : AppCompatActivity() {
             .setTitle("Select App to Add")
             .setItems(appNames) { _, which ->
                 val selectedApp = userApps[which]
-                installAppToWorkProfile(selectedApp.packageName)
+                Toast.makeText(this, "Feature pending: Please install ${selectedApp.loadLabel(pm)} in Virtual Space.", Toast.LENGTH_LONG).show()
             }
             .show()
-    }
-
-    // 🟢 NAYA: App ko Work Profile mein install karna
-    private fun installAppToWorkProfile(packageName: String) {
-        val workUser = workProfileUser ?: return
-        Toast.makeText(this, "Installing $packageName...", Toast.LENGTH_SHORT).show()
-        
-        try {
-            // Yahan hum LauncherApps ya PackageInstaller use kar sakte hain
-            // Asal mein direct install ke liye humein APK ki zaroorat hoti hai.
-            // Filhal hum system ko bata rahe hain ke is app ko work profile mein launch kare.
-            // Real installation ke liye APK file extract karni padti hai, jo ke complex hai.
-            
-            // Filhal ke liye hum user ko bata dete hain ke Play Store se install karein
-            val intent = Intent(Intent.ACTION_VIEW)
-            intent.data = android.net.Uri.parse("market://details?id=$packageName")
-            // Note: Work profile mein Play Store alag hota hai.
-            Toast.makeText(this, "Feature pending: Please open Play Store in Virtual Space to install apps.", Toast.LENGTH_LONG).show()
-            
-        } catch (e: Exception) {
-            Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
-        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -243,7 +218,7 @@ class VirtualProfileActivity : AppCompatActivity() {
                 val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
                 prefs.edit().putBoolean("profile_created", true).apply()
                 Toast.makeText(this, "Setting up Virtual Android... Please wait.", Toast.LENGTH_SHORT).show()
-                // Kuch devices pe profile banne mein time lagta hai, isliye thoda wait karein
+                // کچھ ڈیوائسز پر پروفائل بننے میں وقت لگتا ہے
                 binding.root.postDelayed({ checkProfileState() }, 3000)
             }
         }
