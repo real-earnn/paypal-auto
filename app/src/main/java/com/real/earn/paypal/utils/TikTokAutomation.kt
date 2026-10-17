@@ -47,19 +47,16 @@ object TikTokAutomation {
         if (!TikTokActions.selectCountry(service, countryName)) {
             AutomationState.log("⚠ Country selection failed, attempting to proceed anyway")
         }
-        
-        // Wait for phone screen to fully load after country select
         StepUtils.sleepMs(1500)
 
-        // ⑤ Number Loop
-        var consecutiveFails = 0
-
+        // ⑤ Number Loop (No Limit)
         for (num in numbers) {
             if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
             while (AutomationState.getStatus() == AutomationState.Status.PAUSED) delay(300)
 
-            if (consecutiveFails >= 3) {
-                AutomationState.log("✘ 3 consecutive fails — ending round")
+            // 🟢 Check for Fatal Error before trying new number
+            if (TikTokActions.hasFatalError(service)) {
+                AutomationState.log("✘ Fatal error detected (Max attempts blocked) — ending round")
                 break
             }
 
@@ -70,7 +67,6 @@ object TikTokAutomation {
             if (!TikTokActions.typeNumberAndContinue(service, num, dialingCode)) {
                 AutomationState.log("✘ Type/Continue fail")
                 onNumberFail(num); fail++
-                consecutiveFails++
                 TikTokActions.pressBackToLogin(service)
                 continue
             }
@@ -80,14 +76,13 @@ object TikTokAutomation {
             if (TikTokActions.hasRedError(service)) {
                 AutomationState.log("✘ Red error detected — trying next number")
                 onNumberFail(num); fail++
-                consecutiveFails++
                 TikTokActions.pressBackToLogin(service)
                 StepUtils.sleepMs(500)
             } else {
                 AutomationState.log("✔ Number accepted (No red error)")
                 onNumberSuccess(num); success++
-                consecutiveFails = 0
                 
+                // Go back for next number
                 TikTokActions.pressBackToLogin(service)
                 StepUtils.sleepMs(500)
             }
