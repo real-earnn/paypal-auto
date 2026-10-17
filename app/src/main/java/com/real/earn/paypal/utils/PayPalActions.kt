@@ -179,7 +179,7 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  🟢 TYPE + SELECT COUNTRY — Smart retry (no retype)
+    //  TYPE + SELECT COUNTRY
     // ══════════════════════════════════════════════════════
     fun typeAndSelectCountry(
         service: AccessibilityService,
@@ -189,7 +189,6 @@ object PayPalActions {
         val countryName = cleanCountryName(countryNameRaw)
         AutomationState.log("ℹ Country: $countryName (from $countryNameRaw)")
 
-        // ① Find & click Search
         var searchNode: AccessibilityNodeInfo? = null
         val sEnd = SystemClock.uptimeMillis() + 5000
         while (SystemClock.uptimeMillis() < sEnd) {
@@ -209,14 +208,10 @@ object PayPalActions {
         tapNode(service, searchNode)
         StepUtils.sleepMs(700)
 
-        // ② Paste country name (ONCE)
         pasteText(service, countryName, "search")
         AutomationState.log("ℹ Paste done — waiting for result")
         StepUtils.sleepMs(2000)
 
-        // ══════════════════════════════════════════════════════════════
-        //  ③ CLICK LOOP — don't retype! Just click the SAME result again
-        // ══════════════════════════════════════════════════════════════
         var clickAttempts = 0
         val maxAttempts = 5
 
@@ -226,26 +221,21 @@ object PayPalActions {
 
             val root = service.rootInActiveWindow
             if (root == null) {
-                StepUtils.sleepMs(700)
-                continue
+                StepUtils.sleepMs(700); continue
             }
 
-            // Check: has dialog already closed? (moved to number screen)
             if (!dialogStillOpen(root)) {
                 AutomationState.log("✔ Country selected (dialog closed)")
                 StepUtils.sleepMs(1200)
                 return true
             }
 
-            // Find country result
             val match = findCountryResult(root, countryName, countryIso)
             if (match == null) {
                 AutomationState.log("⚠ Result not found (attempt $clickAttempts)")
-                // Check if input still has country text (search field)
                 val searchField = findSearchInput(root)
                 val searchText = searchField?.text?.toString()?.trim() ?: ""
                 if (searchText.isEmpty()) {
-                    // Country name disappeared from input — retype needed
                     AutomationState.log("  ℹ Search field empty — re-typing country")
                     tapNode(service, searchNode)
                     StepUtils.sleepMs(500)
@@ -256,15 +246,12 @@ object PayPalActions {
                 continue
             }
 
-            // Result found — get its position (top or bottom of dialog)
             val r = Rect(); match.getBoundsInScreen(r)
             AutomationState.log("ℹ Result found @ ${r.centerX()},${r.centerY()} (attempt $clickAttempts)")
 
-            // Click it
             tapNode(service, match)
             StepUtils.sleepMs(1500)
 
-            // Verify: dialog closed?
             val after = service.rootInActiveWindow
             if (after == null) {
                 AutomationState.log("✔ Dialog closed — success")
@@ -276,13 +263,10 @@ object PayPalActions {
                 return true
             }
 
-            // Still open — check if the same country result is STILL visible
-            // (keyboard closed but country result shifted)
             val stillThere = findCountryResult(after, countryName, countryIso)
             if (stillThere != null) {
                 AutomationState.log("  ℹ Dialog still open, result still visible — clicking again")
                 StepUtils.sleepMs(600)
-                // Loop continues — click again (no retype)
             } else {
                 AutomationState.log("  ⚠ Result gone — check input field")
                 StepUtils.sleepMs(700)
@@ -294,7 +278,6 @@ object PayPalActions {
     }
 
     private fun dialogStillOpen(root: AccessibilityNodeInfo): Boolean {
-        // Dialog is open if we see "Search" text AND some country list
         val hasSearch = findByTextEquals(root, "Search") != null
         val hasCountry = NodeFinder.containsAny(root, "Country of residence", "Country/region")
         return hasSearch || hasCountry
@@ -345,7 +328,6 @@ object PayPalActions {
 
             if (fallback == null) {
                 fallback = NodeFinder.findClickableParent(n) ?: n
-                AutomationState.log("ℹ Fallback: '$t'")
             }
 
             for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
@@ -375,7 +357,7 @@ object PayPalActions {
         NodeFinder.findByText(root, *closeTexts)?.let { n ->
             if (NodeFinder.isVisible(n) && NodeFinder.click(n)) {
                 AutomationState.log("ℹ Resend popup closed")
-                StepUtils.sleepMs(500)
+                StepUtils.sleepMs(300)
                 return true
             }
         }
@@ -383,7 +365,7 @@ object PayPalActions {
             val n = NodeFinder.findByTextContains(root, t)
             if (n != null && NodeFinder.isVisible(n) && NodeFinder.click(n)) {
                 AutomationState.log("ℹ Resend popup closed (fallback)")
-                StepUtils.sleepMs(500)
+                StepUtils.sleepMs(300)
                 return true
             }
         }
@@ -402,7 +384,7 @@ object PayPalActions {
         args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "")
         if (edit.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
             AutomationState.log("ℹ Number field cleared")
-            StepUtils.sleepMs(400)
+            StepUtils.sleepMs(300)
             return true
         }
         return false
@@ -553,15 +535,7 @@ object PayPalActions {
     enum class Result { OTP_SCREEN, ERROR, TIMEOUT, RETRY_CONTINUE }
 
     // ══════════════════════════════════════════════════════════════════════
-    //  🟢 checkResult — FULL SCREEN ANALYSIS
-    //
-    //  Look at BOTH previous & current setup:
-    //    • Number input still visible  → still processing → WAIT
-    //    • Continue visible with spinner → loading → WAIT
-    //    • Resend visible              → OTP_SCREEN
-    //    • Explicit error text         → ERROR
-    //    • Captcha visible             → extend deadline 60s
-    //    • Nothing → keep waiting (do NOT assume timeout too early)
+    //  🟢 checkResult — Immediate error, patient captcha
     // ══════════════════════════════════════════════════════════════════════
     fun checkResult(service: AccessibilityService, timeoutMs: Long = 20000): Result {
         var deadline = SystemClock.uptimeMillis() + timeoutMs
@@ -587,7 +561,7 @@ object PayPalActions {
                 return Result.OTP_SCREEN
             }
 
-            // ═══ ② CAPTCHA present — extend deadline aggressively ═══
+            // ═══ ② CAPTCHA present — extend deadline, handle loading ═══
             val captchaVisible = isCaptchaPresent(root)
             if (captchaVisible) {
                 captchaEverSeen = true
@@ -595,9 +569,14 @@ object PayPalActions {
                 lastCaptchaSeenAt = now
                 val ext = now + 60_000
                 if (ext > deadline) deadline = ext
-                if (now - lastLog > 3000) {
-                    AutomationState.log("  ⏳ Captcha present — extending wait")
-                    lastLog = now
+                
+                // Check if loading (Security Challenge visible, but no I am human)
+                val humanNode = NodeFinder.findByTextContains(root, "I am human")
+                if (humanNode == null) {
+                    if (now - lastLog > 3000) {
+                        AutomationState.log("  ⏳ Captcha loading (network slow) — waiting")
+                        lastLog = now
+                    }
                 }
                 StepUtils.sleepMs(StepUtils.POLL_MS)
                 continue
@@ -609,6 +588,16 @@ object PayPalActions {
                     "invalid", "Enter a valid", "try again", "Try again")) {
                 errorFlag = true
                 AutomationState.log("  ⚠ Error text detected")
+                
+                // Confirm error persists for 600ms (avoid flash errors)
+                StepUtils.sleepMs(600)
+                val confirmRoot = service.rootInActiveWindow
+                if (confirmRoot != null && NodeFinder.containsAny(confirmRoot,
+                        "Something went wrong", "can't be used", "not valid",
+                        "invalid", "Enter a valid", "try again", "Try again")) {
+                    AutomationState.log("  ✘ Returning ERROR immediately")
+                    return Result.ERROR
+                }
             }
 
             // ═══ ④ POST-CAPTCHA — check if still processing ═══
@@ -625,7 +614,6 @@ object PayPalActions {
                     }
                 } else {
                     captchaClearedAt = 0L
-                    // No Continue yet → still processing after captcha
                     if (now - lastCaptchaSeenAt < 45_000) {
                         val ext = now + 15_000
                         if (ext > deadline) deadline = ext
@@ -638,10 +626,8 @@ object PayPalActions {
             }
 
             // ═══ ⑤ MID-PROCESSING CHECK ═══
-            // If typed number still visible in a field → PayPal still working
             val hasNumberField = findEditableUnder(root) != null
             if (hasNumberField && !errorFlag && !captchaEverSeen) {
-                // Extend a bit
                 val ext = now + 5000
                 if (ext > deadline) deadline = ext
                 if (now - lastLog > 4000) {
@@ -653,12 +639,7 @@ object PayPalActions {
             StepUtils.sleepMs(StepUtils.POLL_MS)
         }
 
-        // ═══ Final verdict — only ERROR if explicitly seen ═══
-        if (errorFlag) {
-            AutomationState.log("  ✘ Result: ERROR (explicit error text)")
-            return Result.ERROR
-        }
-        AutomationState.log("  ⏱ Result: TIMEOUT")
+        if (errorFlag) return Result.ERROR
         return Result.TIMEOUT
     }
 
