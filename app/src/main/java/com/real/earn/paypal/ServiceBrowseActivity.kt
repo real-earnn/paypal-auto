@@ -13,14 +13,11 @@ import com.real.earn.paypal.auth.AuthManager
 import com.real.earn.paypal.databinding.ActivityServiceBrowseBinding
 import kotlinx.coroutines.launch
 
-/**
- * Service Browse — purana ServiceSelect tha, rename kiya.
- * Isme service list dikhti hai (PayPal, WhatsApp, etc.)
- */
 class ServiceBrowseActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityServiceBrowseBinding
     private lateinit var authManager: AuthManager
+    private var engineType: String = "paypal"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -28,6 +25,8 @@ class ServiceBrowseActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         authManager = AuthManager(this)
+        engineType = intent.getStringExtra("engine_type") ?: "paypal"
+        
         binding.recycler.layoutManager = LinearLayoutManager(this)
         binding.btnBack.setOnClickListener { finish() }
 
@@ -49,15 +48,12 @@ class ServiceBrowseActivity : AppCompatActivity() {
                     } else {
                         binding.recycler.adapter = ServiceAdapter(services) { s ->
                             if (s.countriesSafe.isEmpty()) {
-                                Toast.makeText(
-                                    this@ServiceBrowseActivity,
-                                    "${s.name} mein abhi koi country available nahi",
-                                    Toast.LENGTH_LONG
-                                ).show()
+                                Toast.makeText(this@ServiceBrowseActivity, "${s.name} mein abhi koi country available nahi", Toast.LENGTH_LONG).show()
                             } else {
                                 val i = Intent(this@ServiceBrowseActivity, CountrySelectActivity::class.java)
                                 i.putExtra("service", s.name)
                                 i.putExtra("is_unpaid", s.isUnpaid)
+                                i.putExtra("engine_type", engineType)
                                 startActivity(i)
                             }
                         }
@@ -65,10 +61,7 @@ class ServiceBrowseActivity : AppCompatActivity() {
                 } else if (res.code() == 401) {
                     Toast.makeText(this@ServiceBrowseActivity, "Session khatam. Login karo.", Toast.LENGTH_LONG).show()
                     authManager.clear()
-                    startActivity(
-                        Intent(this@ServiceBrowseActivity, LoginActivity::class.java)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                    )
+                    startActivity(Intent(this@ServiceBrowseActivity, LoginActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
                     finish()
                 } else {
                     binding.tvEmpty.visibility = View.VISIBLE
