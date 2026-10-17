@@ -59,10 +59,10 @@ private fun updateVirtualProfileButtonText() {
 
     if (hasWorkProfile || prefCreated) {
         binding.btnVirtualProfile.text = "Show Virtual Android Setup"
-        binding.btnVirtualProfile.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#4CAF50")) // Green
+        binding.btnVirtualProfile.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#4CAF50"))
     } else {
         binding.btnVirtualProfile.text = "Create Virtual Android"
-        binding.btnVirtualProfile.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#673AB7")) // Purple
+        binding.btnVirtualProfile.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#673AB7"))
     }
 }
 
