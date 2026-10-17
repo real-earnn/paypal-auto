@@ -1,5 +1,6 @@
 package com.real.earn.paypal
 
+import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -48,21 +49,24 @@ class DashboardActivity : AppCompatActivity() {
     }
 
     // 🟢 Dynamic Button Text Logic
-private fun updateVirtualProfileButtonText() {
-    val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-    val isOwner = dpm.isProfileOwnerApp(packageName)
-    
-    val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
-    val prefCreated = prefs.getBoolean("profile_created", false)
+    private fun updateVirtualProfileButtonText() {
+        val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val isOwner = dpm.isProfileOwnerApp(packageName)
 
-    if (isOwner || prefCreated) {
-        binding.btnVirtualProfile.text = "Show Virtual Android Setup"
-        binding.btnVirtualProfile.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#4CAF50"))
-    } else {
-        binding.btnVirtualProfile.text = "Create Virtual Android"
-        binding.btnVirtualProfile.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#673AB7"))
+        val userManager = getSystemService(Context.USER_SERVICE) as UserManager
+        val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
+        val prefCreated = prefs.getBoolean("profile_created", false)
+
+        val hasWorkProfile = (userManager.userProfiles.size > 1) || isOwner || prefCreated
+
+        if (hasWorkProfile) {
+            binding.btnVirtualProfile.text = "Show Virtual Android Setup"
+            binding.btnVirtualProfile.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#4CAF50")) // Green
+        } else {
+            binding.btnVirtualProfile.text = "Create Virtual Android"
+            binding.btnVirtualProfile.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#673AB7")) // Purple
+        }
     }
-}
 
     private fun loadMe() {
         lifecycleScope.launch {
