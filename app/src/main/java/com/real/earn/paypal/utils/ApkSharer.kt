@@ -2,15 +2,17 @@ package com.real.earn.paypal.utils
 
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
+import android.content.pm.CrossProfileApps
+import android.os.UserHandle
 import androidx.core.content.FileProvider
+import com.real.earn.paypal.WorkProfileInstallerActivity
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 
 object ApkSharer {
 
-    fun shareApkToWorkProfile(context: Context, packageName: String, workProfileUserHandle: android.os.UserHandle) {
+    fun shareApkToWorkProfile(context: Context, packageName: String, workProfileUserHandle: UserHandle) {
         try {
             // 1. APK کا راستہ حاصل کریں
             val appInfo = context.packageManager.getApplicationInfo(packageName, 0)
@@ -36,25 +38,21 @@ object ApkSharer {
                 sharedApkFile
             )
 
-            // 4. ایک انٹینٹ بنائیں جو ورک پروفائل کی ایپ کو بھیجا جائے گا
-            val intent = Intent("com.real.earn.paypal.ACTION_INSTALL_APK").apply {
+            // 4. ایکٹیویٹی لانچ کرنے کا انٹینٹ (کیونکہ CrossProfileApps صرف Activities کے لیے ہے)
+            val intent = Intent(context, WorkProfileInstallerActivity::class.java).apply {
                 putExtra("apk_uri", apkUri.toString())
                 putExtra("package_name", packageName)
-                // 🔴 اہم: ورک پروفائل کے پیکیج کو ہدف بنائیں
-                setPackage(context.packageName)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
 
-            // 5. CrossProfileApps کے ذریعے انٹینٹ ورک پروفائل کو بھیجیں
-            val crossProfileApps = context.getSystemService(Context.CROSS_PROFILE_APPS_SERVICE) as android.content.pm.CrossProfileApps
-            crossProfileApps.startActivity(
-                workProfileUserHandle,
-                intent,
-                null // Activity options
-            )
+            // 5. CrossProfileApps کے ذریعے ورک پروفائل میں لانچ کریں
+            val crossProfileApps = context.getSystemService(Context.CROSS_PROFILE_APPS_SERVICE) as CrossProfileApps
+            
+            // 🟢 FIX: Arguments order is (Intent, UserHandle)
+            crossProfileApps.startActivity(intent, workProfileUserHandle)
 
         } catch (e: Exception) {
             e.printStackTrace()
-            // یوزر کو دکھائیں کہ APK شیئر کرنے میں مسئلہ ہوا
         }
     }
 }
