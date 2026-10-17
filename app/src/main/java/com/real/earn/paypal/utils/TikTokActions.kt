@@ -35,7 +35,7 @@ object TikTokActions {
             
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_CLEAR_TASK)
             service.startActivity(intent)
-            StepUtils.sleepMs(7000) // Wait for app to load
+            StepUtils.sleepMs(8000) // App load hone ke liye zyada time diya
             true
         } catch (e: Exception) {
             AutomationState.log("✘ TikTok Launch: ${e.message}")
@@ -44,12 +44,13 @@ object TikTokActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  🟢 SMART BRAIN: Handles Random Startup Screens
+    //  🟢 SMART BRAIN: Handles Startup + Swipe Logic
     // ══════════════════════════════════════════════════════
     fun handleStartupSequence(service: AccessibilityService): Boolean {
         AutomationState.log("ℹ Handling TikTok startup sequence…")
         val startTime = System.currentTimeMillis()
         val timeout = 60000L
+        var swipeAttempts = 0
 
         while (System.currentTimeMillis() - startTime < timeout) {
             if (StepUtils.shouldStop()) return false
@@ -66,11 +67,12 @@ object TikTokActions {
                 return true
             }
 
-            // 2. Use phone / email / username
-            if (clickNode(service, root, "Use phone / email / username", "Use phone")) {
-                StepUtils.sleepMs(2000)
-                continue
-            }
+            // 2. Terms, Permissions, Gender, Interests
+            if (clickNode(service, root, "Use phone / email / username", "Use phone")) { StepUtils.sleepMs(2000); continue }
+            if (clickNode(service, root, "Agree and continue", "Agree", "Accept", "I Agree")) { StepUtils.sleepMs(1500); continue }
+            if (clickNode(service, root, "Allow", "While using the app", "OK", "Allow all")) { StepUtils.sleepMs(1500); continue }
+            if (clickNode(service, root, "Man", "Woman", "Non-binary", "Prefer not to say")) { StepUtils.sleepMs(1500); continue }
+            if (clickNode(service, root, "Skip")) { StepUtils.sleepMs(1500); continue }
 
             // 3. Profile Page (Log in / Add account)
             if (clickNode(service, root, "Log in", "Add another account", "Add account")) {
@@ -78,50 +80,26 @@ object TikTokActions {
                 continue
             }
 
-            // 4. Home Feed? (Click "Profile" tab)
+            // 4. 🟢 SWIPE LOGIC: "Swipe up for more"
+            if (NodeFinder.findByTextContains(root, "Swipe up") != null) {
+                if (swipeAttempts < 3) {
+                    AutomationState.log("  ↳ 'Swipe up' visible — Swiping (#${swipeAttempts + 1})")
+                    swipeUp(service)
+                    swipeAttempts++
+                    // 🟢 Wait 5 seconds for video to load and overlay to disappear
+                    StepUtils.sleepMs(5000)
+                    continue
+                } else {
+                    AutomationState.log("  ⚠ 'Swipe up' still visible after 3 attempts")
+                }
+            }
+
+            // 5. 🟢 PROFILE TAB: Bottom tab pe click karo
             val profileTab = findBottomTab(root, "Profile")
             if (profileTab != null) {
-                AutomationState.log("  ↳ Clicking Profile tab")
+                AutomationState.log("  ↳ Profile tab visible — Clicking")
                 tapNode(service, profileTab)
-                StepUtils.sleepMs(2000)
-                continue
-            }
-
-            // 5. 🟢 Swipe Tutorial Overlay
-            if (NodeFinder.findByTextContains(root, "Swipe up") != null) {
-                AutomationState.log("  ↳ 'Swipe up' visible — swiping up")
-                swipeUp(service)
-                StepUtils.sleepMs(2500) // Wait for swipe animation and next screen load
-                continue
-            }
-
-            // 6. Terms & Conditions
-            if (clickNode(service, root, "Agree and continue", "Agree", "Accept", "I Agree", "Continue")) {
-                StepUtils.sleepMs(1500)
-                continue
-            }
-
-            // 7. Permissions
-            if (clickNode(service, root, "Allow", "While using the app", "OK", "Allow all")) {
-                StepUtils.sleepMs(1500)
-                continue
-            }
-
-            // 8. Gender Selection
-            if (clickNode(service, root, "Man", "Woman", "Non-binary", "Prefer not to say")) {
-                StepUtils.sleepMs(1500)
-                continue
-            }
-
-            // 9. Interests (Skip)
-            if (clickNode(service, root, "Skip")) {
-                StepUtils.sleepMs(1500)
-                continue
-            }
-
-            // 10. Next Button
-            if (clickNode(service, root, "Next")) {
-                StepUtils.sleepMs(1500)
+                StepUtils.sleepMs(3000)
                 continue
             }
 
@@ -273,9 +251,6 @@ object TikTokActions {
         return false
     }
 
-    // ══════════════════════════════════════════════════════
-    //  🟢 SMART BACK: Loops until Phone Input Screen is found
-    // ══════════════════════════════════════════════════════
     fun pressBackToLogin(service: AccessibilityService) {
         AutomationState.log("ℹ Pressing Back to return to input")
         
@@ -286,19 +261,16 @@ object TikTokActions {
             val root = service.rootInActiveWindow
             if (root == null) continue
 
-            // Check if we are on Phone Number screen
             if (findCountryCodeNode(root) != null || NodeFinder.findByTextContains(root, "Phone number") != null) {
                 AutomationState.log("✔ Reached Phone Number screen")
                 return
             }
             
-            // Check if we are on OTP screen (Keyboard was closed)
             if (NodeFinder.findByTextContains(root, "6-digit code") != null || NodeFinder.findByTextContains(root, "Enter 6-digit") != null) {
                 AutomationState.log("  ↳ OTP screen detected — pressing Back again")
                 continue
             }
         }
-        AutomationState.log("⚠ Could not reach Phone screen after 3 Back presses")
     }
 
     fun hasRedError(service: AccessibilityService): Boolean {
@@ -363,7 +335,7 @@ object TikTokActions {
             val stroke = GestureDescription.StrokeDescription(path, 0, 300)
             val gesture = GestureDescription.Builder().addStroke(stroke).build()
             service.dispatchGesture(gesture, null, null)
-            StepUtils.sleepMs(1000)
+            StepUtils.sleepMs(1000) // Thoda internal wait
         } catch (_: Exception) {}
     }
 
