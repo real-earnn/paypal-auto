@@ -18,6 +18,7 @@ class PrefixInputActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityPrefixInputBinding
     private lateinit var authManager: AuthManager
+    private var engineType: String = "paypal"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -25,13 +26,11 @@ class PrefixInputActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         authManager = AuthManager(this)
+        engineType = intent.getStringExtra("engine_type") ?: "paypal"
+        
         binding.recycler.layoutManager = LinearLayoutManager(this)
-
         binding.btnBack.setOnClickListener { finish() }
-
         binding.btnSearch.setOnClickListener { performSearch() }
-
-        // IME "Search" button bhi trigger kare
         binding.etPrefix.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEARCH) {
                 performSearch()
@@ -41,9 +40,7 @@ class PrefixInputActivity : AppCompatActivity() {
     }
 
     private fun performSearch() {
-        val prefix = binding.etPrefix.text.toString().trim()
-            .removePrefix("+")
-
+        val prefix = binding.etPrefix.text.toString().trim().removePrefix("+")
         if (prefix.length < 2) {
             Toast.makeText(this, "Prefix kam az kam 2 characters ka ho", Toast.LENGTH_SHORT).show()
             return
@@ -64,16 +61,13 @@ class PrefixInputActivity : AppCompatActivity() {
                         binding.tvEmpty.visibility = View.VISIBLE
                         binding.tvEmpty.text = "Is prefix ke liye koi file nahi mili"
                     } else {
-                        binding.recycler.adapter = PrefixFileAdapter(
-                            prefix = prefix,
-                            items = files
-                        ) { fileInfo ->
-                            // User ne file select ki → PermissionActivity
+                        binding.recycler.adapter = PrefixFileAdapter(prefix = prefix, items = files) { fileInfo ->
                             val intent = Intent(this@PrefixInputActivity, PermissionActivity::class.java).apply {
                                 putExtra("mode", "prefix")
-                                putExtra("service", "PayPal")
+                                putExtra("service", "PayPal") // Prefix mode backend service name
                                 putExtra("prefix", prefix)
                                 putExtra("file", fileInfo.name)
+                                putExtra("engine_type", engineType) // 🟢 Pass engine
                             }
                             startActivity(intent)
                         }
@@ -81,10 +75,7 @@ class PrefixInputActivity : AppCompatActivity() {
                 } else if (res.code() == 401) {
                     Toast.makeText(this@PrefixInputActivity, "Session khatam", Toast.LENGTH_LONG).show()
                     authManager.clear()
-                    startActivity(
-                        Intent(this@PrefixInputActivity, LoginActivity::class.java)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                    )
+                    startActivity(Intent(this@PrefixInputActivity, LoginActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
                     finish()
                 } else {
                     binding.tvEmpty.visibility = View.VISIBLE
