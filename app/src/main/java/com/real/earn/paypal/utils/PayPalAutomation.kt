@@ -71,12 +71,19 @@ object PayPalAutomation {
         AutomationState.log("✔ Country: $countryIso")
 
         // ══════════════════════════════════════════════════════════════════
-        //  INNER LOOP
+        //  INNER LOOP — try next number on error (max 3 consecutive fails)
         // ══════════════════════════════════════════════════════════════════
+        var consecutiveFails = 0
+
         for (num in numbers) {
             if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
             while (AutomationState.getStatus() == AutomationState.Status.PAUSED) delay(300)
             if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
+
+            if (consecutiveFails >= 3) {
+                AutomationState.log("✘ 3 consecutive failures — ending round")
+                break
+            }
 
             onNumberStart(num)
             AutomationState.log("─────────────")
@@ -88,6 +95,7 @@ object PayPalAutomation {
                 }) {
                 AutomationState.log("✘ Number type fail")
                 onNumberFail(num); fail++
+                consecutiveFails++
                 continue
             }
 
@@ -97,37 +105,33 @@ object PayPalAutomation {
                 }) {
                 AutomationState.log("✘ Continue fail")
                 onNumberFail(num); fail++
+                consecutiveFails++
                 continue
             }
             AutomationState.log("ℹ Continue tapped — waiting result…")
 
-            // ③ Wait for result — captcha-aware, patient
+            // ③ Wait for result — captcha-aware
             var finalResult = PayPalActions.Result.TIMEOUT
             var captchaRetries = 0
 
             while (captchaRetries < 6) {
                 if (StepUtils.shouldStop()) break
 
-                // 🟢 Longer initial timeout — captcha loading ke liye
                 val r = PayPalActions.checkResult(service, 15000)
 
                 if (r == PayPalActions.Result.RETRY_CONTINUE) {
                     captchaRetries++
                     AutomationState.log("ℹ Captcha solved — Continue again (#$captchaRetries)")
-
-                    // Grace: PayPal UI settle hone do
                     StepUtils.sleepMs(1000)
 
                     if (!PayPalActions.tapContinue(service)) {
                         AutomationState.log("  ⚠ Re-tap Continue failed")
-                        // Don't fail immediately — PayPal might still be processing
                         StepUtils.sleepMs(2000)
                         continue
                     }
                     StepUtils.sleepMs(1500)
                     continue
                 }
-
                 finalResult = r
                 break
             }
@@ -138,13 +142,20 @@ object PayPalAutomation {
                 PayPalActions.Result.OTP_SCREEN -> {
                     AutomationState.log("✔ OTP screen — SUCCESS: $num")
                     onNumberSuccess(num); success++
+                    consecutiveFails = 0 // 🟢 Reset on success
 
+                    // Resend 2x
                     PayPalActions.tapResendTwice(service)
 
                     StepUtils.sleepMs(2000)
                     if (PayPalActions.hasRedError(service)) {
-                        AutomationState.log("✘ Red error after resend — ROUND END")
-                        break
+                        AutomationState.log("✘ Red error after resend — clearing & trying next number")
+                        onNumberFail(num); fail++
+                        consecutiveFails++
+                        PayPalActions.closeResendPopup(service)
+                        PayPalActions.clearNumberField(service)
+                        StepUtils.sleepMs(500)
+                        continue
                     }
 
                     AutomationState.log("ℹ No error — closing resend popup + clearing field")
@@ -153,29 +164,37 @@ object PayPalAutomation {
                     StepUtils.sleepMs(500)
                 }
 
-                // ─── FAIL: Red error ───
+                // ─── FAIL: Red error on Continue ───
                 PayPalActions.Result.ERROR -> {
-                    AutomationState.log("✘ Red error on Continue — ROUND END")
+                    AutomationState.log("✘ Red error on Continue — clearing & trying next number")
                     onNumberFail(num); fail++
-                    break
+                    consecutiveFails++
+                    PayPalActions.closeResendPopup(service)
+                    PayPalActions.clearNumberField(service)
+                    StepUtils.sleepMs(500)
                 }
 
                 // ─── TIMEOUT ───
                 PayPalActions.Result.TIMEOUT -> {
-                    AutomationState.log("⏱ Timeout — treating as fail")
+                    AutomationState.log("⏱ Timeout — clearing & trying next number")
                     onNumberFail(num); fail++
+                    consecutiveFails++
                     PayPalActions.closeResendPopup(service)
                     PayPalActions.clearNumberField(service)
                     StepUtils.sleepMs(500)
                 }
 
                 else -> {
-                    AutomationState.log("⏱ Unexpected result — treating as fail")
+                    AutomationState.log("⏱ Unexpected result — trying next number")
                     onNumberFail(num); fail++
+                    consecutiveFails++
                 }
             }
         }
 
+        // ══════════════════════════════════════════════════════════════════
+        //  ROUND CLEANUP
+        // ══════════════════════════════════════════════════════════════════
         PayPalActions.closePayPal(service)
         StepUtils.sleepMs(500)
 
