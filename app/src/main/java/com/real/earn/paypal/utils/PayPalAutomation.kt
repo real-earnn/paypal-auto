@@ -142,16 +142,15 @@ object PayPalAutomation {
                         AutomationState.log("✔ Password flow completed (Return to login)")
                         onNumberSuccess(num); success++
                         consecutiveFails = 0
-                        // Back to input screen
-                        service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                        StepUtils.sleepMs(1500)
                     } else {
-                        AutomationState.log("✘ Password flow failed")
+                        AutomationState.log("✘ Password flow failed — trying next number")
                         onNumberFail(num); fail++
                         consecutiveFails++
-                        PayPalActions.closeResendPopup(service)
-                        PayPalActions.clearNumberField(service)
-                        StepUtils.sleepMs(500)
+                        // Safely back out if not already
+                        service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                        StepUtils.sleepMs(800)
+                        service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                        StepUtils.sleepMs(800)
                     }
                 }
 
