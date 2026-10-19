@@ -31,7 +31,6 @@ object PayPalActions {
         }
     }
 
-    // 🟢 FIX: Ye function missing tha
     fun closePayPal(service: AccessibilityService) {
         try {
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
@@ -77,9 +76,7 @@ object PayPalActions {
             if (StepUtils.shouldStop()) return false
             val root = service.rootInActiveWindow
             if (root != null) {
-                if (dialogOrSearchVisible(root)) {
-                    return true
-                }
+                if (dialogOrSearchVisible(root)) return true
                 val usNode = findUsNode(root)
                 if (usNode != null) {
                     if (tapNode(service, usNode)) {
@@ -202,17 +199,6 @@ object PayPalActions {
 
     private fun dialogStillOpen(root: AccessibilityNodeInfo): Boolean {
         return findByTextEquals(root, "Search") != null || NodeFinder.containsAny(root, "Country of residence", "Country/region")
-    }
-
-    private fun findSearchInput(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val n = queue.removeFirst()
-            if (n.isEditable && n.isVisibleToUser) return n
-            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
-        }
-        return null
     }
 
     private fun cleanCountryName(raw: String): String {
@@ -394,7 +380,6 @@ object PayPalActions {
         return false
     }
 
-    // 🟢 FIX: Ye function missing tha
     fun tapResendTwice(service: AccessibilityService) {
         repeat(2) { attempt ->
             val root = service.rootInActiveWindow
@@ -406,9 +391,6 @@ object PayPalActions {
         }
     }
 
-    // ══════════════════════════════════════════════════════
-    //  🟢 RESULT ENUM & CHECKER
-    // ══════════════════════════════════════════════════════
     enum class Result { OTP_SCREEN, ERROR, TIMEOUT, RETRY_CONTINUE, PASSWORD_SCREEN, STUCK }
 
     fun checkResult(service: AccessibilityService, timeoutMs: Long = 12000): Result {
@@ -416,8 +398,6 @@ object PayPalActions {
         var deadline = startTime + timeoutMs
         var captchaSeen = false
         var errorSeenAt = 0L
-        
-        // 🟢 Stuck detection timer
         var stuckCheckStart = startTime + 6000
 
         while (SystemClock.uptimeMillis() < deadline) {
@@ -428,19 +408,16 @@ object PayPalActions {
                 StepUtils.sleepMs(StepUtils.POLL_MS); continue
             }
 
-            // 1. Password Screen (Exact Strings)
             if (NodeFinder.containsAny(root, "Password", "More Options", "login")) {
                 AutomationState.log("  🔒 Password Screen detected")
                 return Result.PASSWORD_SCREEN
             }
 
-            // 2. Resend / OTP Screen
             if (NodeFinder.containsAny(root, "Resend Code", "Resend code", "Resend")) {
                 AutomationState.log("  ✔ Resend visible → OTP_SCREEN")
                 return Result.OTP_SCREEN
             }
 
-            // 3. Captcha
             if (isCaptchaPresent(root)) {
                 captchaSeen = true
                 val ext = now + 60_000
@@ -448,7 +425,6 @@ object PayPalActions {
                 StepUtils.sleepMs(StepUtils.POLL_MS); continue
             }
 
-            // 4. Error
             if (NodeFinder.containsAny(root, "Something went wrong", "can't be used", "not valid", "invalid", "Enter a valid", "try again", "Try again")) {
                 if (errorSeenAt == 0L) {
                     errorSeenAt = now
@@ -461,7 +437,6 @@ object PayPalActions {
                 errorSeenAt = 0L
             }
 
-            // 5. Stuck Detection (On Number Screen with Continue button loading)
             if (now > stuckCheckStart) {
                 val hasInput = findEditableUnder(root) != null
                 val hasContinue = NodeFinder.findByText(root, "Continue", "Next") != null
@@ -471,7 +446,6 @@ object PayPalActions {
                 }
             }
 
-            // 6. Post-captcha
             if (captchaSeen) {
                 val contBtn = NodeFinder.findByText(root, "Continue", "Next")
                 if (contBtn != null && contBtn.isVisibleToUser) {
@@ -493,7 +467,7 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  🟢 EXACT PASSWORD SCREEN LOGIC (As per user)
+    //  🟢 EXACT PASSWORD SCREEN LOGIC (with proper polling)
     // ══════════════════════════════════════════════════════
     fun handlePasswordScreen(service: AccessibilityService): Boolean {
         AutomationState.log("  🔒 Handling Password Screen...")
@@ -507,7 +481,7 @@ object PayPalActions {
             StepUtils.sleepMs(800)
             return false
         }
-        StepUtils.sleepMs(1200)
+        StepUtils.sleepMs(1500)
 
         // 2. Click "Create New Password"
         if (!clickText(service, "Create New Password", "Create new password", "Create a new code", "Create new code")) {
@@ -518,11 +492,36 @@ object PayPalActions {
             StepUtils.sleepMs(800)
             return false
         }
-        StepUtils.sleepMs(1500)
+        
+        // 🟢 FIX: Wait for screen to load (slow devices)
+        StepUtils.sleepMs(2000)
 
-        // 3. Check for "Text a code"
-        if (!clickText(service, "Text a code", "Text code", "SMS", "Text message")) {
-            AutomationState.log("  ⚠ 'Text a code' NOT found (Email/WhatsApp maybe) → Back & Retry")
+        // 3. 🟢 FIX: POLL for "Text a code" up to 8 seconds (don't give up immediately)
+        var textCodeFound = false
+        val textCodeEnd = SystemClock.uptimeMillis() + 8000
+        while (SystemClock.uptimeMillis() < textCodeEnd) {
+            if (StepUtils.shouldStop()) return false
+            val r = service.rootInActiveWindow
+            if (r != null) {
+                val node = NodeFinder.findByText(r, "Text a code")
+                    ?: NodeFinder.findByText(r, "Text code")
+                    ?: NodeFinder.findByText(r, "Text a new code")
+                    ?: NodeFinder.findByText(r, "SMS")
+                    ?: NodeFinder.findByTextContains(r, "Text a code")
+                    ?: NodeFinder.findByTextContains(r, "Text message")
+                    ?: NodeFinder.findByTextContains(r, "Text code")
+                if (node != null && node.isVisibleToUser) {
+                    AutomationState.log("  ✔ 'Text a code' found — clicking")
+                    tapNode(service, node)
+                    textCodeFound = true
+                    break
+                }
+            }
+            StepUtils.sleepMs(500)
+        }
+
+        if (!textCodeFound) {
+            AutomationState.log("  ⚠ 'Text a code' NOT found after 8s (Email/WhatsApp maybe) → Back & Retry")
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
             StepUtils.sleepMs(800)
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
@@ -532,32 +531,26 @@ object PayPalActions {
         StepUtils.sleepMs(1500)
 
         // 4. Fast Loop: "More Options" -> "Text a new code" -> Check "Return to login"
-        for (loop in 0 until 8) { // 8 attempts
+        for (loop in 0 until 8) {
+            if (StepUtils.shouldStop()) return false
             val root = service.rootInActiveWindow ?: continue
-            
-            // Check if Return to login appeared
+
             if (NodeFinder.findByTextContains(root, "Return to login") != null) {
                 AutomationState.log("  ✔ 'Return to login' found!")
                 clickText(service, "Return to login")
                 StepUtils.sleepMs(1000)
-                // Back once to return to number input
                 service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
                 StepUtils.sleepMs(1000)
                 return true
             }
 
             AutomationState.log("  ↳ Loop ${loop + 1}: More Options -> Text a new code")
-            
-            // Click "More Options"
             clickText(service, "More Options", "More options", "More")
             StepUtils.sleepMs(600)
-            
-            // Click "Text a new code"
             clickText(service, "Text a new code", "Create new code", "Send new code", "Text a code")
             StepUtils.sleepMs(2000)
         }
 
-        // Final check
         val finalRoot = service.rootInActiveWindow
         if (finalRoot != null && NodeFinder.findByTextContains(finalRoot, "Return to login") != null) {
             clickText(service, "Return to login")
