@@ -38,49 +38,125 @@ object PayPalActions {
         } catch (_: Exception) {}
     }
 
-    fun tapGetStarted(service: AccessibilityService, timeoutMs: Long = 15000): Boolean {
+    fun tapGetStarted(service: AccessibilityService, timeoutMs: Long = 20000): Boolean {
         val end = SystemClock.uptimeMillis() + timeoutMs
-        AutomationState.log("ℹ Waiting for Get Started…")
+        AutomationState.log("ℹ Waiting for Get Started (${timeoutMs / 1000}s timeout)...")
+        var lastLog = 0L
 
         while (SystemClock.uptimeMillis() < end) {
             if (StepUtils.shouldStop()) return false
             val root = service.rootInActiveWindow
             if (root != null) {
+                if (isGmailPopupVisible(root)) {
+                    val now = SystemClock.uptimeMillis()
+                    if (now - lastLog > 2000) {
+                        AutomationState.log("  ⚠ Gmail popup blocking Get Started — waiting")
+                        lastLog = now
+                    }
+                    StepUtils.sleepMs(500)
+                    continue
+                }
+
                 val hasEditField = findEditableUnder(root) != null
                 val hasEmailText = NodeFinder.containsAny(root, "email or number", "Email or phone number")
                 if (hasEditField || hasEmailText) {
+                    AutomationState.log("✔ Number screen already visible")
                     return true
                 }
                 val node = findByTextEquals(root, "Get Started")
                     ?: findByTextContains(root, "Get Started")
                 if (node != null) {
+                    AutomationState.log("✔ Get Started found — tapping")
                     if (tapNode(service, node)) {
                         StepUtils.sleepMs(5000)
                         return true
                     }
                 }
             }
+            val now = SystemClock.uptimeMillis()
+            if (now - lastLog > 3000) {
+                AutomationState.log("ℹ Still waiting for Get Started...")
+                lastLog = now
+            }
             StepUtils.sleepMs(StepUtils.POLL_MS)
         }
-        return true
+        AutomationState.log("⚠ Get Started not found after timeout")
+        return false
     }
 
-    fun clickUsButton(service: AccessibilityService, timeoutMs: Long = 20000): Boolean {
+    fun waitForGmailPopupToClose(service: AccessibilityService, timeoutMs: Long): Boolean {
         val end = SystemClock.uptimeMillis() + timeoutMs
+        var sawPopup = false
+        while (SystemClock.uptimeMillis() < end) {
+            if (StepUtils.shouldStop()) return true
+            val root = service.rootInActiveWindow
+            if (root != null) {
+                if (!isGmailPopupVisible(root)) {
+                    if (sawPopup) {
+                        AutomationState.log("✔ Gmail popup closed")
+                    }
+                    return true
+                } else {
+                    if (!sawPopup) {
+                        AutomationState.log("⚠ Gmail popup visible — waiting for it to close")
+                        sawPopup = true
+                    }
+                }
+            }
+            StepUtils.sleepMs(500)
+        }
+        AutomationState.log("⚠ Gmail popup still visible after ${timeoutMs/1000}s")
+        return false
+    }
+
+    fun isGmailPopupVisible(root: AccessibilityNodeInfo?): Boolean {
+        if (root == null) return false
+        return NodeFinder.containsAny(
+            root,
+            "Choose an account",
+            "to continue to PayPal",
+            "to continue to TikTok",
+            "Sign-in options",
+            "Sign in with Google",
+            "Use another account"
+        )
+    }
+
+    fun clickUsButton(service: AccessibilityService, timeoutMs: Long = 25000): Boolean {
+        AutomationState.log("ℹ Searching for US button (${timeoutMs / 1000}s timeout)...")
+        val end = SystemClock.uptimeMillis() + timeoutMs
+        var lastLog = 0L
+
         while (SystemClock.uptimeMillis() < end) {
             if (StepUtils.shouldStop()) return false
             val root = service.rootInActiveWindow
             if (root != null) {
-                if (dialogOrSearchVisible(root)) return true
+                if (isGmailPopupVisible(root)) {
+                    val now = SystemClock.uptimeMillis()
+                    if (now - lastLog > 2000) {
+                        AutomationState.log("  ⚠ Gmail popup blocking US button — waiting")
+                        lastLog = now
+                    }
+                    StepUtils.sleepMs(500)
+                    continue
+                }
+
+                if (dialogOrSearchVisible(root)) {
+                    AutomationState.log("✔ Country dialog already open")
+                    return true
+                }
                 val usNode = findUsNode(root)
                 if (usNode != null) {
+                    AutomationState.log("ℹ US found — tapping")
                     if (tapNode(service, usNode)) {
                         StepUtils.sleepMs(2000)
                         val r2 = service.rootInActiveWindow
                         if (r2 != null && dialogOrSearchVisible(r2)) {
+                            AutomationState.log("✔ Dialog opened")
                             return true
                         } else {
-                            StepUtils.sleepMs(800)
+                            AutomationState.log("  ⚠ Dialog didn't open — retry")
+                            StepUtils.sleepMs(1000)
                             tapNode(service, usNode)
                             StepUtils.sleepMs(2000)
                             val r3 = service.rootInActiveWindow
@@ -91,6 +167,7 @@ object PayPalActions {
             }
             StepUtils.sleepMs(500)
         }
+        AutomationState.log("✘ US button not found after timeout")
         return false
     }
 
@@ -150,21 +227,58 @@ object PayPalActions {
 
     fun typeAndSelectCountry(service: AccessibilityService, countryNameRaw: String, countryIso: String): Boolean {
         val countryName = cleanCountryName(countryNameRaw)
+
         var searchNode: AccessibilityNodeInfo? = null
-        val sEnd = SystemClock.uptimeMillis() + 5000
-        while (SystemClock.uptimeMillis() < sEnd) {
+        var lastLog = 0L
+        val searchEnd = SystemClock.uptimeMillis() + 15000
+
+        while (SystemClock.uptimeMillis() < searchEnd) {
             if (StepUtils.shouldStop()) return false
             val root = service.rootInActiveWindow
             if (root != null) {
-                searchNode = findByTextEquals(root, "Search")
-                if (searchNode != null) break
+                if (isGmailPopupVisible(root)) {
+                    val now = SystemClock.uptimeMillis()
+                    if (now - lastLog > 2000) {
+                        AutomationState.log("  ⚠ Gmail popup blocking Search — waiting")
+                        lastLog = now
+                    }
+                    StepUtils.sleepMs(500)
+                    continue
+                }
+
+                val node = findByTextEquals(root, "Search") ?: findByTextContains(root, "Search")
+                if (node != null && node.isVisibleToUser) {
+                    searchNode = node
+                    break
+                }
             }
             StepUtils.sleepMs(StepUtils.POLL_MS)
         }
-        if (searchNode == null) return false
 
-        tapNode(service, searchNode)
+        if (searchNode == null) {
+            AutomationState.log("✘ Search input not found after 15s")
+            return false
+        }
+
+        AutomationState.log("ℹ Search input found — tapping")
+        if (!tapNode(service, searchNode)) {
+            AutomationState.log("  ⚠ Search tap failed — retrying after popup check")
+            StepUtils.sleepMs(2000)
+            val retryRoot = service.rootInActiveWindow
+            if (retryRoot != null) {
+                val retrySearch = findByTextEquals(retryRoot, "Search") ?: findByTextContains(retryRoot, "Search")
+                if (retrySearch != null && tapNode(service, retrySearch)) {
+                    AutomationState.log("  ✔ Retry tap successful")
+                } else {
+                    AutomationState.log("  ✘ Retry tap failed too")
+                    return false
+                }
+            } else {
+                return false
+            }
+        }
         StepUtils.sleepMs(700)
+
         pasteText(service, countryName, "search")
         StepUtils.sleepMs(2000)
 
@@ -174,6 +288,7 @@ object PayPalActions {
             if (StepUtils.shouldStop()) return false
             val root = service.rootInActiveWindow ?: continue
             if (!dialogStillOpen(root)) {
+                AutomationState.log("✔ Country selected (dialog closed)")
                 StepUtils.sleepMs(1200)
                 return true
             }
@@ -246,7 +361,6 @@ object PayPalActions {
         return false
     }
 
-    // 🟢 NEW HELPER: Check if Resend popup is still visible
     fun isResendVisible(service: AccessibilityService): Boolean {
         val root = service.rootInActiveWindow ?: return false
         return NodeFinder.containsAny(root, "Resend Code", "Resend code", "Resend")
@@ -462,9 +576,18 @@ object PayPalActions {
         return NodeFinder.containsAny(root, "I am human", "Security Challenge", "hCaptcha", "Verify you are human", "Drag the", "Select all")
     }
 
+    // ══════════════════════════════════════════════════════
+    //  🟢 FIXED: Password Screen with Autofill Dismiss & Double Back
+    // ══════════════════════════════════════════════════════
     fun handlePasswordScreen(service: AccessibilityService): Boolean {
         AutomationState.log("  🔒 Handling Password Screen...")
+
+        // 1. Dismiss any autofill overlay before clicking
+        dismissAutofillOverlay(service)
+
+        // 2. Click "More Options"
         if (!clickText(service, "More Options", "More options", "More")) {
+            AutomationState.log("  ✘ 'More Options' not found → Back & Retry")
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
             StepUtils.sleepMs(800)
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
@@ -473,7 +596,9 @@ object PayPalActions {
         }
         StepUtils.sleepMs(1500)
 
+        // 3. Click "Create New Password"
         if (!clickText(service, "Create New Password", "Create new password", "Create a new code", "Create new code")) {
+            AutomationState.log("  ✘ 'Create New Password' not found → Back & Retry")
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
             StepUtils.sleepMs(800)
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
@@ -482,6 +607,7 @@ object PayPalActions {
         }
         StepUtils.sleepMs(2000)
 
+        // 4. Poll for "Text a code" (8 seconds wait)
         var textCodeFound = false
         val textCodeEnd = SystemClock.uptimeMillis() + 8000
         while (SystemClock.uptimeMillis() < textCodeEnd) {
@@ -503,6 +629,7 @@ object PayPalActions {
         }
 
         if (!textCodeFound) {
+            AutomationState.log("  ⚠ 'Text a code' NOT found after 8s (Email/WhatsApp maybe) → Back & Retry")
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
             StepUtils.sleepMs(800)
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
@@ -511,18 +638,42 @@ object PayPalActions {
         }
         StepUtils.sleepMs(1500)
 
+        // 5. Fast Loop: "More Options" -> "Text a new code" -> Check "Return to login"
         for (loop in 0 until 8) {
             if (StepUtils.shouldStop()) return false
             val root = service.rootInActiveWindow ?: continue
 
             if (NodeFinder.findByTextContains(root, "Return to login") != null) {
+                AutomationState.log("  ✔ 'Return to login' found!")
                 clickText(service, "Return to login")
                 StepUtils.sleepMs(1000)
-                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                StepUtils.sleepMs(1000)
+                
+                // 🟢 DOUBLE BACK FIX: Loop back press until Phone Input screen is reached
+                AutomationState.log("  ↳ Doing multi-back to reach Number Input screen...")
+                for (backAttempt in 0 until 3) {
+                    service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                    StepUtils.sleepMs(1000)
+                    
+                    val currentRoot = service.rootInActiveWindow
+                    if (currentRoot != null) {
+                        val hasEdit = findEditableUnder(currentRoot) != null
+                        val hasPasswordOrOtp = NodeFinder.containsAny(currentRoot, "Password", "More Options", "Resend Code", "login")
+                        
+                        if (hasEdit && !hasPasswordOrOtp) {
+                            AutomationState.log("  ✔ Reached actual Number Input screen after ${backAttempt + 1} backs")
+                            return true
+                        }
+                    }
+                }
+                AutomationState.log("  ⚠ Could not confirm Number screen, but returning true anyway")
                 return true
             }
 
+            AutomationState.log("  ↳ Loop ${loop + 1}: More Options -> Text a new code")
+            
+            // 🟢 Dismiss autofill BEFORE trying to click (fix for hidden "More Options")
+            dismissAutofillOverlay(service)
+            
             clickText(service, "More Options", "More options", "More")
             StepUtils.sleepMs(600)
             clickText(service, "Text a new code", "Create new code", "Send new code", "Text a code")
@@ -533,11 +684,33 @@ object PayPalActions {
         if (finalRoot != null && NodeFinder.findByTextContains(finalRoot, "Return to login") != null) {
             clickText(service, "Return to login")
             StepUtils.sleepMs(1000)
-            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-            StepUtils.sleepMs(1000)
+            for (backAttempt in 0 until 3) {
+                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                StepUtils.sleepMs(1000)
+                val currentRoot = service.rootInActiveWindow
+                if (currentRoot != null) {
+                    val hasEdit = findEditableUnder(currentRoot) != null
+                    val hasPasswordOrOtp = NodeFinder.containsAny(currentRoot, "Password", "More Options", "Resend Code", "login")
+                    if (hasEdit && !hasPasswordOrOtp) return true
+                }
+            }
             return true
         }
         return false
+    }
+
+    // 🟢 NEW HELPER: Tap empty space at the top to dismiss Google Autofill overlay
+    private fun dismissAutofillOverlay(service: AccessibilityService) {
+        val root = service.rootInActiveWindow ?: return
+        val screenR = Rect(); root.getBoundsInScreen(screenR)
+        
+        // Tap near the very top center (safe zone, away from buttons)
+        val tapX = screenR.centerX()
+        val tapY = screenR.top + 150
+        
+        AutomationState.log("    ↳ Tapping top area to dismiss autofill overlay")
+        tapAt(service, tapX, tapY)
+        StepUtils.sleepMs(300)
     }
 
     private fun clickText(service: AccessibilityService, vararg texts: String): Boolean {
