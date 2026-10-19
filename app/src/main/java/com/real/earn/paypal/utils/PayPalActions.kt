@@ -19,6 +19,11 @@ object PayPalActions {
 
     const val PAYPAL_PKG = "com.paypal.android.p2pmobile"
 
+    // 🟢 Reset signal for Password flow
+    @Volatile
+    var passwordFlowNeedsReset: Boolean = false
+        private set
+
     fun launch(service: AccessibilityService): Boolean {
         return try {
             val intent = service.packageManager.getLaunchIntentForPackage(PAYPAL_PKG) ?: return false
@@ -38,9 +43,21 @@ object PayPalActions {
         } catch (_: Exception) {}
     }
 
+    // 🟢 STRICT Gmail popup detection - ONLY real popup markers
+    fun isGmailPopupVisible(root: AccessibilityNodeInfo?): Boolean {
+        if (root == null) return false
+        // Only these appear in ACTUAL Google account chooser popup
+        return NodeFinder.containsAny(
+            root,
+            "Choose an account",
+            "to continue to PayPal",
+            "to continue to TikTok"
+        )
+    }
+
     fun tapGetStarted(service: AccessibilityService, timeoutMs: Long = 20000): Boolean {
         val end = SystemClock.uptimeMillis() + timeoutMs
-        AutomationState.log("ℹ Waiting for Get Started (${timeoutMs / 1000}s timeout)...")
+        AutomationState.log("ℹ Waiting for Get Started (${timeoutMs / 1000}s)...")
         var lastLog = 0L
 
         while (SystemClock.uptimeMillis() < end) {
@@ -50,7 +67,7 @@ object PayPalActions {
                 if (isGmailPopupVisible(root)) {
                     val now = SystemClock.uptimeMillis()
                     if (now - lastLog > 2000) {
-                        AutomationState.log("  ⚠ Gmail popup blocking Get Started — waiting")
+                        AutomationState.log("  ⚠ Gmail popup blocking — waiting")
                         lastLog = now
                     }
                     StepUtils.sleepMs(500)
@@ -63,9 +80,11 @@ object PayPalActions {
                     AutomationState.log("✔ Number screen already visible")
                     return true
                 }
+                // Try multiple find strategies
                 val node = findByTextEquals(root, "Get Started")
                     ?: findByTextContains(root, "Get Started")
-                if (node != null) {
+                    ?: findByContentDescContains(root, "Get Started")
+                if (node != null && node.isVisibleToUser) {
                     AutomationState.log("✔ Get Started found — tapping")
                     if (tapNode(service, node)) {
                         StepUtils.sleepMs(5000)
@@ -80,7 +99,7 @@ object PayPalActions {
             }
             StepUtils.sleepMs(StepUtils.POLL_MS)
         }
-        AutomationState.log("⚠ Get Started not found after timeout")
+        AutomationState.log("⚠ Get Started not found")
         return false
     }
 
@@ -92,38 +111,22 @@ object PayPalActions {
             val root = service.rootInActiveWindow
             if (root != null) {
                 if (!isGmailPopupVisible(root)) {
-                    if (sawPopup) {
-                        AutomationState.log("✔ Gmail popup closed")
-                    }
+                    if (sawPopup) AutomationState.log("✔ Gmail popup closed")
                     return true
                 } else {
                     if (!sawPopup) {
-                        AutomationState.log("⚠ Gmail popup visible — waiting for it to close")
+                        AutomationState.log("⚠ Gmail popup visible — waiting")
                         sawPopup = true
                     }
                 }
             }
             StepUtils.sleepMs(500)
         }
-        AutomationState.log("⚠ Gmail popup still visible after ${timeoutMs/1000}s")
         return false
     }
 
-    fun isGmailPopupVisible(root: AccessibilityNodeInfo?): Boolean {
-        if (root == null) return false
-        return NodeFinder.containsAny(
-            root,
-            "Choose an account",
-            "to continue to PayPal",
-            "to continue to TikTok",
-            "Sign-in options",
-            "Sign in with Google",
-            "Use another account"
-        )
-    }
-
     fun clickUsButton(service: AccessibilityService, timeoutMs: Long = 25000): Boolean {
-        AutomationState.log("ℹ Searching for US button (${timeoutMs / 1000}s timeout)...")
+        AutomationState.log("ℹ Searching for US button...")
         val end = SystemClock.uptimeMillis() + timeoutMs
         var lastLog = 0L
 
@@ -134,7 +137,7 @@ object PayPalActions {
                 if (isGmailPopupVisible(root)) {
                     val now = SystemClock.uptimeMillis()
                     if (now - lastLog > 2000) {
-                        AutomationState.log("  ⚠ Gmail popup blocking US button — waiting")
+                        AutomationState.log("  ⚠ Gmail popup blocking — waiting")
                         lastLog = now
                     }
                     StepUtils.sleepMs(500)
@@ -142,7 +145,7 @@ object PayPalActions {
                 }
 
                 if (dialogOrSearchVisible(root)) {
-                    AutomationState.log("✔ Country dialog already open")
+                    AutomationState.log("✔ Country dialog open")
                     return true
                 }
                 val usNode = findUsNode(root)
@@ -151,32 +154,29 @@ object PayPalActions {
                     if (tapNode(service, usNode)) {
                         StepUtils.sleepMs(2000)
                         val r2 = service.rootInActiveWindow
-                        if (r2 != null && dialogOrSearchVisible(r2)) {
-                            AutomationState.log("✔ Dialog opened")
-                            return true
-                        } else {
-                            AutomationState.log("  ⚠ Dialog didn't open — retry")
-                            StepUtils.sleepMs(1000)
-                            tapNode(service, usNode)
-                            StepUtils.sleepMs(2000)
-                            val r3 = service.rootInActiveWindow
-                            if (r3 != null && dialogOrSearchVisible(r3)) return true
-                        }
+                        if (r2 != null && dialogOrSearchVisible(r2)) return true
+                        StepUtils.sleepMs(1000)
+                        tapNode(service, usNode)
+                        StepUtils.sleepMs(2000)
+                        val r3 = service.rootInActiveWindow
+                        if (r3 != null && dialogOrSearchVisible(r3)) return true
                     }
                 }
             }
             StepUtils.sleepMs(500)
         }
-        AutomationState.log("✘ US button not found after timeout")
         return false
     }
 
+    // 🟢 RELIABLE tap: direct click → parent click → coordinate tap
     private fun tapNode(service: AccessibilityService, node: AccessibilityNodeInfo): Boolean {
         if (node.isClickable && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
         val parent = NodeFinder.findClickableParent(node)
         if (parent != null && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
         val bounds = Rect(); node.getBoundsInScreen(bounds)
-        if (bounds.width() > 0 && bounds.height() > 0) return tapAt(service, bounds.centerX(), bounds.centerY())
+        if (bounds.width() > 0 && bounds.height() > 0) {
+            return tapAt(service, bounds.centerX(), bounds.centerY())
+        }
         return false
     }
 
@@ -227,7 +227,6 @@ object PayPalActions {
 
     fun typeAndSelectCountry(service: AccessibilityService, countryNameRaw: String, countryIso: String): Boolean {
         val countryName = cleanCountryName(countryNameRaw)
-
         var searchNode: AccessibilityNodeInfo? = null
         var lastLog = 0L
         val searchEnd = SystemClock.uptimeMillis() + 15000
@@ -239,13 +238,12 @@ object PayPalActions {
                 if (isGmailPopupVisible(root)) {
                     val now = SystemClock.uptimeMillis()
                     if (now - lastLog > 2000) {
-                        AutomationState.log("  ⚠ Gmail popup blocking Search — waiting")
+                        AutomationState.log("  ⚠ Gmail popup blocking Search")
                         lastLog = now
                     }
                     StepUtils.sleepMs(500)
                     continue
                 }
-
                 val node = findByTextEquals(root, "Search") ?: findByTextContains(root, "Search")
                 if (node != null && node.isVisibleToUser) {
                     searchNode = node
@@ -255,27 +253,15 @@ object PayPalActions {
             StepUtils.sleepMs(StepUtils.POLL_MS)
         }
 
-        if (searchNode == null) {
-            AutomationState.log("✘ Search input not found after 15s")
-            return false
-        }
+        if (searchNode == null) return false
 
-        AutomationState.log("ℹ Search input found — tapping")
         if (!tapNode(service, searchNode)) {
-            AutomationState.log("  ⚠ Search tap failed — retrying after popup check")
             StepUtils.sleepMs(2000)
             val retryRoot = service.rootInActiveWindow
             if (retryRoot != null) {
                 val retrySearch = findByTextEquals(retryRoot, "Search") ?: findByTextContains(retryRoot, "Search")
-                if (retrySearch != null && tapNode(service, retrySearch)) {
-                    AutomationState.log("  ✔ Retry tap successful")
-                } else {
-                    AutomationState.log("  ✘ Retry tap failed too")
-                    return false
-                }
-            } else {
-                return false
-            }
+                if (retrySearch == null || !tapNode(service, retrySearch)) return false
+            } else return false
         }
         StepUtils.sleepMs(700)
 
@@ -288,7 +274,6 @@ object PayPalActions {
             if (StepUtils.shouldStop()) return false
             val root = service.rootInActiveWindow ?: continue
             if (!dialogStillOpen(root)) {
-                AutomationState.log("✔ Country selected (dialog closed)")
                 StepUtils.sleepMs(1200)
                 return true
             }
@@ -311,9 +296,7 @@ object PayPalActions {
         return findByTextEquals(root, "Search") != null || NodeFinder.containsAny(root, "Country of residence", "Country/region")
     }
 
-    private fun cleanCountryName(raw: String): String {
-        return raw.replace(Regex("[0-9]+(-[0-9]+)*$"), "").trim()
-    }
+    private fun cleanCountryName(raw: String): String = raw.replace(Regex("[0-9]+(-[0-9]+)*$"), "").trim()
 
     private fun findCountryResult(root: AccessibilityNodeInfo?, name: String, iso: String): AccessibilityNodeInfo? {
         if (root == null) return null
@@ -343,27 +326,66 @@ object PayPalActions {
     fun hasRedError(service: AccessibilityService): Boolean {
         val root = service.rootInActiveWindow ?: return false
         return NodeFinder.containsAny(
-            root,
-            "Something went wrong", "can't be used", "not valid",
+            root, "Something went wrong", "can't be used", "not valid",
             "invalid", "Enter a valid", "try again", "Try again"
         )
     }
 
+    // 🟢 ROBUST close popup: tap X → top area → 2 forced backs
     fun closeResendPopup(service: AccessibilityService): Boolean {
         val root = service.rootInActiveWindow ?: return false
         val closeTexts = arrayOf("Close", "Cancel", "Dismiss", "✕", "✖", "×", "X")
-        NodeFinder.findByText(root, *closeTexts)?.let { n ->
-            if (NodeFinder.isVisible(n) && NodeFinder.click(n)) {
-                StepUtils.sleepMs(300)
-                return true
+
+        // Method 1: tap X (with coordinate fallback via tapNode)
+        for (text in closeTexts) {
+            val n = findByTextEquals(root, text) ?: findByTextContains(root, text)
+            if (n != null && n.isVisibleToUser) {
+                AutomationState.log("  → Tap close button: '$text'")
+                if (tapNode(service, n)) {
+                    StepUtils.sleepMs(500)
+                    if (!isResendVisible(service)) return true
+                }
             }
         }
-        return false
+
+        // Method 2: tap top empty area
+        val screenR = Rect(); root.getBoundsInScreen(screenR)
+        val topY = screenR.top + 150
+        AutomationState.log("  → Tap top area to dismiss")
+        tapAt(service, screenR.centerX(), topY)
+        StepUtils.sleepMs(600)
+        if (!isResendVisible(service)) return true
+
+        // Method 3: check keyboard, force 2 backs if popup still visible
+        if (isKeyboardOpen(root)) {
+            AutomationState.log("  → Keyboard open — forcing 2 back presses")
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            StepUtils.sleepMs(400)
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            StepUtils.sleepMs(800)
+        }
+        return !isResendVisible(service)
     }
 
     fun isResendVisible(service: AccessibilityService): Boolean {
         val root = service.rootInActiveWindow ?: return false
         return NodeFinder.containsAny(root, "Resend Code", "Resend code", "Resend")
+    }
+
+    private fun isKeyboardOpen(root: AccessibilityNodeInfo): Boolean {
+        val kbdPkgs = listOf(
+            "com.google.android.inputmethod", "com.touchtype", "com.samsung.android.honeyboard",
+            "com.baidu.input", "com.sohu.inputmethod", "com.swiftkey"
+        )
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val n = queue.removeFirst()
+            val pkg = n.packageName?.toString()?.lowercase() ?: ""
+            if (kbdPkgs.any { pkg.contains(it) }) return true
+            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
+        }
+        return false
     }
 
     fun clearNumberField(service: AccessibilityService): Boolean {
@@ -519,17 +541,10 @@ object PayPalActions {
             if (StepUtils.shouldStop()) return Result.TIMEOUT
             val now = SystemClock.uptimeMillis()
             val root = service.rootInActiveWindow
-            if (root == null) {
-                StepUtils.sleepMs(StepUtils.POLL_MS); continue
-            }
+            if (root == null) { StepUtils.sleepMs(StepUtils.POLL_MS); continue }
 
-            if (NodeFinder.containsAny(root, "Password", "More Options", "login")) {
-                return Result.PASSWORD_SCREEN
-            }
-
-            if (NodeFinder.containsAny(root, "Resend Code", "Resend code", "Resend")) {
-                return Result.OTP_SCREEN
-            }
+            if (NodeFinder.containsAny(root, "Password", "More Options", "login")) return Result.PASSWORD_SCREEN
+            if (NodeFinder.containsAny(root, "Resend Code", "Resend code", "Resend")) return Result.OTP_SCREEN
 
             if (isCaptchaPresent(root)) {
                 captchaSeen = true
@@ -539,22 +554,15 @@ object PayPalActions {
             }
 
             if (NodeFinder.containsAny(root, "Something went wrong", "can't be used", "not valid", "invalid", "Enter a valid", "try again", "Try again")) {
-                if (errorSeenAt == 0L) {
-                    errorSeenAt = now
-                } else if (now - errorSeenAt >= 400) {
-                    return Result.ERROR
-                }
+                if (errorSeenAt == 0L) errorSeenAt = now
+                else if (now - errorSeenAt >= 400) return Result.ERROR
                 StepUtils.sleepMs(StepUtils.POLL_MS); continue
-            } else {
-                errorSeenAt = 0L
-            }
+            } else errorSeenAt = 0L
 
             if (now > stuckCheckStart) {
                 val hasInput = findEditableUnder(root) != null
                 val hasContinue = NodeFinder.findByText(root, "Continue", "Next") != null
-                if (hasInput && hasContinue && !captchaSeen) {
-                    return Result.STUCK
-                }
+                if (hasInput && hasContinue && !captchaSeen) return Result.STUCK
             }
 
             if (captchaSeen) {
@@ -564,11 +572,9 @@ object PayPalActions {
                     return Result.RETRY_CONTINUE
                 }
             }
-
             StepUtils.sleepMs(StepUtils.POLL_MS)
         }
-        if (errorSeenAt > 0L) return Result.ERROR
-        return Result.TIMEOUT
+        return if (errorSeenAt > 0L) Result.ERROR else Result.TIMEOUT
     }
 
     private fun isCaptchaPresent(root: AccessibilityNodeInfo?): Boolean {
@@ -576,49 +582,39 @@ object PayPalActions {
         return NodeFinder.containsAny(root, "I am human", "Security Challenge", "hCaptcha", "Verify you are human", "Drag the", "Select all")
     }
 
-    // ══════════════════════════════════════════════════════
-    //  🟢 FIXED: Password Screen with Autofill Dismiss & Double Back
-    // ══════════════════════════════════════════════════════
+    // 🟢 Password flow with FORCE RESET on unexpected screen
     fun handlePasswordScreen(service: AccessibilityService): Boolean {
+        passwordFlowNeedsReset = false
         AutomationState.log("  🔒 Handling Password Screen...")
 
-        // 1. Dismiss any autofill overlay before clicking
         dismissAutofillOverlay(service)
 
-        // 2. Click "More Options"
         if (!clickText(service, "More Options", "More options", "More")) {
-            AutomationState.log("  ✘ 'More Options' not found → Back & Retry")
-            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-            StepUtils.sleepMs(800)
-            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-            StepUtils.sleepMs(800)
+            AutomationState.log("  ✘ 'More Options' not found")
+            forceBack(service, 2)
             return false
         }
         StepUtils.sleepMs(1500)
 
-        // 3. Click "Create New Password"
         if (!clickText(service, "Create New Password", "Create new password", "Create a new code", "Create new code")) {
-            AutomationState.log("  ✘ 'Create New Password' not found → Back & Retry")
-            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-            StepUtils.sleepMs(800)
-            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-            StepUtils.sleepMs(800)
+            AutomationState.log("  ✘ 'Create New Password' not found")
+            forceBack(service, 2)
             return false
         }
         StepUtils.sleepMs(2000)
 
-        // 4. Poll for "Text a code" (8 seconds wait)
+        // 🟢 After Create New Password: MUST see "Text a code" (or variants)
         var textCodeFound = false
         val textCodeEnd = SystemClock.uptimeMillis() + 8000
         while (SystemClock.uptimeMillis() < textCodeEnd) {
             if (StepUtils.shouldStop()) return false
             val r = service.rootInActiveWindow
             if (r != null) {
-                val node = NodeFinder.findByText(r, "Text a code")
-                    ?: NodeFinder.findByText(r, "Text code")
-                    ?: NodeFinder.findByText(r, "Text a new code")
-                    ?: NodeFinder.findByText(r, "SMS")
-                    ?: NodeFinder.findByTextContains(r, "Text a code")
+                val node = findByTextEquals(r, "Text a code")
+                    ?: findByTextEquals(r, "Text code")
+                    ?: findByTextContains(r, "Text a code")
+                    ?: findByTextContains(r, "Text code")
+                    ?: findByTextEquals(r, "SMS")
                 if (node != null && node.isVisibleToUser) {
                     tapNode(service, node)
                     textCodeFound = true
@@ -628,89 +624,81 @@ object PayPalActions {
             StepUtils.sleepMs(500)
         }
 
+        // 🟢 FORCE RESET if unexpected screen
         if (!textCodeFound) {
-            AutomationState.log("  ⚠ 'Text a code' NOT found after 8s (Email/WhatsApp maybe) → Back & Retry")
-            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-            StepUtils.sleepMs(800)
-            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-            StepUtils.sleepMs(800)
+            AutomationState.log("  ⚠ UNEXPECTED screen (no 'Text a code') — FORCE RESET")
+            passwordFlowNeedsReset = true
             return false
         }
         StepUtils.sleepMs(1500)
 
-        // 5. Fast Loop: "More Options" -> "Text a new code" -> Check "Return to login"
+        // Loop: More Options -> Text a new code -> check Return to login
         for (loop in 0 until 8) {
             if (StepUtils.shouldStop()) return false
             val root = service.rootInActiveWindow ?: continue
 
             if (NodeFinder.findByTextContains(root, "Return to login") != null) {
-                AutomationState.log("  ✔ 'Return to login' found!")
+                AutomationState.log("  ✔ 'Return to login' found")
                 clickText(service, "Return to login")
-                StepUtils.sleepMs(1000)
-                
-                // 🟢 DOUBLE BACK FIX: Loop back press until Phone Input screen is reached
-                AutomationState.log("  ↳ Doing multi-back to reach Number Input screen...")
-                for (backAttempt in 0 until 3) {
-                    service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                    StepUtils.sleepMs(1000)
-                    
-                    val currentRoot = service.rootInActiveWindow
-                    if (currentRoot != null) {
-                        val hasEdit = findEditableUnder(currentRoot) != null
-                        val hasPasswordOrOtp = NodeFinder.containsAny(currentRoot, "Password", "More Options", "Resend Code", "login")
-                        
-                        if (hasEdit && !hasPasswordOrOtp) {
-                            AutomationState.log("  ✔ Reached actual Number Input screen after ${backAttempt + 1} backs")
-                            return true
-                        }
-                    }
+                StepUtils.sleepMs(1200)
+
+                // 🟢 1 back + check screen
+                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                StepUtils.sleepMs(1500)
+
+                val afterBack1 = service.rootInActiveWindow
+                if (afterBack1 != null && isOnNumberInputScreen(afterBack1)) {
+                    // On number screen — WAIT for Gmail popup cycle (number is locked until popup)
+                    AutomationState.log("  ✔ On number screen — waiting for Gmail popup cycle...")
+                    StepUtils.sleepMs(2000)
+                    waitForGmailPopupToClose(service, 10000)
+                    return true
                 }
-                AutomationState.log("  ⚠ Could not confirm Number screen, but returning true anyway")
+
+                // Not on number screen — 2nd back
+                AutomationState.log("  ↳ Not on number screen — 2nd back")
+                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                StepUtils.sleepMs(1500)
+
+                val afterBack2 = service.rootInActiveWindow
+                if (afterBack2 != null && isOnNumberInputScreen(afterBack2)) {
+                    StepUtils.sleepMs(2000)
+                    waitForGmailPopupToClose(service, 10000)
+                    return true
+                }
                 return true
             }
 
             AutomationState.log("  ↳ Loop ${loop + 1}: More Options -> Text a new code")
-            
-            // 🟢 Dismiss autofill BEFORE trying to click (fix for hidden "More Options")
             dismissAutofillOverlay(service)
-            
             clickText(service, "More Options", "More options", "More")
             StepUtils.sleepMs(600)
             clickText(service, "Text a new code", "Create new code", "Send new code", "Text a code")
             StepUtils.sleepMs(2000)
         }
-
-        val finalRoot = service.rootInActiveWindow
-        if (finalRoot != null && NodeFinder.findByTextContains(finalRoot, "Return to login") != null) {
-            clickText(service, "Return to login")
-            StepUtils.sleepMs(1000)
-            for (backAttempt in 0 until 3) {
-                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                StepUtils.sleepMs(1000)
-                val currentRoot = service.rootInActiveWindow
-                if (currentRoot != null) {
-                    val hasEdit = findEditableUnder(currentRoot) != null
-                    val hasPasswordOrOtp = NodeFinder.containsAny(currentRoot, "Password", "More Options", "Resend Code", "login")
-                    if (hasEdit && !hasPasswordOrOtp) return true
-                }
-            }
-            return true
-        }
+        passwordFlowNeedsReset = true
         return false
     }
 
-    // 🟢 NEW HELPER: Tap empty space at the top to dismiss Google Autofill overlay
+    // 🟢 Check if we're ACTUALLY on number input screen (not password/OTP)
+    private fun isOnNumberInputScreen(root: AccessibilityNodeInfo): Boolean {
+        if (findEditableUnder(root) == null) return false
+        if (NodeFinder.containsAny(root, "Password", "More Options", "Resend Code", "Resend code", "6-digit")) return false
+        return NodeFinder.containsAny(root, "Phone", "phone", "email or number", "Email or phone")
+    }
+
     private fun dismissAutofillOverlay(service: AccessibilityService) {
         val root = service.rootInActiveWindow ?: return
         val screenR = Rect(); root.getBoundsInScreen(screenR)
-        
-        // Tap near the very top center (safe zone, away from buttons)
-        val tapX = screenR.centerX()
-        val tapY = screenR.top + 150
-        
-        AutomationState.log("    ↳ Tapping top area to dismiss autofill overlay")
-        tapAt(service, tapX, tapY)
+        tapAt(service, screenR.centerX(), screenR.top + 150)
         StepUtils.sleepMs(300)
+    }
+
+    private fun forceBack(service: AccessibilityService, times: Int) {
+        repeat(times) {
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            StepUtils.sleepMs(600)
+        }
     }
 
     private fun clickText(service: AccessibilityService, vararg texts: String): Boolean {
@@ -747,6 +735,20 @@ object PayPalActions {
             val n = queue.removeFirst()
             val t = n.text?.toString()?.lowercase() ?: ""
             if (t.contains(lower) && n.isVisibleToUser) return n
+            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
+        }
+        return null
+    }
+
+    private fun findByContentDescContains(root: AccessibilityNodeInfo?, needle: String): AccessibilityNodeInfo? {
+        if (root == null) return null
+        val lower = needle.lowercase()
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val n = queue.removeFirst()
+            val d = n.contentDescription?.toString()?.lowercase() ?: ""
+            if (d.contains(lower) && n.isVisibleToUser) return n
             for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
         }
         return null
