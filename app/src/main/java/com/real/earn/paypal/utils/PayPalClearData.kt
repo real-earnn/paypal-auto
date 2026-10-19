@@ -76,26 +76,60 @@ object PayPalClearData {
         }
     }
 
+    // ══════════════════════════════════════════════════════════════════════
+    //  🟢 FIXED: Tap the CARD (not the label text) in Recents
+    // ══════════════════════════════════════════════════════════════════════
     private fun tryRecentsFallback(service: AccessibilityService): Boolean {
+        // 🟢 Check 1: Is App Info ALREADY visible? (sometimes the intent opened it but detection missed)
+        if (waitForAppInfoContent(service, 1500)) {
+            AutomationState.log("  ✔ App Info was already visible!")
+            return true
+        }
+
         service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_RECENTS)
-        StepUtils.sleepMs(1800)
+        StepUtils.sleepMs(2000)
 
         val root = service.rootInActiveWindow
         if (root != null) {
+            // Find "Settings" text in Recents (label under the app card)
             val settingsNode = NodeFinder.findByText(root, "Settings", "سیٹنگز")
                 ?: NodeFinder.findByTextContains(root, "Settings")
                 ?: findByContentDescContains(root, "Settings")
 
             if (settingsNode != null) {
-                AutomationState.log("  ✔ Found Settings in Recents — clicking")
-                val r = Rect(); settingsNode.getBoundsInScreen(r)
-                if (r.width() > 0 && r.height() > 0) {
-                    tapAt(service, r.centerX(), r.centerY())
-                    StepUtils.sleepMs(1800)
-                    if (waitForAppInfoContent(service, 6000)) {
-                        return true
+                AutomationState.log("  ✔ Found 'Settings' label in Recents")
+
+                // 🟢 Method 1: Click the CLICKABLE PARENT (the card container)
+                val clickableParent = NodeFinder.findClickableParent(settingsNode)
+                if (clickableParent != null) {
+                    val pR = Rect(); clickableParent.getBoundsInScreen(pR)
+                    if (pR.width() > 0 && pR.height() > 0 && pR.top < pR.bottom) {
+                        AutomationState.log("  → Tap 1: Clickable card at (${pR.centerX()}, ${pR.centerY()})")
+                        tapAt(service, pR.centerX(), pR.centerY())
+                        StepUtils.sleepMs(1500)
+                        if (waitForAppInfoContent(service, 6000)) return true
                     }
                 }
+
+                // 🟢 Method 2: Tap ABOVE the label (where card preview is)
+                val r = Rect(); settingsNode.getBoundsInScreen(r)
+                val tapX = r.centerX()
+                val tapY = r.top - 250
+                if (tapY > 100) {
+                    AutomationState.log("  → Tap 2: Above label at ($tapX, $tapY)")
+                    tapAt(service, tapX, tapY)
+                    StepUtils.sleepMs(1500)
+                    if (waitForAppInfoContent(service, 6000)) return true
+                }
+
+                // 🟢 Method 3: Tap center of screen (last resort)
+                val screenR = Rect(); root.getBoundsInScreen(screenR)
+                AutomationState.log("  → Tap 3: Screen center (${screenR.centerX()}, ${screenR.centerY()})")
+                tapAt(service, screenR.centerX(), screenR.centerY())
+                StepUtils.sleepMs(1500)
+                if (waitForAppInfoContent(service, 6000)) return true
+            } else {
+                AutomationState.log("  ⚠ 'Settings' label not found in Recents")
             }
         }
 
@@ -150,7 +184,8 @@ object PayPalClearData {
                 "Storage", "Storage & cache", "Force stop", "Uninstall",
                 "App info", "App permissions", "Notifications",
                 "Permissions", "Battery", "Mobile data", "Data usage",
-                "Version", "Size"
+                "Version", "Size",
+                "اسٹوریج", "اسٹور", "زبردستی", "ان انسٹال"  // Urdu fallbacks
             )
             if (hasContent) return true
 
@@ -208,49 +243,11 @@ object PayPalClearData {
             AutomationState.log("  ✘ Clear button click failed")
             return false
         }
-        
-        // 🟢 FIX: Wait up to 10 seconds for the confirm dialog
-        waitAndConfirmClearData(service)
-        return true
-    }
+        StepUtils.sleepMs(1000)
 
-    // 🟢 NEW: Robust dialog waiter (replaces old handleSubMenu/handleConfirmDialog)
-    private fun waitAndConfirmClearData(service: AccessibilityService) {
-        AutomationState.log("  ⏳ Waiting up to 10s for confirmation dialog...")
-        val end = SystemClock.uptimeMillis() + 10_000 // 10 seconds
-        var dialogSeen = false
-        
-        while (SystemClock.uptimeMillis() < end) {
-            if (StepUtils.shouldStop()) return
-            val root = service.rootInActiveWindow
-            if (root != null) {
-                // Check if dialog or submenu options are visible
-                val hasSubMenu = NodeFinder.containsAny(root, "Clear cache", "Clear all data", "Clear app data", "Cancel")
-                val hasConfirmText = NodeFinder.containsAny(root, "Delete all data", "Delete app data", "All app data", "Clear app data", "Clear all data", "Delete all app data")
-                
-                if (hasSubMenu || hasConfirmText) {
-                    dialogSeen = true
-                    
-                    // Try to click affirmative button
-                    val okOptions = arrayOf("OK", "Delete", "Clear", "Yes", "Confirm", "Erase", "Continue", "Clear all data", "Clear app data", "Clear data")
-                    for (opt in okOptions) {
-                        val node = NodeFinder.findByText(root, opt)
-                        if (node != null && node.isVisibleToUser && clickNodeRobust(service, node)) {
-                            AutomationState.log("  ✔ Confirmed: tapped '$opt'")
-                            StepUtils.sleepMs(2000) // Wait for deletion animation
-                            return
-                        }
-                    }
-                }
-            }
-            StepUtils.sleepMs(300)
-        }
-        
-        if (dialogSeen) {
-            AutomationState.log("  ⚠ Dialog seen but could not click button")
-        } else {
-            AutomationState.log("  ℹ No dialog appeared within 10s")
-        }
+        handleSubMenu(service)
+        handleConfirmDialog(service)
+        return true
     }
 
     private fun findStorageRow(service: AccessibilityService, timeoutMs: Long): AccessibilityNodeInfo? {
@@ -409,6 +406,47 @@ object PayPalClearData {
             StepUtils.sleepMs(300)
         }
         return false
+    }
+
+    private fun handleSubMenu(service: AccessibilityService) {
+        StepUtils.sleepMs(600)
+        val root = service.rootInActiveWindow ?: return
+        if (!NodeFinder.containsAny(root, "Clear cache", "Clear all data", "Cancel")) return
+
+        AutomationState.log("  ℹ Sub-menu detected")
+        val options = arrayOf("Clear all data", "Clear app data", "Clear data", "Delete data")
+        for (opt in options) {
+            val node = NodeFinder.findByText(root, opt)
+            if (node != null && node.isVisibleToUser && clickNodeRobust(service, node)) {
+                AutomationState.log("  ✔ Sub-menu: '$opt'")
+                StepUtils.sleepMs(1200)
+                handleConfirmDialog(service)
+                return
+            }
+        }
+    }
+
+    private fun handleConfirmDialog(service: AccessibilityService) {
+        StepUtils.sleepMs(800)
+        val end = SystemClock.uptimeMillis() + 3500
+        while (SystemClock.uptimeMillis() < end) {
+            if (StepUtils.shouldStop()) return
+            val root = service.rootInActiveWindow
+            if (root != null) {
+                if (NodeFinder.containsAny(root, "Delete all data", "Delete app data", "All app data", "Clear app data", "Clear all data", "Delete all app data")) {
+                    val okOptions = arrayOf("OK", "Delete", "Clear", "Yes", "Confirm", "Erase", "Continue")
+                    for (opt in okOptions) {
+                        val node = NodeFinder.findByText(root, opt)
+                        if (node != null && node.isVisibleToUser && clickNodeRobust(service, node)) {
+                            AutomationState.log("  ✔ Confirm: '$opt'")
+                            StepUtils.sleepMs(2000)
+                            return
+                        }
+                    }
+                }
+            }
+            StepUtils.sleepMs(250)
+        }
     }
 
     private fun exitHome(service: AccessibilityService) {
