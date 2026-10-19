@@ -23,33 +23,18 @@ object PayPalAutomation {
 
         if (numbers.isEmpty()) return Pair(0, 0)
 
+        // Round Setup
         if (autoFlightMode) {
-            val ok = StepUtils.retryStep("Flight cycle") {
-                AirplaneModeController.strictToggle(service)
-            }
-            if (!ok) {
-                AutomationState.log("✘ [ABORT] Flight")
-                return Pair(0, numbers.size)
-            }
+            val ok = StepUtils.retryStep("Flight cycle") { AirplaneModeController.strictToggle(service) }
+            if (!ok) { AutomationState.log("✘ [ABORT] Flight"); return Pair(0, numbers.size) }
         }
 
-        // 🟢 Pass PayPal Package name here
-        val clearOk = StepUtils.retryStep("Clear data") {
-            PayPalClearData.strictClear(service, "com.paypal.android.p2pmobile")
-        }
-        if (!clearOk) {
-            AutomationState.log("✘ [ABORT] Clear data")
-            return Pair(0, numbers.size)
-        }
+        val clearOk = StepUtils.retryStep("Clear data") { PayPalClearData.strictClear(service, "com.paypal.android.p2pmobile") }
+        if (!clearOk) { AutomationState.log("✘ [ABORT] Clear data"); return Pair(0, numbers.size) }
         StepUtils.sleepMs(800)
 
-        val launchOk = StepUtils.retryStep("Launch") {
-            PayPalActions.launch(service)
-        }
-        if (!launchOk) {
-            AutomationState.log("✘ [ABORT] Launch")
-            return Pair(0, numbers.size)
-        }
+        val launchOk = StepUtils.retryStep("Launch") { PayPalActions.launch(service) }
+        if (!launchOk) { AutomationState.log("✘ [ABORT] Launch"); return Pair(0, numbers.size) }
 
         PayPalActions.tapGetStarted(service, 12000)
 
@@ -59,9 +44,7 @@ object PayPalAutomation {
             return Pair(0, numbers.size)
         }
 
-        if (!StepUtils.retryStep("Country select") {
-                PayPalActions.typeAndSelectCountry(service, countryName, countryIso)
-            }) {
+        if (!StepUtils.retryStep("Country select") { PayPalActions.typeAndSelectCountry(service, countryName, countryIso) }) {
             AutomationState.log("✘ [ABORT] Country select")
             PayPalActions.closePayPal(service)
             return Pair(0, numbers.size)
@@ -84,18 +67,14 @@ object PayPalAutomation {
             AutomationState.log("─────────────")
             AutomationState.log("▶ $num")
 
-            if (!StepUtils.retryStep("Number type") {
-                    PayPalActions.typeNumber(service, num, dialingCode)
-                }) {
+            if (!StepUtils.retryStep("Number type") { PayPalActions.typeNumber(service, num, dialingCode) }) {
                 AutomationState.log("✘ Number type fail")
                 onNumberFail(num); fail++
                 consecutiveFails++
                 continue
             }
 
-            if (!StepUtils.retryStep("Continue") {
-                    PayPalActions.tapContinue(service)
-                }) {
+            if (!StepUtils.retryStep("Continue") { PayPalActions.tapContinue(service) }) {
                 AutomationState.log("✘ Continue fail")
                 onNumberFail(num); fail++
                 consecutiveFails++
@@ -108,19 +87,11 @@ object PayPalAutomation {
 
             while (captchaRetries < 6) {
                 if (StepUtils.shouldStop()) break
-
                 val r = PayPalActions.checkResult(service, 15000)
-
                 if (r == PayPalActions.Result.RETRY_CONTINUE) {
                     captchaRetries++
-                    AutomationState.log("ℹ Captcha solved — Continue again (#$captchaRetries)")
                     StepUtils.sleepMs(1000)
-
-                    if (!PayPalActions.tapContinue(service)) {
-                        AutomationState.log("  ⚠ Re-tap Continue failed")
-                        StepUtils.sleepMs(2000)
-                        continue
-                    }
+                    if (!PayPalActions.tapContinue(service)) { StepUtils.sleepMs(2000); continue }
                     StepUtils.sleepMs(1500)
                     continue
                 }
@@ -129,6 +100,7 @@ object PayPalAutomation {
             }
 
             when (finalResult) {
+                // ─── SUCCESS: OTP screen ───
                 PayPalActions.Result.OTP_SCREEN -> {
                     AutomationState.log("✔ OTP screen — SUCCESS: $num")
                     onNumberSuccess(num); success++
@@ -153,6 +125,7 @@ object PayPalAutomation {
                     StepUtils.sleepMs(200)
                 }
 
+                // ─── FAIL: Red error ───
                 PayPalActions.Result.ERROR -> {
                     AutomationState.log("✘ Red error on Continue — clearing & trying next number")
                     onNumberFail(num); fail++
@@ -162,6 +135,35 @@ object PayPalAutomation {
                     StepUtils.sleepMs(200)
                 }
 
+                // ─── PASSWORD SCREEN (Already Registered) ───
+                PayPalActions.Result.PASSWORD_SCREEN -> {
+                    AutomationState.log("🔒 Password screen detected for $num")
+                    if (PayPalActions.handlePasswordScreen(service)) {
+                        AutomationState.log("✔ Password flow completed (Return to login)")
+                        onNumberSuccess(num); success++
+                        consecutiveFails = 0
+                        // Back to input screen
+                        service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                        StepUtils.sleepMs(1500)
+                    } else {
+                        AutomationState.log("✘ Password flow failed")
+                        onNumberFail(num); fail++
+                        consecutiveFails++
+                        PayPalActions.closeResendPopup(service)
+                        PayPalActions.clearNumberField(service)
+                        StepUtils.sleepMs(500)
+                    }
+                }
+
+                // ─── STUCK (Continue button locked / Network lag) ───
+                PayPalActions.Result.STUCK -> {
+                    AutomationState.log("⏳ STUCK detected on input screen! Aborting round for Reset.")
+                    onNumberFail(num); fail++
+                    consecutiveFails++
+                    break // 🟢 Break out to let Service handle Reset
+                }
+
+                // ─── TIMEOUT ───
                 PayPalActions.Result.TIMEOUT -> {
                     AutomationState.log("⏱ Timeout — clearing & trying next number")
                     onNumberFail(num); fail++
