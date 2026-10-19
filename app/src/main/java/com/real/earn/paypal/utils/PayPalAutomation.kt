@@ -25,27 +25,56 @@ object PayPalAutomation {
 
         if (autoFlightMode) {
             val ok = StepUtils.retryStep("Flight cycle") { AirplaneModeController.strictToggle(service) }
-            if (!ok) return Pair(0, numbers.size)
+            if (!ok) {
+                AutomationState.log("✘ [ABORT] Flight")
+                return Pair(0, numbers.size)
+            }
         }
 
-        val clearOk = StepUtils.retryStep("Clear data") { PayPalClearData.strictClear(service, "com.paypal.android.p2pmobile") }
-        if (!clearOk) return Pair(0, numbers.size)
+        val clearOk = StepUtils.retryStep("Clear data") {
+            PayPalClearData.strictClear(service, "com.paypal.android.p2pmobile")
+        }
+        if (!clearOk) {
+            AutomationState.log("✘ [ABORT] Clear data")
+            return Pair(0, numbers.size)
+        }
         StepUtils.sleepMs(800)
 
-        val launchOk = StepUtils.retryStep("Launch") { PayPalActions.launch(service) }
-        if (!launchOk) return Pair(0, numbers.size)
+        val launchOk = StepUtils.retryStep("Launch PayPal") {
+            PayPalActions.launch(service)
+        }
+        if (!launchOk) {
+            AutomationState.log("✘ [ABORT] Launch")
+            return Pair(0, numbers.size)
+        }
 
-        PayPalActions.tapGetStarted(service, 12000)
-
-        if (!PayPalActions.clickUsButton(service)) {
+        if (!PayPalActions.tapGetStarted(service, 20000)) {
+            AutomationState.log("✘ [ABORT] Get Started not found after 20s")
             PayPalActions.closePayPal(service)
             return Pair(0, numbers.size)
         }
 
-        if (!StepUtils.retryStep("Country select") { PayPalActions.typeAndSelectCountry(service, countryName, countryIso) }) {
+        AutomationState.log("ℹ Allowing time for Gmail popup cycle...")
+        StepUtils.sleepMs(3000)
+        PayPalActions.waitForGmailPopupToClose(service, 10000)
+
+        if (!PayPalActions.clickUsButton(service, 25000)) {
+            AutomationState.log("✘ [ABORT] US button not found")
             PayPalActions.closePayPal(service)
             return Pair(0, numbers.size)
         }
+
+        StepUtils.sleepMs(2000)
+        PayPalActions.waitForGmailPopupToClose(service, 5000)
+
+        if (!StepUtils.retryStep("Country select") {
+                PayPalActions.typeAndSelectCountry(service, countryName, countryIso)
+            }) {
+            AutomationState.log("✘ [ABORT] Country select failed")
+            PayPalActions.closePayPal(service)
+            return Pair(0, numbers.size)
+        }
+        AutomationState.log("✔ Country: $countryIso")
 
         var consecutiveFails = 0
 
@@ -63,17 +92,38 @@ object PayPalAutomation {
             AutomationState.log("─────────────")
             AutomationState.log("▶ $num")
 
-            if (!StepUtils.retryStep("Number type") { PayPalActions.typeNumber(service, num, dialingCode) }) {
+            // 🟢 FIX: Ensure we're on the number input screen before typing
+            val preRoot = service.rootInActiveWindow
+            if (preRoot != null) {
+                val isPasswordScreen = NodeFinder.containsAny(preRoot, "Password", "More Options", "login")
+                if (isPasswordScreen) {
+                    AutomationState.log("  ⚠ On password screen, not typing. Pressing Back twice.")
+                    service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                    StepUtils.sleepMs(800)
+                    service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                    StepUtils.sleepMs(800)
+                    continue
+                }
+            }
+
+            if (!StepUtils.retryStep("Number type") {
+                    PayPalActions.typeNumber(service, num, dialingCode)
+                }) {
+                AutomationState.log("✘ Number type fail")
                 onNumberFail(num); fail++
                 consecutiveFails++
                 continue
             }
 
-            if (!StepUtils.retryStep("Continue") { PayPalActions.tapContinue(service) }) {
+            if (!StepUtils.retryStep("Continue") {
+                    PayPalActions.tapContinue(service)
+                }) {
+                AutomationState.log("✘ Continue fail")
                 onNumberFail(num); fail++
                 consecutiveFails++
                 continue
             }
+            AutomationState.log("ℹ Continue tapped — waiting result…")
 
             var finalResult = PayPalActions.Result.TIMEOUT
             var captchaRetries = 0
@@ -84,7 +134,10 @@ object PayPalAutomation {
                 if (r == PayPalActions.Result.RETRY_CONTINUE) {
                     captchaRetries++
                     StepUtils.sleepMs(1000)
-                    if (!PayPalActions.tapContinue(service)) { StepUtils.sleepMs(2000); continue }
+                    if (!PayPalActions.tapContinue(service)) {
+                        StepUtils.sleepMs(2000)
+                        continue
+                    }
                     StepUtils.sleepMs(1500)
                     continue
                 }
@@ -102,6 +155,7 @@ object PayPalAutomation {
 
                     StepUtils.sleepMs(2000)
                     if (PayPalActions.hasRedError(service)) {
+                        AutomationState.log("✘ Red error after resend")
                         onNumberFail(num); fail++
                         consecutiveFails++
                         PayPalActions.closeResendPopup(service)
@@ -110,8 +164,6 @@ object PayPalAutomation {
                         continue
                     }
 
-                    // 🟢 FIX: Try to close popup, verify if it actually closed
-                    AutomationState.log("ℹ No error — closing resend popup + clearing field")
                     var closeAttempts = 0
                     while (closeAttempts < 3 && PayPalActions.isResendVisible(service)) {
                         closeAttempts++
@@ -120,7 +172,6 @@ object PayPalAutomation {
                         StepUtils.sleepMs(800)
                     }
 
-                    // 🟢 If still visible, force with BACK press
                     if (PayPalActions.isResendVisible(service)) {
                         AutomationState.log("  ↳ Popup stuck! Forcing BACK press")
                         service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
@@ -132,6 +183,7 @@ object PayPalAutomation {
                 }
 
                 PayPalActions.Result.ERROR -> {
+                    AutomationState.log("✘ Red error on Continue")
                     onNumberFail(num); fail++
                     consecutiveFails++
                     PayPalActions.closeResendPopup(service)
@@ -140,11 +192,13 @@ object PayPalAutomation {
                 }
 
                 PayPalActions.Result.PASSWORD_SCREEN -> {
-                    AutomationState.log("🔒 Password screen detected for $num")
+                    AutomationState.log("🔒 Password screen detected")
                     if (PayPalActions.handlePasswordScreen(service)) {
+                        AutomationState.log("✔ Password flow completed")
                         onNumberSuccess(num); success++
                         consecutiveFails = 0
                     } else {
+                        AutomationState.log("✘ Password flow failed")
                         onNumberFail(num); fail++
                         consecutiveFails++
                         service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
@@ -155,13 +209,14 @@ object PayPalAutomation {
                 }
 
                 PayPalActions.Result.STUCK -> {
-                    AutomationState.log("⏳ STUCK detected on input screen! Aborting round for Reset.")
+                    AutomationState.log("⏳ STUCK detected — aborting round for reset")
                     onNumberFail(num); fail++
                     consecutiveFails++
                     break
                 }
 
                 PayPalActions.Result.TIMEOUT -> {
+                    AutomationState.log("⏱ Timeout")
                     onNumberFail(num); fail++
                     consecutiveFails++
                     PayPalActions.closeResendPopup(service)
@@ -170,6 +225,7 @@ object PayPalAutomation {
                 }
 
                 else -> {
+                    AutomationState.log("⏱ Unexpected result")
                     onNumberFail(num); fail++
                     consecutiveFails++
                 }
