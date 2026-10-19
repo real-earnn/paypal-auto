@@ -42,7 +42,7 @@ class AutomationService : Service() {
     private var dialingCode: String = ""
     private var prefix: String = ""
     private var file: String = ""
-    private var oldAccountMethod: Boolean = false // 🟢 Naya Flag
+    private var oldAccountMethod: Boolean = false
 
     companion object {
         private const val NOTIF_ID = 1001
@@ -54,32 +54,21 @@ class AutomationService : Service() {
         private const val ACTION_STOP_AND_CLOSE = "com.real.earn.paypal.STOP_AND_CLOSE"
 
         fun start(
-            context: Context,
-            mode: String,
-            service: String,
-            country: String = "",
-            countryCode: String = "",
-            dialingCode: String = "",
-            prefix: String = "",
-            file: String = "",
-            engineType: String = "paypal",
-            oldAccountMethod: Boolean = false // 🟢 Naya parameter
+            context: Context, mode: String, service: String,
+            country: String = "", countryCode: String = "",
+            dialingCode: String = "", prefix: String = "", file: String = "",
+            engineType: String = "paypal", oldAccountMethod: Boolean = false
         ) {
             val i = Intent(context, AutomationService::class.java).apply {
                 action = ACTION_START
-                putExtra("mode", mode)
-                putExtra("service", service)
-                putExtra("country", country)
-                putExtra("countryCode", countryCode)
-                putExtra("dialingCode", dialingCode)
-                putExtra("prefix", prefix)
-                putExtra("file", file)
-                putExtra("engine_type", engineType)
-                putExtra("old_account_method", oldAccountMethod) // 🟢 Pass it
+                putExtra("mode", mode); putExtra("service", service)
+                putExtra("country", country); putExtra("countryCode", countryCode)
+                putExtra("dialingCode", dialingCode); putExtra("prefix", prefix)
+                putExtra("file", file); putExtra("engine_type", engineType)
+                putExtra("old_account_method", oldAccountMethod)
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(i)
-            } else context.startService(i)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(i)
+            else context.startService(i)
         }
 
         fun pause(context: Context) = context.startService(Intent(context, AutomationService::class.java).setAction(ACTION_PAUSE))
@@ -100,9 +89,8 @@ class AutomationService : Service() {
     private fun acquireWakeLock() {
         try {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RealEarnPayPal::AutomationWakeLock").apply {
-                setReferenceCounted(false)
-                acquire(2 * 60 * 60 * 1000L)
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RealEarn::AutoWakeLock").apply {
+                setReferenceCounted(false); acquire(2 * 60 * 60 * 1000L)
             }
         } catch (_: Exception) {}
     }
@@ -112,19 +100,10 @@ class AutomationService : Service() {
         try {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
             val flags = PowerManager.FULL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE
-            screenLock = pm.newWakeLock(flags, "RealEarnPayPal::ScreenOnLock").apply {
-                setReferenceCounted(false)
-                acquire(2 * 60 * 60 * 1000L)
+            screenLock = pm.newWakeLock(flags, "RealEarn::ScreenLock").apply {
+                setReferenceCounted(false); acquire(2 * 60 * 60 * 1000L)
             }
-        } catch (_: Exception) {
-            try {
-                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-                screenLock = pm.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP, "RealEarnPayPal::ScreenOnLock").apply {
-                    setReferenceCounted(false)
-                    acquire(2 * 60 * 60 * 1000L)
-                }
-            } catch (_: Exception) {}
-        }
+        } catch (_: Exception) {}
     }
 
     private fun releaseWakeLock() {
@@ -154,8 +133,8 @@ class AutomationService : Service() {
             }
             ACTION_PAUSE -> doPause()
             ACTION_RESUME -> doResume()
-            ACTION_STOP -> stopAutomation(closeActivity = false)
-            ACTION_STOP_AND_CLOSE -> stopAutomation(closeActivity = true)
+            ACTION_STOP -> stopAutomation(false)
+            ACTION_STOP_AND_CLOSE -> stopAutomation(true)
         }
         return START_STICKY
     }
@@ -180,28 +159,22 @@ class AutomationService : Service() {
 
     private fun startLoop() {
         if (loopJob?.isActive == true) return
-
         AutomationState.reset()
-        
-        // 🟢 If Old Account Method, start in PAUSED state
+
         if (oldAccountMethod) {
             AutomationState.setStatus(AutomationState.Status.PAUSED)
-            AutomationState.log("🚀 TikTok Old Account: Started in PAUSED state.")
-            AutomationState.log("ℹ Please navigate to the phone input screen and press RESUME.")
+            AutomationState.log("🚀 TikTok Old Account: PAUSED. Navigate & tap Resume.")
         } else {
             AutomationState.setStatus(AutomationState.Status.RUNNING)
-            val engineName = if (engineType == "tiktok") "TikTok" else "PayPal"
-            when (mode) {
-                "auto" -> AutomationState.log("🚀 $engineName: Auto Prefix")
-                "prefix" -> AutomationState.log("🚀 $engineName: $prefix / $file")
-                else -> AutomationState.log("🚀 $engineName: $serviceName / $countryName")
-            }
+            val en = if (engineType == "tiktok") "TikTok" else "PayPal"
+            AutomationState.log("🚀 $en: $serviceName / $countryName")
         }
         updateNotification("Running")
 
         loopJob = scope.launch {
-            var popupWatcherOn = false
-            var captchaWatcherOn = false
+            var popupOn = false
+            var captchaOn = false
+            var watchdogOn = false
             try {
                 val a11y = PayPalAccessibilityService.instance
                 if (a11y == null) {
@@ -211,20 +184,38 @@ class AutomationService : Service() {
                 }
                 AutomationState.log("✔ Accessibility connected")
 
-                PopupWatcher.start(scope, a11y)
-                popupWatcherOn = true
+                PopupWatcher.start(scope, a11y); popupOn = true
+                CaptchaWatcher.start(scope, a11y); captchaOn = true
 
-                CaptchaWatcher.start(scope, a11y)
-                captchaWatcherOn = true
+                // 🟢 Accessibility Watchdog: detect if system kills the service
+                val watchdogJob = scope.launch {
+                    watchdogOn = true
+                    while (true) {
+                        delay(10000)
+                        if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
+                        if (PayPalAccessibilityService.instance == null) {
+                            AutomationState.log("🚨 Accessibility service KILLED by system!")
+                            AutomationState.log("ℹ Please re-enable from Settings → Accessibility")
+                            updateNotification("⚠ Accessibility OFF — tap to re-enable")
+                            AutomationState.setStatus(AutomationState.Status.STOPPED)
+                            break
+                        }
+                    }
+                }
 
                 val auth = AuthManager(applicationContext)
                 val prefs = AppPrefs(applicationContext)
                 val autoFlight = prefs.autoFlightMode
-                AutomationState.log(if (autoFlight) "✈ Auto Flight: ON" else "✈ Auto Flight: OFF")
 
                 while (AutomationState.getStatus() != AutomationState.Status.STOPPING) {
                     while (AutomationState.getStatus() == AutomationState.Status.PAUSED) delay(300)
                     if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
+
+                    // Recheck accessibility each iteration
+                    if (PayPalAccessibilityService.instance == null) {
+                        AutomationState.log("✘ Accessibility lost — stopping")
+                        break
+                    }
 
                     AutomationState.log("📞 Fetching 5 numbers...")
                     val nums = fetchNumbers(auth)
@@ -235,59 +226,37 @@ class AutomationService : Service() {
                     AutomationState.log("✔ ${nums.size} numbers")
 
                     val (s, f) = if (engineType == "tiktok" && oldAccountMethod) {
-                        // 🟢 Route to the new Old Account Logic
-                        TikTokOldAccountAutomation.runBatch(
-                            service = a11y,
-                            numbers = nums,
-                            onNumberStart = { num ->
-                                AutomationState.updateStats { it.copy(totalAttempts = it.totalAttempts + 1, currentService = serviceName, currentCountry = countryName, currentNumber = num) }
-                            },
-                            onNumberSuccess = { _ ->
-                                AutomationState.updateStats { it.copy(successCount = it.successCount + 1) }
-                            },
-                            onNumberFail = { num ->
-                                AutomationState.updateStats { it.copy(failCount = it.failCount + 1) }
-                                releaseNumbers(auth, listOf(num), "otp_failed")
-                            }
+                        val res = TikTokOldAccountAutomation.runBatch(
+                            service = a11y, numbers = nums,
+                            onNumberStart = { num -> AutomationState.updateStats { it.copy(totalAttempts = it.totalAttempts + 1, currentService = serviceName, currentCountry = countryName, currentNumber = num) } },
+                            onNumberSuccess = { _ -> AutomationState.updateStats { it.copy(successCount = it.successCount + 1) } },
+                            onNumberFail = { num -> AutomationState.updateStats { it.copy(failCount = it.failCount + 1) }; releaseNumbers(auth, listOf(num), "otp_failed") }
                         )
+                        if (res.first == -1 && res.second == -1) {
+                            AutomationState.log("🔄 STUCK — resetting")
+                            if (autoFlight) StepUtils.retryStep("Flight") { AirplaneModeController.strictToggle(a11y) }
+                            val tiktokPkg = TikTokActions.getInstalledPackage(a11y)
+                            StepUtils.retryStep("Clear") { PayPalClearData.strictClear(a11y, tiktokPkg) }
+                            StepUtils.sleepMs(2000)
+                            continue
+                        }
+                        res
                     } else if (engineType == "tiktok") {
-                        AutomationState.log("🎵 Running TikTok Engine")
                         TikTokAutomation.runBatch(
-                            service = a11y,
-                            numbers = nums,
-                            countryName = countryName,
-                            dialingCode = dialingCode.ifEmpty { "92" },
-                            autoFlightMode = autoFlight,
-                            onNumberStart = { num ->
-                                AutomationState.updateStats { it.copy(totalAttempts = it.totalAttempts + 1, currentService = serviceName, currentCountry = countryName, currentNumber = num) }
-                            },
-                            onNumberSuccess = { _ ->
-                                AutomationState.updateStats { it.copy(successCount = it.successCount + 1) }
-                            },
-                            onNumberFail = { num ->
-                                AutomationState.updateStats { it.copy(failCount = it.failCount + 1) }
-                                releaseNumbers(auth, listOf(num), "otp_failed")
-                            }
+                            service = a11y, numbers = nums, countryName = countryName,
+                            dialingCode = dialingCode.ifEmpty { "92" }, autoFlightMode = autoFlight,
+                            onNumberStart = { num -> AutomationState.updateStats { it.copy(totalAttempts = it.totalAttempts + 1, currentService = serviceName, currentCountry = countryName, currentNumber = num) } },
+                            onNumberSuccess = { _ -> AutomationState.updateStats { it.copy(successCount = it.successCount + 1) } },
+                            onNumberFail = { num -> AutomationState.updateStats { it.copy(failCount = it.failCount + 1) }; releaseNumbers(auth, listOf(num), "otp_failed") }
                         )
                     } else {
-                        AutomationState.log("💳 Running PayPal Engine")
                         PayPalAutomation.runBatch(
-                            service = a11y,
-                            numbers = nums,
-                            countryName = countryName,
-                            countryIso = countryCodeIso,
-                            dialingCode = dialingCode,
+                            service = a11y, numbers = nums, countryName = countryName,
+                            countryIso = countryCodeIso, dialingCode = dialingCode,
                             autoFlightMode = autoFlight,
-                            onNumberStart = { num ->
-                                AutomationState.updateStats { it.copy(totalAttempts = it.totalAttempts + 1, currentService = serviceName, currentCountry = countryName, currentNumber = num) }
-                            },
-                            onNumberSuccess = { _ ->
-                                AutomationState.updateStats { it.copy(successCount = it.successCount + 1) }
-                            },
-                            onNumberFail = { num ->
-                                AutomationState.updateStats { it.copy(failCount = it.failCount + 1) }
-                                releaseNumbers(auth, listOf(num), "otp_failed")
-                            }
+                            onNumberStart = { num -> AutomationState.updateStats { it.copy(totalAttempts = it.totalAttempts + 1, currentService = serviceName, currentCountry = countryName, currentNumber = num) } },
+                            onNumberSuccess = { _ -> AutomationState.updateStats { it.copy(successCount = it.successCount + 1) } },
+                            onNumberFail = { num -> AutomationState.updateStats { it.copy(failCount = it.failCount + 1) }; releaseNumbers(auth, listOf(num), "otp_failed") }
                         )
                     }
 
@@ -296,12 +265,13 @@ class AutomationService : Service() {
                     delay(800)
                 }
 
+                watchdogJob.cancel()
                 AutomationState.log("⏹ Loop exit")
             } catch (e: Exception) {
                 AutomationState.log("✘ Loop error: ${e.message}")
             } finally {
-                if (popupWatcherOn) PopupWatcher.stop()
-                if (captchaWatcherOn) CaptchaWatcher.stop()
+                if (popupOn) PopupWatcher.stop()
+                if (captchaOn) CaptchaWatcher.stop()
                 AutomationState.setStatus(AutomationState.Status.STOPPED)
                 cleanupAfterStop()
             }
@@ -313,10 +283,8 @@ class AutomationService : Service() {
             try {
                 updateNotification("Stopped")
                 overlay?.hide(); overlay = null
-                releaseWakeLock()
-                releaseScreenLock()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
+                releaseWakeLock(); releaseScreenLock()
+                stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
             } catch (_: Exception) {}
         }
     }
@@ -325,85 +293,53 @@ class AutomationService : Service() {
         return try {
             when (mode) {
                 "auto" -> {
-                    val res = ApiClient.service(auth).getNumbersByPrefix(
-                        GetNumberByPrefixBody(service = serviceName, auto = true, count = 5)
-                    )
+                    val res = ApiClient.service(auth).getNumbersByPrefix(GetNumberByPrefixBody(service = serviceName, auto = true, count = 5))
                     if (res.isSuccessful && res.body()?.success == true) {
                         val body = res.body()!!
-                        countryCodeIso = body.countryCode
-                        dialingCode = body.dialingCode
+                        countryCodeIso = body.countryCode; dialingCode = body.dialingCode
                         countryName = body.file.ifEmpty { "Unknown" }
-                        AutomationState.log("🎲 Auto pick: ${body.prefix} / ${body.file}")
                         body.numbers ?: emptyList()
-                    } else {
-                        AutomationState.log("✘ getNumByPrefix(auto) HTTP ${res.code()}")
-                        emptyList()
-                    }
+                    } else emptyList()
                 }
                 "prefix" -> {
-                    val res = ApiClient.service(auth).getNumbersByPrefix(
-                        GetNumberByPrefixBody(service = serviceName, prefix = prefix, file = file, auto = false, count = 5)
-                    )
+                    val res = ApiClient.service(auth).getNumbersByPrefix(GetNumberByPrefixBody(service = serviceName, prefix = prefix, file = file, auto = false, count = 5))
                     if (res.isSuccessful && res.body()?.success == true) {
                         val body = res.body()!!
-                        countryCodeIso = body.countryCode
-                        dialingCode = body.dialingCode
+                        countryCodeIso = body.countryCode; dialingCode = body.dialingCode
                         countryName = body.file.ifEmpty { file }
                         body.numbers ?: emptyList()
-                    } else {
-                        AutomationState.log("✘ getNumByPrefix HTTP ${res.code()}")
-                        emptyList()
-                    }
+                    } else emptyList()
                 }
                 else -> {
-                    val res = ApiClient.service(auth).getNumbers(
-                        GetNumberBody(service = serviceName, country = countryName, count = 5)
-                    )
+                    val res = ApiClient.service(auth).getNumbers(GetNumberBody(service = serviceName, country = countryName, count = 5))
                     if (res.isSuccessful && res.body()?.success == true) {
                         val body = res.body()!!
-                        countryCodeIso = body.countryCode
-                        dialingCode = body.dialingCode
+                        countryCodeIso = body.countryCode; dialingCode = body.dialingCode
                         body.numbers ?: emptyList()
-                    } else {
-                        AutomationState.log("✘ getNumber HTTP ${res.code()}")
-                        emptyList()
-                    }
+                    } else emptyList()
                 }
             }
-        } catch (e: Exception) {
-            AutomationState.log("✘ fetch error: ${e.message}")
-            emptyList()
-        }
+        } catch (e: Exception) { emptyList() }
     }
 
     private suspend fun releaseNumbers(auth: AuthManager, nums: List<String>, reason: String) {
-        try {
-            ApiClient.service(auth).releaseNumbers(ReleaseNumberBody(numbers = nums, reason = reason))
-        } catch (_: Exception) {}
+        try { ApiClient.service(auth).releaseNumbers(ReleaseNumberBody(numbers = nums, reason = reason)) } catch (_: Exception) {}
     }
 
     private fun stopAutomation(closeActivity: Boolean) {
         val cur = AutomationState.getStatus()
         if (cur == AutomationState.Status.STOPPING || cur == AutomationState.Status.STOPPED) return
-
         AutomationState.setStatus(AutomationState.Status.STOPPING)
         AutomationState.log("⏹ Stopping…")
-        PopupWatcher.stop()
-        CaptchaWatcher.stop()
-
+        PopupWatcher.stop(); CaptchaWatcher.stop()
         scope.launch {
             var waited = 0L
-            while (loopJob?.isActive == true && waited < 6000) {
-                delay(200); waited += 200
-            }
+            while (loopJob?.isActive == true && waited < 6000) { delay(200); waited += 200 }
             loopJob?.cancel(); loopJob = null
-
             if (AutomationState.getStatus() != AutomationState.Status.STOPPED) {
                 AutomationState.setStatus(AutomationState.Status.STOPPED)
-                AutomationState.log("⏹ Stopped (forced)")
                 cleanupAfterStop()
             }
-
             if (closeActivity) AutomationState.requestClose()
         }
     }
@@ -419,7 +355,7 @@ class AutomationService : Service() {
                     else -> {}
                 }
             }
-            onClose = { stopAutomation(closeActivity = true) }
+            onClose = { stopAutomation(true) }
             show()
         }
     }
@@ -430,10 +366,8 @@ class AutomationService : Service() {
             .setContentTitle(getString(R.string.foreground_notif_title))
             .setContentText(text)
             .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setOngoing(true)
-            .setContentIntent(pi)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
+            .setOngoing(true).setContentIntent(pi)
+            .setPriority(NotificationCompat.PRIORITY_LOW).build()
     }
 
     private fun updateNotification(text: String) {
@@ -442,12 +376,10 @@ class AutomationService : Service() {
     }
 
     override fun onDestroy() {
-        PopupWatcher.stop()
-        CaptchaWatcher.stop()
+        PopupWatcher.stop(); CaptchaWatcher.stop()
         loopJob?.cancel(); scope.cancel()
         overlay?.hide(); overlay = null
-        releaseWakeLock()
-        releaseScreenLock()
+        releaseWakeLock(); releaseScreenLock()
         super.onDestroy()
     }
 }
