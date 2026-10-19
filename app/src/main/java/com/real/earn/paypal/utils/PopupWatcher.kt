@@ -1,6 +1,8 @@
 package com.real.earn.paypal.utils
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
+import android.graphics.Path
 import android.graphics.Rect
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityNodeInfo
@@ -19,13 +21,13 @@ object PopupWatcher {
     fun start(scope: CoroutineScope, service: AccessibilityService) {
         if (job?.isActive == true) return
         job = scope.launch(Dispatchers.Default) {
-            AutomationState.log("👁 PopupWatcher started")
+            AutomationState.log("👁 PopupWatcher started (Strict Mode)")
             while (isActive) {
                 if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
                 try {
                     scanAndDismiss(service)
                 } catch (_: Exception) {}
-                delay(300)
+                delay(400)
             }
             AutomationState.log("👁 PopupWatcher stopped")
         }
@@ -39,30 +41,45 @@ object PopupWatcher {
     private fun scanAndDismiss(service: AccessibilityService) {
         val root = service.rootInActiveWindow ?: return
 
-        // 🟢 Naye aur purane dono Google popups detect karo
-        val isGooglePopup = NodeFinder.containsAny(
-            root,
-            "Choose an account",
-            "to continue to TikTok",
-            "to continue to PayPal",
-            "Sign in with Google",
-            "Sign-in options",
-            "Use passkey"
-        )
+        // 🟢 Strict Detection: Sirf actual Google popup markers
+        val isGooglePopup = 
+            NodeFinder.containsAny(
+                root,
+                "Choose an account",
+                "to continue to PayPal",
+                "to continue to TikTok",
+                "Sign-in options",
+                "Sign in with Google",
+                "Use another account"
+            )
 
         if (!isGooglePopup) return
 
-        // Find X / Close button
-        if (clickPopupClose(root)) {
-            AutomationState.log("👁 Google/Gmail popup closed")
-            SystemClock.sleep(500)
+        // Try to find X button
+        if (clickPopupClose(root, service)) {
+            AutomationState.log("👁 Google popup closed (X button)")
+            SystemClock.sleep(800)
+            return
+        }
+
+        // 🟢 Fallback: No X button found — tap top of screen to dismiss
+        AutomationState.log("👁 No X button found — tapping top of screen to dismiss")
+        val screenR = Rect(); root.getBoundsInScreen(screenR)
+        val tapX = screenR.centerX()
+        val tapY = screenR.top + 150 // 150px from top
+
+        tapAt(service, tapX, tapY)
+        SystemClock.sleep(800)
+
+        // Check if it's gone now
+        val afterRoot = service.rootInActiveWindow
+        if (afterRoot != null && !NodeFinder.containsAny(afterRoot, "Choose an account", "to continue to PayPal")) {
+            AutomationState.log("👁 Popup dismissed via top tap")
         }
     }
 
-    private fun clickPopupClose(root: AccessibilityNodeInfo): Boolean {
+    private fun clickPopupClose(root: AccessibilityNodeInfo, service: AccessibilityService): Boolean {
         val closeWords = arrayOf("✕", "✖", "×", "X", "✗", "❌", "❎", "Close", "close", "Cancel")
-        
-        // 1. Try finding by text/desc match
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         while (queue.isNotEmpty()) {
@@ -75,27 +92,22 @@ object PopupWatcher {
             }
             for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
         }
-
-        // 2. Fallback: Find clickable ImageView at top-right of the bottom sheet
-        val rootRect = Rect(); root.getBoundsInScreen(rootRect)
-        val topRightThreshold = rootRect.width() - 150
-        
-        queue.clear()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val n = queue.removeFirst()
-            if (n.isClickable && n.isVisibleToUser) {
-                val r = Rect(); n.getBoundsInScreen(r)
-                val className = n.className?.toString() ?: ""
-                
-                // If it's a clickable image/button near top-right
-                if ((className.contains("Image", true) || className.contains("Button", true)) &&
-                    r.centerX() > topRightThreshold && r.centerY() < rootRect.height() / 2) {
-                    if (NodeFinder.click(n)) return true
-                }
-            }
-            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
-        }
         return false
+    }
+
+    private fun tapAt(service: AccessibilityService, x: Int, y: Int): Boolean {
+        return try {
+            val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
+            val stroke = GestureDescription.StrokeDescription(path, 0, 60)
+            val gesture = GestureDescription.Builder().addStroke(stroke).build()
+            val latch = java.util.concurrent.CountDownLatch(1)
+            var ok = false
+            service.dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
+                override fun onCompleted(d: GestureDescription?) { ok = true; latch.countDown() }
+                override fun onCancelled(d: GestureDescription?) { ok = false; latch.countDown() }
+            }, null)
+            latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
+            ok
+        } catch (e: Exception) { false }
     }
 }
