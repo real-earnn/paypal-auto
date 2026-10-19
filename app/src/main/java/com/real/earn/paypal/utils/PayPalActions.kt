@@ -31,6 +31,14 @@ object PayPalActions {
         }
     }
 
+    // 🟢 FIX: Ye function missing tha
+    fun closePayPal(service: AccessibilityService) {
+        try {
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+            StepUtils.sleepMs(800)
+        } catch (_: Exception) {}
+    }
+
     fun tapGetStarted(service: AccessibilityService, timeoutMs: Long = 15000): Boolean {
         val end = SystemClock.uptimeMillis() + timeoutMs
         var lastLog = 0L
@@ -386,6 +394,18 @@ object PayPalActions {
         return false
     }
 
+    // 🟢 FIX: Ye function missing tha
+    fun tapResendTwice(service: AccessibilityService) {
+        repeat(2) { attempt ->
+            val root = service.rootInActiveWindow
+            val node = NodeFinder.findByText(root, "Resend Code", "Resend code", "Resend")
+            if (node != null && tapNode(service, node)) {
+                AutomationState.log("ℹ Resend (${attempt + 1}/2)")
+            }
+            StepUtils.sleepMs(5000)
+        }
+    }
+
     // ══════════════════════════════════════════════════════
     //  🟢 RESULT ENUM & CHECKER
     // ══════════════════════════════════════════════════════
@@ -398,7 +418,7 @@ object PayPalActions {
         var errorSeenAt = 0L
         
         // 🟢 Stuck detection timer
-        var stuckCheckStart = startTime + 6000 // 6 seconds later, start checking for stuck
+        var stuckCheckStart = startTime + 6000
 
         while (SystemClock.uptimeMillis() < deadline) {
             if (StepUtils.shouldStop()) return Result.TIMEOUT
@@ -408,8 +428,8 @@ object PayPalActions {
                 StepUtils.sleepMs(StepUtils.POLL_MS); continue
             }
 
-            // 1. Check Password Screen (Registered Number)
-            if (NodeFinder.containsAny(root, "More options", "Password", "Create a new code", "Create a new password", "Forgot password")) {
+            // 1. Password Screen (Exact Strings)
+            if (NodeFinder.containsAny(root, "Password", "More Options", "login")) {
                 AutomationState.log("  🔒 Password Screen detected")
                 return Result.PASSWORD_SCREEN
             }
@@ -473,57 +493,84 @@ object PayPalActions {
     }
 
     // ══════════════════════════════════════════════════════
-    //  🟢 NEW: HANDLE PASSWORD SCREEN (Already Registered Number)
+    //  🟢 EXACT PASSWORD SCREEN LOGIC (As per user)
     // ══════════════════════════════════════════════════════
     fun handlePasswordScreen(service: AccessibilityService): Boolean {
         AutomationState.log("  🔒 Handling Password Screen...")
 
-        // Step 1: Click "More options"
-        if (!clickText(service, "More options", "More Options", "More")) {
-            AutomationState.log("  ✘ 'More options' not found")
+        // 1. Click "More Options"
+        if (!clickText(service, "More Options", "More options", "More")) {
+            AutomationState.log("  ✘ 'More Options' not found → Back & Retry")
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            StepUtils.sleepMs(800)
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            StepUtils.sleepMs(800)
             return false
         }
         StepUtils.sleepMs(1200)
 
-        // Step 2: Click "Create a new code" / "Create new password"
-        if (!clickText(service, "Create a new code", "Create new code", "Create a new password", "Create new password", "Send code")) {
-            AutomationState.log("  ✘ 'Create a new code' not found")
+        // 2. Click "Create New Password"
+        if (!clickText(service, "Create New Password", "Create new password", "Create a new code", "Create new code")) {
+            AutomationState.log("  ✘ 'Create New Password' not found → Back & Retry")
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            StepUtils.sleepMs(800)
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            StepUtils.sleepMs(800)
             return false
         }
         StepUtils.sleepMs(1500)
 
-        // Step 3: Choose "Text" / "SMS"
-        if (!clickText(service, "Text", "SMS", "Text message", "Text a code")) {
-            AutomationState.log("  ✘ 'Text' option not found")
+        // 3. Check for "Text a code"
+        if (!clickText(service, "Text a code", "Text code", "SMS", "Text message")) {
+            AutomationState.log("  ⚠ 'Text a code' NOT found (Email/WhatsApp maybe) → Back & Retry")
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            StepUtils.sleepMs(800)
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            StepUtils.sleepMs(800)
             return false
         }
         StepUtils.sleepMs(1500)
 
-        // Step 4: Loop "More options" -> "Text new code" until "Return to login" appears
-        for (loop in 0 until 6) {
+        // 4. Fast Loop: "More Options" -> "Text a new code" -> Check "Return to login"
+        for (loop in 0 until 8) { // 8 attempts
             val root = service.rootInActiveWindow ?: continue
             
+            // Check if Return to login appeared
             if (NodeFinder.findByTextContains(root, "Return to login") != null) {
-                AutomationState.log("  ✔ 'Return to login' found. Clicking it.")
+                AutomationState.log("  ✔ 'Return to login' found!")
                 clickText(service, "Return to login")
-                StepUtils.sleepMs(1500)
+                StepUtils.sleepMs(1000)
+                // Back once to return to number input
+                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                StepUtils.sleepMs(1000)
                 return true
             }
 
-            AutomationState.log("  ↳ Loop ${loop + 1}: More options -> Text new code")
-            clickText(service, "More options", "More")
-            StepUtils.sleepMs(1000)
-            clickText(service, "Text new code", "Text a new code", "Send new code", "Text me", "Send again")
-            StepUtils.sleepMs(2500)
+            AutomationState.log("  ↳ Loop ${loop + 1}: More Options -> Text a new code")
+            
+            // Click "More Options"
+            clickText(service, "More Options", "More options", "More")
+            StepUtils.sleepMs(600)
+            
+            // Click "Text a new code"
+            clickText(service, "Text a new code", "Create new code", "Send new code", "Text a code")
+            StepUtils.sleepMs(2000)
         }
 
+        // Final check
         val finalRoot = service.rootInActiveWindow
-        return finalRoot != null && NodeFinder.findByTextContains(finalRoot, "Return to login") != null
+        if (finalRoot != null && NodeFinder.findByTextContains(finalRoot, "Return to login") != null) {
+            clickText(service, "Return to login")
+            StepUtils.sleepMs(1000)
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            StepUtils.sleepMs(1000)
+            return true
+        }
+
+        AutomationState.log("  ✘ Password flow failed after 8 attempts")
+        return false
     }
 
-    // ══════════════════════════════════════════════════════
-    //  🟢 HELPERS
-    // ══════════════════════════════════════════════════════
     private fun clickText(service: AccessibilityService, vararg texts: String): Boolean {
         val root = service.rootInActiveWindow ?: return false
         for (text in texts) {
