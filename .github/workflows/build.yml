@@ -48,7 +48,7 @@ jobs:
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           echo "ndk.dir=$ANDROID_HOME/ndk/25.1.8937393" >> local.properties
 
-      - name: Replace XopProtector settings.gradle.kts (remove :demo to avoid NDK version conflict)
+      - name: Replace XopProtector settings.gradle.kts (remove :demo, :unimp-host)
         run: |
           cat > XopProtector/settings.gradle.kts <<'EOF'
           pluginManagement {
@@ -69,15 +69,25 @@ jobs:
           include(":native")
           include(":packer")
           EOF
-          echo "✔ settings.gradle.kts replaced — :demo removed"
+          echo "✔ settings.gradle.kts replaced"
 
       - name: Build XopProtector Packer & Shell Files
         run: |
           cd XopProtector
           chmod +x gradlew
           ./gradlew :packer:jar exportShellFiles --no-daemon --stacktrace
-          echo "PACKER_JAR=$(find packer/build/libs -name 'protector-packer-*.jar' | head -1)" >> $GITHUB_ENV
+          # 🟢 ABSOLUTE path — $(pwd) شامل کیا
+          PACKER_JAR_ABS=$(find "$(pwd)/packer/build/libs" -name 'protector-packer-*.jar' | head -1)
+          if [ -z "$PACKER_JAR_ABS" ]; then
+            echo "::error::Packer JAR not found"
+            exit 1
+          fi
+          echo "PACKER_JAR=$PACKER_JAR_ABS" >> $GITHUB_ENV
           echo "SHELL_DIR=$(pwd)/executable/shell-files" >> $GITHUB_ENV
+          echo "✔ PACKER_JAR=$PACKER_JAR_ABS"
+          echo "✔ SHELL_DIR=$(pwd)/executable/shell-files"
+          ls -la "$PACKER_JAR_ABS" || true
+          ls -la "$(pwd)/executable/shell-files" || true
 
       - name: Build Release APK (R8 obfuscated)
         run: |
@@ -98,6 +108,8 @@ jobs:
 
       - name: Protect APK with XopProtector (DEX encryption)
         run: |
+          echo "Using PACKER_JAR: $PACKER_JAR"
+          echo "Using SHELL_DIR: $SHELL_DIR"
           java -jar "$PACKER_JAR" \
             "$APK_PATH" \
             -o app-protected.apk \
