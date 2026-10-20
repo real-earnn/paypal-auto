@@ -10,12 +10,31 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.view.accessibility.AccessibilityNodeInfo
 import com.real.earn.paypal.service.AutomationState
+import kotlinx.coroutines.runBlocking
 
 object PayPalClearData {
 
     fun strictClear(service: AccessibilityService, targetPackage: String): Boolean {
+        // ══════════════════════════════════════════════════════════════
+        // 🟢 ADB-FIRST: pm clear — one command, no UI hunting
+        // ══════════════════════════════════════════════════════════════
+        val adbResult = runBlocking {
+            SystemActionsViaAdb.clearAppData(service.applicationContext, targetPackage)
+        }
+        if (adbResult != null) {
+            if (adbResult) {
+                AutomationState.log("✔ ADB clear data success: $targetPackage")
+                return true
+            } else {
+                AutomationState.log("⚠ ADB clear failed — falling back to accessibility")
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // FALLBACK: old Settings → App Info → Storage → Clear
+        // ══════════════════════════════════════════════════════════════
         try {
-            AutomationState.log("🧹 Clear data for $targetPackage…")
+            AutomationState.log("🧹 Clear data for $targetPackage (accessibility)…")
 
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
             StepUtils.sleepMs(900)
@@ -76,11 +95,7 @@ object PayPalClearData {
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    //  🟢 FIXED: Tap the CARD (not the label text) in Recents
-    // ══════════════════════════════════════════════════════════════════════
     private fun tryRecentsFallback(service: AccessibilityService): Boolean {
-        // 🟢 Check 1: Is App Info ALREADY visible? (sometimes the intent opened it but detection missed)
         if (waitForAppInfoContent(service, 1500)) {
             AutomationState.log("  ✔ App Info was already visible!")
             return true
@@ -91,7 +106,6 @@ object PayPalClearData {
 
         val root = service.rootInActiveWindow
         if (root != null) {
-            // Find "Settings" text in Recents (label under the app card)
             val settingsNode = NodeFinder.findByText(root, "Settings", "سیٹنگز")
                 ?: NodeFinder.findByTextContains(root, "Settings")
                 ?: findByContentDescContains(root, "Settings")
@@ -99,7 +113,6 @@ object PayPalClearData {
             if (settingsNode != null) {
                 AutomationState.log("  ✔ Found 'Settings' label in Recents")
 
-                // 🟢 Method 1: Click the CLICKABLE PARENT (the card container)
                 val clickableParent = NodeFinder.findClickableParent(settingsNode)
                 if (clickableParent != null) {
                     val pR = Rect(); clickableParent.getBoundsInScreen(pR)
@@ -111,7 +124,6 @@ object PayPalClearData {
                     }
                 }
 
-                // 🟢 Method 2: Tap ABOVE the label (where card preview is)
                 val r = Rect(); settingsNode.getBoundsInScreen(r)
                 val tapX = r.centerX()
                 val tapY = r.top - 250
@@ -122,7 +134,6 @@ object PayPalClearData {
                     if (waitForAppInfoContent(service, 6000)) return true
                 }
 
-                // 🟢 Method 3: Tap center of screen (last resort)
                 val screenR = Rect(); root.getBoundsInScreen(screenR)
                 AutomationState.log("  → Tap 3: Screen center (${screenR.centerX()}, ${screenR.centerY()})")
                 tapAt(service, screenR.centerX(), screenR.centerY())
@@ -185,7 +196,7 @@ object PayPalClearData {
                 "App info", "App permissions", "Notifications",
                 "Permissions", "Battery", "Mobile data", "Data usage",
                 "Version", "Size",
-                "اسٹوریج", "اسٹور", "زبردستی", "ان انسٹال"  // Urdu fallbacks
+                "اسٹوریج", "اسٹور", "زبردستی", "ان انسٹال"
             )
             if (hasContent) return true
 
