@@ -35,20 +35,20 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Install NDK & CMake
+      - name: Install NDK 25.1.8937393 & CMake
         run: |
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager --install "ndk;25.2.9519653" "cmake;3.22.1"
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
+          sdkmanager --install "ndk;25.1.8937393" "cmake;3.22.1"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.1.8937393" >> $GITHUB_ENV
 
       - name: Clone XopProtector
         run: |
           git clone --depth 1 https://github.com/xopJack/XopProtector.git
           cd XopProtector
           echo "sdk.dir=$ANDROID_HOME" > local.properties
-          echo "ndk.dir=$ANDROID_HOME/ndk/25.2.9519653" >> local.properties
+          echo "ndk.dir=$ANDROID_HOME/ndk/25.1.8937393" >> local.properties
 
-      - name: Replace XopProtector settings.gradle.kts with clean version
+      - name: Replace XopProtector settings.gradle.kts (remove :demo to avoid NDK version conflict)
         run: |
           cat > XopProtector/settings.gradle.kts <<'EOF'
           pluginManagement {
@@ -67,12 +67,9 @@ jobs:
           }
           rootProject.name = "XopProtector"
           include(":native")
-          include(":demo")
           include(":packer")
           EOF
-          echo "✔ settings.gradle.kts replaced with clean version"
-          echo "--- Full print of new settings.gradle.kts ---"
-          cat XopProtector/settings.gradle.kts
+          echo "✔ settings.gradle.kts replaced — :demo removed"
 
       - name: Build XopProtector Packer & Shell Files
         run: |
