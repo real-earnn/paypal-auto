@@ -79,9 +79,7 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
-    // 🟢 Kadb — direct ADB client (pairing + shell, no external app)
-    implementation("com.flyfishxu:kadb:2.1.4")
-
-    // 🟢 Optional mDNS discovery for connect port after pairing
-    implementation("com.flyfishxu:kadb-mdns:2.1.4")
+    // 🟢 Kadb — compileSdk 34 کے ساتھ مطابقت رکھنے والا ورژن
+    implementation("com.flyfishxu:kadb:2.1.1")
+    implementation("com.flyfishxu:kadb-mdns:2.1.1")
 }
