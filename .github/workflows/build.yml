@@ -1,4 +1,4 @@
-name: Build APK
+name: Build Protected APK (No Signing)
 
 on:
   push:
@@ -13,7 +13,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
@@ -25,40 +25,72 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Setup Gradle 8.5
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.5'
-          cache-read-only: false
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Display environment
+      - name: Install NDK & CMake (XopProtector native shell کے لیے)
         run: |
-          java -version
-          gradle --version
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          ls $ANDROID_HOME 2>/dev/null || true
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager --install "ndk;25.2.9519653" "cmake;3.22.1"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
 
-      - name: Build Debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+      - name: Clone XopProtector
+        run: |
+          git clone --depth 1 https://github.com/xopJack/XopProtector.git
+          cd XopProtector
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          echo "ndk.dir=$ANDROID_HOME/ndk/25.2.9519653" >> local.properties
+
+      - name: Build XopProtector Packer & Shell Files
+        run: |
+          cd XopProtector
+          chmod +x gradlew
+          ./gradlew :packer:jar exportShellFiles --no-daemon --stacktrace
+          echo "PACKER_JAR=$(find packer/build/libs -name 'protector-packer-*.jar' | head -1)" >> $GITHUB_ENV
+          echo "SHELL_DIR=$(pwd)/executable/shell-files" >> $GITHUB_ENV
+
+      - name: Build Release APK (R8 obfuscated, unsigned/signed as configured)
+        run: |
+          gradle assembleRelease --no-daemon --stacktrace
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2048m -Dorg.gradle.daemon=false"
 
-      - name: Locate APK
-        if: success()
+      - name: Locate Release APK
+        id: locate_apk
         run: |
-          find . -name "*.apk" -type f
-          ls -la app/build/outputs/apk/debug/ || true
+          APK_PATH=$(find app/build/outputs/apk/release -name '*.apk' -type f | head -1)
+          if [ -z "$APK_PATH" ]; then
+            echo "::error::Release APK not found"
+            exit 1
+          fi
+          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
+          echo "✔ Found APK: $APK_PATH"
 
-      - name: Upload APK artifact
+      - name: Protect APK with XopProtector (DEX encryption)
+        run: |
+          java -jar "$PACKER_JAR" \
+            "$APK_PATH" \
+            -o app-protected.apk \
+            --shell-dir "$SHELL_DIR" \
+            --profile balanced
+          echo "✔ Protected APK created: app-protected.apk"
+
+      - name: Upload Protected APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: RealEarnPayPal-Debug-${{ github.run_number }}
-          path: |
-            app/build/outputs/apk/debug/*.apk
+          name: RealEarnPayPal-Protected-${{ github.run_number }}
+          path: app-protected.apk
           retention-days: 30
-          if-no-files-found: error
+
+      - name: Upload mapping.txt (for crash deobfuscation)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mapping-${{ github.run_number }}
+          path: app/build/outputs/mapping/release/mapping.txt
+          retention-days: 30
+          if-no-files-found: ignore
 
       - name: Upload build reports (on failure)
         if: failure()
