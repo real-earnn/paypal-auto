@@ -80,7 +80,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
     // 🟢 Kadb — direct ADB client (pairing + shell, no external app)
-    implementation("com.flyfishxu:kadb:2.1.5")
+    implementation("com.flyfishxu:kadb:2.1.4")
+
     // 🟢 Optional mDNS discovery for connect port after pairing
-    implementation("com.flyfishxu:kadb-mdns:2.1.5")
+    implementation("com.flyfishxu:kadb-mdns:2.1.4")
 }
