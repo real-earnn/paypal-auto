@@ -7,9 +7,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.text.InputType
 import android.view.View
-import android.widget.Button
 import android.widget.EditText
-import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -83,7 +81,10 @@ class PermissionActivity : AppCompatActivity() {
         binding.btnChooseSound.setOnClickListener { openRingtonePicker() }
         updateSoundLabel()
 
-        // 🟢 START: check ADB connection first; if not connected → pairing dialog
+        // 🟢 ADB toggle setup
+        setupAdbToggle()
+
+        // 🟢 Start button
         binding.btnStart.setOnClickListener {
             if (!allGranted()) {
                 Toast.makeText(this, "Pehle saari permissions enable karo", Toast.LENGTH_SHORT).show()
@@ -91,172 +92,206 @@ class PermissionActivity : AppCompatActivity() {
             }
 
             lifecycleScope.launch {
-                val adbConnected = AdbPairingManager.isConnected(this@PermissionActivity)
-                if (adbConnected) {
-                    startAutomation()
-                } else {
-                    // 🟢 Toggle effectively OFF — show pairing setup
-                    Toast.makeText(
-                        this@PermissionActivity,
-                        "ADB connect nahi hai — dobara pair karo",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    showAdbPairingDialog()
+                val adbToggleOn = binding.switchAdbPairing.isChecked
+                if (adbToggleOn) {
+                    val adbConnected = AdbPairingManager.isConnected(this@PermissionActivity)
+                    if (!adbConnected) {
+                        Toast.makeText(
+                            this@PermissionActivity,
+                            "ADB connect nahi hai — pehle pair karo (toggle ke neeche)",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        return@launch
+                    }
                 }
+                startAutomation()
             }
         }
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // 🟢 ADB Pairing Dialog (programmatic — no XML change needed)
+    // 🟢 ADB Toggle Setup + Pairing Flow
     // ══════════════════════════════════════════════════════════════════════
-    private fun showAdbPairingDialog() {
-        if (!AdbPairingManager.isPairingSupported()) {
-            Toast.makeText(
-                this,
-                "Wireless debugging pairing requires Android 11+",
-                Toast.LENGTH_LONG
-            ).show()
-            // Fallback: start automation with accessibility anyway
-            startAutomation()
-            return
-        }
+    private fun setupAdbToggle() {
+        // Restore saved host
+        prefs.adbHost?.let { binding.etAdbHost.setText(it) }
 
-        val prefs = AppPrefs(this)
-        val savedHost = prefs.adbHost ?: ""
+        // Restore previous state
+        val wasPaired = prefs.adbPaired
+        binding.switchAdbPairing.isChecked = wasPaired
 
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(50, 30, 50, 10)
-        }
+        // Set initial section visibility
+        binding.layoutAdbSection.visibility = if (wasPaired) View.VISIBLE else View.GONE
 
-        val tvHelp = TextView(this).apply {
-            text = "1) Settings → Developer options → Wireless debugging ON\n" +
-                    "2) Tap 'Pair device with pairing code'\n" +
-                    "3) Enter IP:Port and the 6-digit code below"
-            textSize = 13f
-            setPadding(0, 0, 0, 20)
-        }
-
-        val etHostPort = EditText(this).apply {
-            hint = "IP:Pairing Port  (e.g. 192.168.1.5:37755)"
-            inputType = InputType.TYPE_CLASS_TEXT
-            setText(savedHost)
-        }
-
-        val etCode = EditText(this).apply {
-            hint = "6-digit pairing code"
-            inputType = InputType.TYPE_CLASS_NUMBER
-        }
-
-        val tvStatus = TextView(this).apply {
-            text = ""
-            textSize = 13f
-            setPadding(0, 15, 0, 0)
-        }
-
-        layout.addView(tvHelp)
-        layout.addView(etHostPort)
-        layout.addView(etCode)
-        layout.addView(tvStatus)
-
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("ADB Pairing")
-            .setView(layout)
-            .setPositiveButton("Pair", null)
-            .setNegativeButton("Cancel", null)
-            .create()
-
-        dialog.setOnShowListener {
-            val btn = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
-            btn.setOnClickListener {
-                val hostPort = etHostPort.text.toString().trim()
-                val code = etCode.text.toString().trim()
-
-                if (hostPort.isEmpty() || code.length != 6) {
-                    tvStatus.text = "IP:Port aur 6-digit code sahi likho"
-                    return@setOnClickListener
-                }
-
-                val parts = hostPort.split(":")
-                if (parts.size != 2) {
-                    tvStatus.text = "Format: IP:Port (e.g. 192.168.1.5:37755)"
-                    return@setOnClickListener
-                }
-
-                val host = parts[0].trim()
-                val pairingPort = parts[1].trim().toIntOrNull()
-                if (pairingPort == null) {
-                    tvStatus.text = "Port number sahi nahi hai"
-                    return@setOnClickListener
-                }
-
-                btn.isEnabled = false
-                tvStatus.text = "Pairing ho rahi hai..."
-
-                lifecycleScope.launch {
-                    val (success, msg) = AdbPairingManager.pair(
-                        this@PermissionActivity, host, pairingPort, code
-                    )
-
-                    if (!success) {
-                        tvStatus.text = "✘ $msg"
-                        btn.isEnabled = true
-                        return@launch
-                    }
-
-                    tvStatus.text = "✔ Paired! Connect port dhoond raha hun..."
-                    val connectPort = AdbPairingManager.discoverConnectPort(
-                        this@PermissionActivity, host
-                    )
-
-                    if (connectPort != null) {
-                        AdbPairingManager.savePairing(
-                            this@PermissionActivity, host, pairingPort, connectPort
-                        )
-                        tvStatus.text = "✔ Connected on port $connectPort"
-                        dialog.dismiss()
-                        Toast.makeText(
-                            this@PermissionActivity,
-                            "ADB connected — automation start ho rahi hai",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        startAutomation()
-                    } else {
-                        // mDNS could not find connect port — ask user to enter it manually
-                        tvStatus.text = "⚠ Connect port nahi mila. Wireless Debugging screen pe jo port hai woh enter karo."
-                        btn.isEnabled = true
-
-                        val etConnectPort = EditText(this@PermissionActivity).apply {
-                            hint = "Connect Port (e.g. 5555)"
-                            inputType = InputType.TYPE_CLASS_NUMBER
-                        }
-                        layout.addView(etConnectPort)
-
-                        btn.text = "Save Connect Port"
-                        btn.setOnClickListener {
-                            val cp = etConnectPort.text.toString().trim().toIntOrNull()
-                            if (cp == null || cp <= 0) {
-                                tvStatus.text = "Connect port sahi nahi hai"
-                                return@setOnClickListener
-                            }
-                            AdbPairingManager.savePairing(
-                                this@PermissionActivity, host, pairingPort, cp
-                            )
-                            dialog.dismiss()
-                            Toast.makeText(
-                                this@PermissionActivity,
-                                "ADB connected — automation start ho rahi hai",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                            startAutomation()
-                        }
-                    }
-                }
+        binding.switchAdbPairing.setOnCheckedChangeListener { _, isChecked ->
+            if (isChecked) {
+                binding.layoutAdbSection.visibility = View.VISIBLE
+                checkAdbConnectionAndUpdate()
+            } else {
+                binding.layoutAdbSection.visibility = View.GONE
             }
         }
 
-        dialog.show()
+        binding.btnAdbPair.setOnClickListener { onPairButtonClick() }
+
+        // 🟢 Auto-check on activity open if toggle already ON
+        if (wasPaired) {
+            lifecycleScope.launch {
+                val connected = AdbPairingManager.isConnected(this@PermissionActivity)
+                if (connected) {
+                    showConnectedUi(prefs.adbHost ?: "", prefs.adbConnectPort)
+                } else {
+                    // Connection lost — show pair UI so user can re-pair
+                    showPairUi("⚠ Connection lost — pair again")
+                }
+            }
+        }
+    }
+
+    /**
+     * Called when toggle is turned ON.
+     * - If already connected → show "✅ Connected" + Disconnect button
+     * - If not connected → show pairing fields
+     */
+    private fun checkAdbConnectionAndUpdate() {
+        lifecycleScope.launch {
+            binding.tvAdbStatus.text = "Checking connection…"
+            binding.tvAdbStatus.setTextColor(getColor(R.color.text_dim))
+
+            val connected = AdbPairingManager.isConnected(this@PermissionActivity)
+
+            if (connected) {
+                showConnectedUi(prefs.adbHost ?: "", prefs.adbConnectPort)
+            } else {
+                showPairUi("⚠ Not connected — pair below")
+            }
+        }
+    }
+
+    private fun showConnectedUi(host: String, port: Int) {
+        binding.tvAdbStatus.text = "✅ Connected: $host:$port"
+        binding.tvAdbStatus.setTextColor(getColor(R.color.success_green))
+        binding.btnAdbPair.text = "Disconnect"
+        binding.btnAdbPair.backgroundTintList = android.content.res.ColorStateList.valueOf(
+            getColor(R.color.error_red)
+        )
+        binding.etAdbHost.isEnabled = false
+        binding.etCode.isEnabled = false
+        binding.etCode.text?.clear()
+    }
+
+    private fun showPairUi(statusMsg: String) {
+        binding.tvAdbStatus.text = statusMsg
+        binding.tvAdbStatus.setTextColor(getColor(R.color.error_red))
+        binding.btnAdbPair.text = "Pair Now"
+        binding.btnAdbPair.backgroundTintList = android.content.res.ColorStateList.valueOf(
+            getColor(R.color.paypal_blue)
+        )
+        binding.etAdbHost.isEnabled = true
+        binding.etCode.isEnabled = true
+    }
+
+    private fun onPairButtonClick() {
+        // If currently connected → Disconnect
+        if (binding.btnAdbPair.text == "Disconnect") {
+            AdbPairingManager.clearPairing(this)
+            binding.switchAdbPairing.isChecked = false
+            binding.layoutAdbSection.visibility = View.GONE
+            Toast.makeText(this, "ADB disconnected", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Otherwise, attempt pairing
+        val hostPort = binding.etAdbHost.text.toString().trim()
+        val code = binding.etCode.text.toString().trim()
+
+        if (hostPort.isEmpty() || code.length != 6) {
+            binding.tvAdbStatus.text = "⚠ IP:Port aur 6-digit code sahi likho"
+            binding.tvAdbStatus.setTextColor(getColor(R.color.error_red))
+            return
+        }
+
+        val parts = hostPort.split(":")
+        if (parts.size != 2) {
+            binding.tvAdbStatus.text = "⚠ Format: IP:Port (e.g. 192.168.1.5:37755)"
+            binding.tvAdbStatus.setTextColor(getColor(R.color.error_red))
+            return
+        }
+
+        val host = parts[0].trim()
+        val pairingPort = parts[1].trim().toIntOrNull()
+        if (pairingPort == null || pairingPort <= 0) {
+            binding.tvAdbStatus.text = "⚠ Port number sahi nahi hai"
+            binding.tvAdbStatus.setTextColor(getColor(R.color.error_red))
+            return
+        }
+
+        binding.btnAdbPair.isEnabled = false
+        binding.tvAdbStatus.text = "🔗 Pairing ho rahi hai…"
+        binding.tvAdbStatus.setTextColor(getColor(R.color.text_dim))
+
+        lifecycleScope.launch {
+            val (success, msg) = AdbPairingManager.pair(
+                this@PermissionActivity, host, pairingPort, code
+            )
+
+            if (!success) {
+                binding.tvAdbStatus.text = "✘ $msg"
+                binding.tvAdbStatus.setTextColor(getColor(R.color.error_red))
+                binding.btnAdbPair.isEnabled = true
+                return@launch
+            }
+
+            binding.tvAdbStatus.text = "✔ Paired! Connect port dhoond raha hun…"
+
+            val connectPort = AdbPairingManager.discoverConnectPort(
+                this@PermissionActivity, host
+            )
+
+            if (connectPort != null) {
+                AdbPairingManager.savePairing(
+                    this@PermissionActivity, host, pairingPort, connectPort
+                )
+                showConnectedUi(host, connectPort)
+                Toast.makeText(
+                    this@PermissionActivity,
+                    "ADB connected — ab Flight Mode aur Clear Data fast honge",
+                    Toast.LENGTH_SHORT
+                ).show()
+                binding.btnAdbPair.isEnabled = true
+            } else {
+                binding.tvAdbStatus.text =
+                    "⚠ mDNS se connect port nahi mila — manually enter karo"
+                binding.tvAdbStatus.setTextColor(getColor(R.color.error_red))
+                binding.btnAdbPair.isEnabled = true
+                showConnectPortDialog(host, pairingPort)
+            }
+        }
+    }
+
+    private fun showConnectPortDialog(host: String, pairingPort: Int) {
+        val input = EditText(this).apply {
+            hint = "Connect Port (e.g. 42567)"
+            inputType = InputType.TYPE_CLASS_NUMBER
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Connect Port")
+            .setMessage("Wireless Debugging screen pe 'IP address & Port' mein jo port hai woh enter karo:")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val cp = input.text.toString().trim().toIntOrNull()
+                if (cp != null && cp > 0) {
+                    AdbPairingManager.savePairing(this, host, pairingPort, cp)
+                    showConnectedUi(host, cp)
+                    Toast.makeText(this, "ADB connected!", Toast.LENGTH_SHORT).show()
+                } else {
+                    binding.tvAdbStatus.text = "✘ Port invalid"
+                    binding.tvAdbStatus.setTextColor(getColor(R.color.error_red))
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun startAutomation() {
