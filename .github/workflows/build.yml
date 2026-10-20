@@ -25,18 +25,17 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      # 🟢 یہاں اہم تبدیلی ہے: v3 سے v4 اور packages کی وضاحت
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:
-          packages: 'platform-tools' # صرف platform-tools انسٹال کریں، پرانا tools نہیں
+          packages: 'platform-tools'
 
       - name: Setup Gradle 8.11.1
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.11.1' # AGP 8.9.1 کے لیے کم از کم ورژن
+          gradle-version: '8.11.1'
 
-      - name: Install NDK & CMake (XopProtector native shell کے لیے)
+      - name: Install NDK & CMake
         run: |
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
           sdkmanager --install "ndk;25.2.9519653" "cmake;3.22.1"
@@ -48,6 +47,13 @@ jobs:
           cd XopProtector
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           echo "ndk.dir=$ANDROID_HOME/ndk/25.2.9519653" >> local.properties
+
+      - name: Fix XopProtector settings.gradle.kts for Linux
+        run: |
+          # settings.gradle.kts میں سے ونڈوز والا سخت کوڈ شدہ راستہ ہٹا دیں
+          # تاکہ یہ local.properties یا ANDROID_HOME استعمال کر سکے
+          sed -i '/E:\\\\Android\\\\SDK-Android/d' XopProtector/settings.gradle.kts
+          echo "✔ settings.gradle.kts patched for Linux"
 
       - name: Build XopProtector Packer & Shell Files
         run: |
