@@ -9,47 +9,49 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.view.accessibility.AccessibilityNodeInfo
 import com.real.earn.paypal.service.AutomationState
+import kotlinx.coroutines.runBlocking
 
 object AirplaneModeController {
 
-    // ══════════════════════════════════════════════════════════════════════
-    //  🟢 Comprehensive keyword list — multi-variant + multi-language
-    // ══════════════════════════════════════════════════════════════════════
     private val AIRPLANE_KEYWORDS = arrayOf(
-        // English variants
         "airplane", "aeroplane", "air plane", "air-plane",
         "flight mode", "flight-mode", "in-flight", "inflight", "flight",
-        // Urdu
         "ایروپلین", "ایرو پلین", "فلائٹ", "ہوائی جہاز", "ہوائی", "طیارہ",
-        // Hindi
         "एयरप्लेन", "एयरोप्लेन", "फ्लाइट", "हवाई जहाज", "हवाई जहाज़", "विमान",
-        // Arabic
         "طيران", "الطيران", "وضع الطيران",
-        // Persian
         "هواپیما", "پرواز", "حالت هواپیما",
-        // Turkish
         "uçak", "ucak", "uçuş", "ucus",
-        // Bengali
         "বিমান", "ফ্লাইট",
-        // Indonesian
         "mode pesawat", "pesawat",
-        // Russian
         "самолет", "самолёт", "авиарежим", "полет", "полёт",
-        // French
         "mode avion", "avion",
-        // Spanish
         "modo avión", "modo avion", "avión", "avion",
-        // German
         "flugmodus", "flug",
-        // Portuguese
         "modo avião", "modo aviao",
-        // Italian
         "modalità aereo", "modalita aereo", "aereo",
     )
 
     fun toggleCycle(service: AccessibilityService): Boolean = strictToggle(service)
 
     fun strictToggle(service: AccessibilityService): Boolean {
+        // ══════════════════════════════════════════════════════════════
+        // 🟢 ADB-FIRST: fast, device-agnostic, no tile hunting
+        // ══════════════════════════════════════════════════════════════
+        val adbResult = runBlocking {
+            SystemActionsViaAdb.cycleAirplaneMode(service.applicationContext, 5)
+        }
+        if (adbResult != null) {
+            if (adbResult) {
+                AutomationState.log("✔ Flight cycle via ADB")
+                return true
+            } else {
+                AutomationState.log("⚠ ADB flight failed — falling back to accessibility")
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // FALLBACK: old Quick Settings tile method
+        // ══════════════════════════════════════════════════════════════
         return try {
             if (isAirplaneModeOn(service)) {
                 AutomationState.log("ℹ Flight was ON — normalizing")
@@ -88,14 +90,12 @@ object AirplaneModeController {
     private fun toggleTo(service: AccessibilityService, targetOn: Boolean): Boolean {
         val prefs = AppPrefs(service)
 
-        // ═══ ① Open Quick Settings ═══
         if (!openQs(service)) {
             AutomationState.log("  ✘ QS not open")
             return false
         }
         StepUtils.sleepMs(700)
 
-        // ═══ ② Resolve target coordinates ═══
         var targetX = prefs.flightTapX
         var targetY = prefs.flightTapY
 
@@ -112,14 +112,12 @@ object AirplaneModeController {
             AutomationState.log("  ℹ Tile found at ($targetX, $targetY) size=${r.width()}x${r.height()}")
         }
 
-        // ═══ ③ Try tapping the SAME position up to 4 times (no QS close) ═══
         for (attempt in 1..4) {
             if (StepUtils.shouldStop()) return false
 
             AutomationState.log("  ↳ Tap attempt #$attempt at ($targetX, $targetY)")
             tapAt(service, targetX, targetY)
 
-            // Wait for state to flip
             if (waitAirplaneState(service, targetOn, 3200)) {
                 prefs.flightTapX = targetX
                 prefs.flightTapY = targetY
@@ -127,7 +125,6 @@ object AirplaneModeController {
                 return true
             }
 
-            // Not flipped — check QS still open before retry
             if (!isQsOpen(service)) {
                 AutomationState.log("  ⚠ QS closed after tap #$attempt — reopening")
                 service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS)
@@ -137,12 +134,10 @@ object AirplaneModeController {
                 }
                 StepUtils.sleepMs(600)
             } else {
-                // Still open — just short gap before retry
                 StepUtils.sleepMs(400)
             }
         }
 
-        // ═══ ④ All attempts failed — clear saved coords for future ═══
         AutomationState.log("  ✘ All 4 tap attempts failed — clearing saved coords")
         prefs.flightTapX = 0
         prefs.flightTapY = 0
