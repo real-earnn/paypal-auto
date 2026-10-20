@@ -41,21 +41,14 @@ jobs:
           sdkmanager --install "ndk;25.1.8937393" "cmake;3.22.1"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.1.8937393" >> $GITHUB_ENV
 
-      # ═══════════════════════════════════════════════════════════════════
-      # 🟢 STEP 1: Verify keystore exists in root directory
-      # ═══════════════════════════════════════════════════════════════════
       - name: Verify Keystore
         run: |
           if [ ! -f silent_production.keystore ]; then
             echo "::error::silent_production.keystore not found in repository root"
-            echo "Please commit your keystore file to the root directory"
             exit 1
           fi
           echo "✔ Keystore found ($(stat -c%s silent_production.keystore) bytes)"
 
-      # ═══════════════════════════════════════════════════════════════════
-      # 🟢 STEP 2: Extract SHA256 for logging/reference
-      # ═══════════════════════════════════════════════════════════════════
       - name: Extract Signing SHA256
         run: |
           HASH=$(keytool -list -v \
@@ -69,11 +62,7 @@ jobs:
           fi
           echo "SIGNING_SHA256=$HASH" >> $GITHUB_ENV
           echo "✔ Signing SHA256: $HASH"
-          echo "   This signature will be embedded by XopProtector for anti-tamper"
 
-      # ═══════════════════════════════════════════════════════════════════
-      # 🟢 STEP 3: Build unsigned release APK (R8 obfuscated)
-      # ═══════════════════════════════════════════════════════════════════
       - name: Build Release APK
         run: |
           gradle assembleRelease --no-daemon --stacktrace
@@ -90,10 +79,6 @@ jobs:
           echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
           echo "✔ Found APK: $APK_PATH"
 
-      # ═══════════════════════════════════════════════════════════════════
-      # 🟢 STEP 4: Sign APK with persistent keystore (v1 + v2 + v3)
-      # XopProtector needs signed input to read cert SHA
-      # ═══════════════════════════════════════════════════════════════════
       - name: Sign APK (v1 + v2 + v3)
         run: |
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | head -1)
@@ -112,7 +97,6 @@ jobs:
 
           mv app-signed.apk "$APK_PATH"
           echo "✔ APK signed with persistent keystore"
-          echo "   Signature will remain stable across all builds"
 
       - name: Verify Signature
         run: |
@@ -120,9 +104,6 @@ jobs:
           $APKSIGNER verify --verbose --print-certs "$APK_PATH" | grep -i "SHA-256"
           echo "✔ Signature verified"
 
-      # ═══════════════════════════════════════════════════════════════════
-      # 🟢 STEP 5: Clone & build XopProtector
-      # ═══════════════════════════════════════════════════════════════════
       - name: Clone XopProtector
         run: |
           git clone --depth 1 https://github.com/xopJack/XopProtector.git
@@ -170,11 +151,6 @@ jobs:
           echo "✔ PACKER_JAR=$PACKER_JAR_ABS"
           echo "✔ SHELL_DIR=$(pwd)/executable/shell-files"
 
-      # ═══════════════════════════════════════════════════════════════════
-      # 🟢 STEP 6: Protect APK with XopProtector
-      # - Encrypts DEX, embeds app_sign_sha256 (from our keystore)
-      # - If someone re-signs with different key, app crashes (anti-tamper)
-      # ═══════════════════════════════════════════════════════════════════
       - name: Protect APK with XopProtector
         run: |
           echo "════════════════════════════════════════════════════════════"
@@ -182,25 +158,25 @@ jobs:
           echo "  Keystore SHA256: $SIGNING_SHA256"
           echo "════════════════════════════════════════════════════════════"
 
+          # 🟢 FIX: absolute path for output file (getParentFile() must not be null)
+          OUTPUT_APK="$(pwd)/app-protected.apk"
+
           java -jar "$PACKER_JAR" \
             "$APK_PATH" \
-            -o app-protected.apk \
+            -o "$OUTPUT_APK" \
             --shell-dir "$SHELL_DIR" \
             --profile balanced
 
-          if [ ! -f app-protected.apk ]; then
+          if [ ! -f "$OUTPUT_APK" ]; then
             echo "::error::XopProtector failed to produce output"
             exit 1
           fi
-          echo "✔ Protected APK created ($(stat -c%s app-protected.apk) bytes)"
+          echo "✔ Protected APK created: $OUTPUT_APK ($(stat -c%s "$OUTPUT_APK") bytes)"
 
-      # ═══════════════════════════════════════════════════════════════════
-      # 🟢 STEP 7: Re-sign protected APK (XopProtector strips signature)
-      # Same keystore → same cert SHA256 → anti-tamper will pass
-      # ═══════════════════════════════════════════════════════════════════
       - name: Re-sign Protected APK
         run: |
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | head -1)
+          OUTPUT_APK="$(pwd)/app-protected.apk"
 
           $APKSIGNER sign \
             --ks silent_production.keystore \
@@ -211,7 +187,7 @@ jobs:
             --v2-signing-enabled true \
             --v3-signing-enabled true \
             --out app-protected-signed.apk \
-            app-protected.apk
+            "$OUTPUT_APK"
 
           if [ ! -f app-protected-signed.apk ]; then
             echo "::error::Re-signing failed"
@@ -219,9 +195,6 @@ jobs:
           fi
           echo "✔ Protected APK re-signed"
 
-      # ═══════════════════════════════════════════════════════════════════
-      # 🟢 STEP 8: Verify final signature matches original keystore
-      # ═══════════════════════════════════════════════════════════════════
       - name: Verify Final Signature
         run: |
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | head -1)
@@ -251,9 +224,6 @@ jobs:
             exit 1
           fi
 
-      # ═══════════════════════════════════════════════════════════════════
-      # 🟢 STEP 9: Upload final APK
-      # ═══════════════════════════════════════════════════════════════════
       - name: Upload Final APK
         if: success()
         uses: actions/upload-artifact@v4
