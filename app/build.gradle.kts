@@ -81,5 +81,4 @@ dependencies {
 
     // 🟢 Kadb — compileSdk 34 کے ساتھ مطابقت رکھنے والا ورژن
     implementation("com.flyfishxu:kadb:2.1.1")
-    implementation("com.flyfishxu:kadb-mdns:2.1.1")
 }
