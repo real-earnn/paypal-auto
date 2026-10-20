@@ -14,14 +14,12 @@ android {
         versionCode = 1
         versionName = "1.0.0"
 
-        // 🟢 YAHAN BASE_URL LAGAO
         buildConfigField(
             "String",
             "BASE_URL",
             "\"https://real-earn.silenthost.site\""
         )
 
-        // Optional: WebSocket URL agar baad mein chahiye
         buildConfigField(
             "String",
             "WS_URL",
@@ -53,7 +51,7 @@ android {
 
     buildFeatures {
         viewBinding = true
-        buildConfig = true   // 🟢 ZAROORI — BuildConfig class generate karne ke liye
+        buildConfig = true
     }
 
     packaging {
@@ -80,4 +78,9 @@ dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+
+    // 🟢 Kadb — direct ADB client (pairing + shell, no external app)
+    implementation("com.flyfishxu:kadb:2.1.5")
+    // 🟢 Optional mDNS discovery for connect port after pairing
+    implementation("com.flyfishxu:kadb-mdns:2.1.5")
 }
