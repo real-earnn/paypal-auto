@@ -10,6 +10,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // 🟢 JitPack — Kadb کی spake2-java dependency کے لیے
+        maven { url = uri("https://jitpack.io") }
     }
 }
 rootProject.name = "RealEarnPayPal"
