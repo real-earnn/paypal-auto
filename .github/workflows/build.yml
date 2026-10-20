@@ -25,8 +25,16 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      # 🟢 یہاں اہم تبدیلی ہے: v3 سے v4 اور packages کی وضاحت
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools' # صرف platform-tools انسٹال کریں، پرانا tools نہیں
+
+      - name: Setup Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1' # AGP 8.9.1 کے لیے کم از کم ورژن
 
       - name: Install NDK & CMake (XopProtector native shell کے لیے)
         run: |
@@ -49,7 +57,7 @@ jobs:
           echo "PACKER_JAR=$(find packer/build/libs -name 'protector-packer-*.jar' | head -1)" >> $GITHUB_ENV
           echo "SHELL_DIR=$(pwd)/executable/shell-files" >> $GITHUB_ENV
 
-      - name: Build Release APK (R8 obfuscated, unsigned/signed as configured)
+      - name: Build Release APK (R8 obfuscated)
         run: |
           gradle assembleRelease --no-daemon --stacktrace
         env:
