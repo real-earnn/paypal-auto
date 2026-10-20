@@ -32,11 +32,13 @@ android {
             isMinifyEnabled = false
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            isDebuggable = false
         }
     }
 
@@ -47,6 +49,8 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+        // 🟢 Kadb (Kotlin 2.3.0 metadata) ke liye — metadata version check skip
+        freeCompilerArgs += listOf("-Xskip-metadata-version-check")
     }
 
     buildFeatures {
@@ -79,6 +83,15 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
-    // 🟢 Kadb — compileSdk 36 کے ساتھ
+    // 🟢 Kadb — direct ADB client (pairing + shell)
     implementation("com.flyfishxu:kadb:2.1.1")
+}
+
+// 🟢 Kadb brings kotlin-stdlib 2.3.20 — force to project's Kotlin version
+configurations.all {
+    resolutionStrategy {
+        force("org.jetbrains.kotlin:kotlin-stdlib:2.0.21")
+        force("org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.0.21")
+        force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.0.21")
+    }
 }
