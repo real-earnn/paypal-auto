@@ -1,4 +1,4 @@
-name: Build Protected APK (No Signing)
+name: Build Protected & Signed APK
 
 on:
   push:
@@ -41,6 +41,88 @@ jobs:
           sdkmanager --install "ndk;25.1.8937393" "cmake;3.22.1"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.1.8937393" >> $GITHUB_ENV
 
+      # ═══════════════════════════════════════════════════════════════════
+      # 🟢 STEP 1: Verify keystore exists in root directory
+      # ═══════════════════════════════════════════════════════════════════
+      - name: Verify Keystore
+        run: |
+          if [ ! -f silent_production.keystore ]; then
+            echo "::error::silent_production.keystore not found in repository root"
+            echo "Please commit your keystore file to the root directory"
+            exit 1
+          fi
+          echo "✔ Keystore found ($(stat -c%s silent_production.keystore) bytes)"
+
+      # ═══════════════════════════════════════════════════════════════════
+      # 🟢 STEP 2: Extract SHA256 for logging/reference
+      # ═══════════════════════════════════════════════════════════════════
+      - name: Extract Signing SHA256
+        run: |
+          HASH=$(keytool -list -v \
+            -keystore silent_production.keystore \
+            -alias silentkey \
+            -storepass silent123password \
+            | grep "SHA256:" | awk '{print $2}' | head -1)
+          if [ -z "$HASH" ]; then
+            echo "::error::Failed to extract SHA256 from keystore"
+            exit 1
+          fi
+          echo "SIGNING_SHA256=$HASH" >> $GITHUB_ENV
+          echo "✔ Signing SHA256: $HASH"
+          echo "   This signature will be embedded by XopProtector for anti-tamper"
+
+      # ═══════════════════════════════════════════════════════════════════
+      # 🟢 STEP 3: Build unsigned release APK (R8 obfuscated)
+      # ═══════════════════════════════════════════════════════════════════
+      - name: Build Release APK
+        run: |
+          gradle assembleRelease --no-daemon --stacktrace
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2048m -Dorg.gradle.daemon=false"
+
+      - name: Locate APK
+        run: |
+          APK_PATH=$(find app/build/outputs/apk/release -name '*.apk' -type f | head -1)
+          if [ -z "$APK_PATH" ]; then
+            echo "::error::Release APK not found"
+            exit 1
+          fi
+          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
+          echo "✔ Found APK: $APK_PATH"
+
+      # ═══════════════════════════════════════════════════════════════════
+      # 🟢 STEP 4: Sign APK with persistent keystore (v1 + v2 + v3)
+      # XopProtector needs signed input to read cert SHA
+      # ═══════════════════════════════════════════════════════════════════
+      - name: Sign APK (v1 + v2 + v3)
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | head -1)
+          echo "Using apksigner: $APKSIGNER"
+
+          $APKSIGNER sign \
+            --ks silent_production.keystore \
+            --ks-key-alias silentkey \
+            --ks-pass pass:silent123password \
+            --key-pass pass:silent123password \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out app-signed.apk \
+            "$APK_PATH"
+
+          mv app-signed.apk "$APK_PATH"
+          echo "✔ APK signed with persistent keystore"
+          echo "   Signature will remain stable across all builds"
+
+      - name: Verify Signature
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | head -1)
+          $APKSIGNER verify --verbose --print-certs "$APK_PATH" | grep -i "SHA-256"
+          echo "✔ Signature verified"
+
+      # ═══════════════════════════════════════════════════════════════════
+      # 🟢 STEP 5: Clone & build XopProtector
+      # ═══════════════════════════════════════════════════════════════════
       - name: Clone XopProtector
         run: |
           git clone --depth 1 https://github.com/xopJack/XopProtector.git
@@ -48,7 +130,7 @@ jobs:
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           echo "ndk.dir=$ANDROID_HOME/ndk/25.1.8937393" >> local.properties
 
-      - name: Replace XopProtector settings.gradle.kts (remove :demo, :unimp-host)
+      - name: Patch XopProtector settings
         run: |
           cat > XopProtector/settings.gradle.kts <<'EOF'
           pluginManagement {
@@ -69,63 +151,118 @@ jobs:
           include(":native")
           include(":packer")
           EOF
-          echo "✔ settings.gradle.kts replaced"
+          echo "✔ settings.gradle.kts patched"
 
-      - name: Build XopProtector Packer & Shell Files
+      - name: Build XopProtector
         run: |
           cd XopProtector
           chmod +x gradlew
           ./gradlew :packer:jar exportShellFiles --no-daemon --stacktrace
-          # 🟢 ABSOLUTE path — $(pwd) شامل کیا
+
           PACKER_JAR_ABS=$(find "$(pwd)/packer/build/libs" -name 'protector-packer-*.jar' | head -1)
           if [ -z "$PACKER_JAR_ABS" ]; then
             echo "::error::Packer JAR not found"
             exit 1
           fi
+
           echo "PACKER_JAR=$PACKER_JAR_ABS" >> $GITHUB_ENV
           echo "SHELL_DIR=$(pwd)/executable/shell-files" >> $GITHUB_ENV
           echo "✔ PACKER_JAR=$PACKER_JAR_ABS"
           echo "✔ SHELL_DIR=$(pwd)/executable/shell-files"
-          ls -la "$PACKER_JAR_ABS" || true
-          ls -la "$(pwd)/executable/shell-files" || true
 
-      - name: Build Release APK (R8 obfuscated)
+      # ═══════════════════════════════════════════════════════════════════
+      # 🟢 STEP 6: Protect APK with XopProtector
+      # - Encrypts DEX, embeds app_sign_sha256 (from our keystore)
+      # - If someone re-signs with different key, app crashes (anti-tamper)
+      # ═══════════════════════════════════════════════════════════════════
+      - name: Protect APK with XopProtector
         run: |
-          gradle assembleRelease --no-daemon --stacktrace
-        env:
-          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2048m -Dorg.gradle.daemon=false"
+          echo "════════════════════════════════════════════════════════════"
+          echo "  PROTECTING APK WITH XOPPROTECTOR"
+          echo "  Keystore SHA256: $SIGNING_SHA256"
+          echo "════════════════════════════════════════════════════════════"
 
-      - name: Locate Release APK
-        id: locate_apk
-        run: |
-          APK_PATH=$(find app/build/outputs/apk/release -name '*.apk' -type f | head -1)
-          if [ -z "$APK_PATH" ]; then
-            echo "::error::Release APK not found"
-            exit 1
-          fi
-          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
-          echo "✔ Found APK: $APK_PATH"
-
-      - name: Protect APK with XopProtector (DEX encryption)
-        run: |
-          echo "Using PACKER_JAR: $PACKER_JAR"
-          echo "Using SHELL_DIR: $SHELL_DIR"
           java -jar "$PACKER_JAR" \
             "$APK_PATH" \
             -o app-protected.apk \
             --shell-dir "$SHELL_DIR" \
             --profile balanced
-          echo "✔ Protected APK created: app-protected.apk"
 
-      - name: Upload Protected APK
+          if [ ! -f app-protected.apk ]; then
+            echo "::error::XopProtector failed to produce output"
+            exit 1
+          fi
+          echo "✔ Protected APK created ($(stat -c%s app-protected.apk) bytes)"
+
+      # ═══════════════════════════════════════════════════════════════════
+      # 🟢 STEP 7: Re-sign protected APK (XopProtector strips signature)
+      # Same keystore → same cert SHA256 → anti-tamper will pass
+      # ═══════════════════════════════════════════════════════════════════
+      - name: Re-sign Protected APK
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | head -1)
+
+          $APKSIGNER sign \
+            --ks silent_production.keystore \
+            --ks-key-alias silentkey \
+            --ks-pass pass:silent123password \
+            --key-pass pass:silent123password \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out app-protected-signed.apk \
+            app-protected.apk
+
+          if [ ! -f app-protected-signed.apk ]; then
+            echo "::error::Re-signing failed"
+            exit 1
+          fi
+          echo "✔ Protected APK re-signed"
+
+      # ═══════════════════════════════════════════════════════════════════
+      # 🟢 STEP 8: Verify final signature matches original keystore
+      # ═══════════════════════════════════════════════════════════════════
+      - name: Verify Final Signature
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | head -1)
+
+          echo "════════════════════════════════════════════════════════════"
+          echo "  VERIFYING FINAL SIGNATURE"
+          echo "════════════════════════════════════════════════════════════"
+
+          FINAL_SHA=$($APKSIGNER verify --print-certs app-protected-signed.apk \
+            | grep "SHA-256" | awk -F': ' '{print $2}' | head -1)
+
+          echo "Expected SHA256: $SIGNING_SHA256"
+          echo "Final    SHA256: $FINAL_SHA"
+
+          if [ "$FINAL_SHA" = "$SIGNING_SHA256" ]; then
+            echo "════════════════════════════════════════════════════════════"
+            echo "  ✔✔✔ SIGNATURE MATCH — SAFE FOR USER UPDATES ✔✔✔"
+            echo "  Users can install this update over the previous version"
+            echo "  without losing data."
+            echo "════════════════════════════════════════════════════════════"
+          else
+            echo "════════════════════════════════════════════════════════════"
+            echo "  ⚠ WARNING: Signature mismatch!"
+            echo "  Users will need to uninstall the previous version first,"
+            echo "  which means DATA LOSS."
+            echo "════════════════════════════════════════════════════════════"
+            exit 1
+          fi
+
+      # ═══════════════════════════════════════════════════════════════════
+      # 🟢 STEP 9: Upload final APK
+      # ═══════════════════════════════════════════════════════════════════
+      - name: Upload Final APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: RealEarnPayPal-Protected-${{ github.run_number }}
-          path: app-protected.apk
+          name: RealEarnPayPal-Signed-${{ github.run_number }}
+          path: app-protected-signed.apk
           retention-days: 30
 
-      - name: Upload mapping.txt (for crash deobfuscation)
+      - name: Upload mapping.txt
         if: success()
         uses: actions/upload-artifact@v4
         with:
