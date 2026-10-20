@@ -10,7 +10,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // 🟢 JitPack — Kadb کی spake2-java dependency کے لیے
+        // 🟢 JitPack — Kadb کی ممکنہ dependencies کے لیے محفوظ رکھیں
         maven { url = uri("https://jitpack.io") }
     }
 }
