@@ -4,7 +4,6 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
-import com.real.earn.paypal.utils.AdbPairingManager
 
 class App : Application() {
 
@@ -16,8 +15,7 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannels()
-        // 🟢 Kadb init — pairing/shell ke liye zaroori
-        AdbPairingManager.initialize(this)
+        // 🟢 Kadb کوئی initialization نہیں مانگتا — stateless ہے
     }
 
     private fun createNotificationChannels() {
