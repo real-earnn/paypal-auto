@@ -58,9 +58,19 @@ android {
         buildConfig = true
     }
 
+    // 🟢 FIX: bouncycastle / jspecify کی duplicate META-INF files exclude کریں
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "/META-INF/versions/**"
+            excludes += "/META-INF/DEPENDENCIES"
+            excludes += "/META-INF/LICENSE"
+            excludes += "/META-INF/LICENSE.txt"
+            excludes += "/META-INF/LICENSE.md"
+            excludes += "/META-INF/NOTICE"
+            excludes += "/META-INF/NOTICE.txt"
+            excludes += "/META-INF/NOTICE.md"
+            excludes += "/META-INF/*.kotlin_builtins"
         }
     }
 }
@@ -85,13 +95,4 @@ dependencies {
 
     // 🟢 Kadb — direct ADB client (pairing + shell)
     implementation("com.flyfishxu:kadb:2.1.1")
-}
-
-// 🟢 Kadb brings kotlin-stdlib 2.3.20 — force to project's Kotlin version
-configurations.all {
-    resolutionStrategy {
-        force("org.jetbrains.kotlin:kotlin-stdlib:2.0.21")
-        force("org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.0.21")
-        force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.0.21")
-    }
 }
