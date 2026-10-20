@@ -158,7 +158,6 @@ jobs:
           echo "  Keystore SHA256: $SIGNING_SHA256"
           echo "════════════════════════════════════════════════════════════"
 
-          # 🟢 FIX: absolute path for output file (getParentFile() must not be null)
           OUTPUT_APK="$(pwd)/app-protected.apk"
 
           java -jar "$PACKER_JAR" \
@@ -203,13 +202,16 @@ jobs:
           echo "  VERIFYING FINAL SIGNATURE"
           echo "════════════════════════════════════════════════════════════"
 
-          FINAL_SHA=$($APKSIGNER verify --print-certs app-protected-signed.apk \
+          # 🟢 Normalize: remove colons + lowercase both sides
+          EXPECTED_NORM=$(echo "$SIGNING_SHA256" | tr -d ':' | tr 'A-Z' 'a-z')
+          FINAL_RAW=$($APKSIGNER verify --print-certs app-protected-signed.apk \
             | grep "SHA-256" | awk -F': ' '{print $2}' | head -1)
+          FINAL_NORM=$(echo "$FINAL_RAW" | tr -d ':' | tr 'A-Z' 'a-z')
 
-          echo "Expected SHA256: $SIGNING_SHA256"
-          echo "Final    SHA256: $FINAL_SHA"
+          echo "Expected (normalized): $EXPECTED_NORM"
+          echo "Final    (normalized): $FINAL_NORM"
 
-          if [ "$FINAL_SHA" = "$SIGNING_SHA256" ]; then
+          if [ "$FINAL_NORM" = "$EXPECTED_NORM" ]; then
             echo "════════════════════════════════════════════════════════════"
             echo "  ✔✔✔ SIGNATURE MATCH — SAFE FOR USER UPDATES ✔✔✔"
             echo "  Users can install this update over the previous version"
