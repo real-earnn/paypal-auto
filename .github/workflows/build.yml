@@ -202,16 +202,21 @@ jobs:
           echo "  VERIFYING FINAL SIGNATURE"
           echo "════════════════════════════════════════════════════════════"
 
-          # 🟢 Normalize: remove colons + lowercase both sides
+          # 🟢 Normalize expected hash (remove colons + lowercase)
           EXPECTED_NORM=$(echo "$SIGNING_SHA256" | tr -d ':' | tr 'A-Z' 'a-z')
-          FINAL_RAW=$($APKSIGNER verify --print-certs app-protected-signed.apk \
-            | grep "SHA-256" | awk -F': ' '{print $2}' | head -1)
-          FINAL_NORM=$(echo "$FINAL_RAW" | tr -d ':' | tr 'A-Z' 'a-z')
-
           echo "Expected (normalized): $EXPECTED_NORM"
-          echo "Final    (normalized): $FINAL_NORM"
 
-          if [ "$FINAL_NORM" = "$EXPECTED_NORM" ]; then
+          # 🟢 Dump full apksigner output for debugging
+          echo "────────────────── apksigner output ──────────────────"
+          $APKSIGNER verify --print-certs app-protected-signed.apk
+          echo "──────────────────────────────────────────────────────"
+
+          # 🟢 Robust check: does the expected hash appear ANYWHERE in apksigner output?
+          # (apksigner format different hota hai per build-tools version)
+          if $APKSIGNER verify --print-certs app-protected-signed.apk \
+              | tr -d ':' | tr 'A-Z' 'a-z' \
+              | grep -q "$EXPECTED_NORM"; then
+
             echo "════════════════════════════════════════════════════════════"
             echo "  ✔✔✔ SIGNATURE MATCH — SAFE FOR USER UPDATES ✔✔✔"
             echo "  Users can install this update over the previous version"
