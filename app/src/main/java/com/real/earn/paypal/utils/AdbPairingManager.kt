@@ -3,31 +3,30 @@ package com.real.earn.paypal.utils
 import android.content.Context
 import android.os.Build
 import com.flyfishxu.kadb.Kadb
-import com.flyfishxu.kadb.KadbInitializer
 import com.real.earn.paypal.service.AutomationState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/**
+ * 🟢 Direct ADB client (Kadb) — pairing + shell.
+ *
+ * Kadb needs NO initialization — it is stateless.
+ * User pairs once via Wireless Debugging, then we run shell commands
+ * like `cmd connectivity airplane-mode enable` and `pm clear <package>`.
+ */
 object AdbPairingManager {
 
     private const val CONNECT_TIMEOUT_MS = 3000
 
-    @Volatile
-    private var initialized = false
-
-    fun initialize(context: Context) {
-        if (initialized) return
-        try {
-            KadbInitializer.initialize(context.applicationContext)
-            initialized = true
-            AutomationState.log("🔌 ADB (Kadb) initialized")
-        } catch (e: Exception) {
-            AutomationState.log("✘ ADB init failed: ${e.message}")
-        }
-    }
-
+    /** Wireless debugging pairing needs Android 11+ (API 30). */
     fun isPairingSupported(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
 
+    /**
+     * Pair with a device using the 6-digit code from
+     * Settings → Developer options → Wireless debugging → Pair device with pairing code.
+     *
+     * @return Pair(success, message)
+     */
     suspend fun pair(
         context: Context,
         host: String,
@@ -37,7 +36,6 @@ object AdbPairingManager {
         if (!isPairingSupported()) {
             return false to "Wireless debugging pairing requires Android 11+"
         }
-        initialize(context)
         return withContext(Dispatchers.IO) {
             try {
                 AutomationState.log("🔗 Pairing $host:$pairingPort ...")
@@ -52,16 +50,14 @@ object AdbPairingManager {
     }
 
     /**
-     * mDNS کے بغیر connect port خودکار طور پر دریافت نہیں ہو سکتا，
-     * اس لیے یہاں صرف null واپس ہوتا ہے۔
-     * PermissionActivity میں user سے manual port لیا جائے گا۔
+     * mDNS module (`kadb-mdns`) is NOT in dependencies, so we cannot auto-discover
+     * the connect port. Return null → PermissionActivity asks user to enter port manually.
      */
     suspend fun discoverConnectPort(
         context: Context,
         host: String,
         timeoutMs: Long = 0L
     ): Int? {
-        // mDNS module ہٹا دیا گیا ہے — manual port استعمال کریں
         AutomationState.log("⚠ mDNS unavailable — connect port manually enter karein")
         return null
     }
@@ -83,13 +79,16 @@ object AdbPairingManager {
         AutomationState.log("🗑 ADB pairing cleared")
     }
 
+    /**
+     * Quick connectivity check: create a session and run `echo ok`.
+     * Returns false if the port changed after reboot or device is unreachable.
+     */
     suspend fun isConnected(context: Context): Boolean {
         val prefs = AppPrefs(context)
         if (!prefs.adbPaired) return false
         val host = prefs.adbHost ?: return false
         val port = prefs.adbConnectPort
         if (port <= 0) return false
-        initialize(context)
         return withContext(Dispatchers.IO) {
             try {
                 Kadb.create(host, port, connectTimeout = CONNECT_TIMEOUT_MS).use { kadb ->
@@ -103,13 +102,16 @@ object AdbPairingManager {
         }
     }
 
+    /**
+     * Execute a shell command on the paired device.
+     * Returns null if ADB is not paired / not connected (caller should fallback).
+     */
     suspend fun executeShell(context: Context, command: String): ShellOutcome? {
         val prefs = AppPrefs(context)
         if (!prefs.adbPaired) return null
         val host = prefs.adbHost ?: return null
         val port = prefs.adbConnectPort
         if (port <= 0) return null
-        initialize(context)
         return withContext(Dispatchers.IO) {
             try {
                 Kadb.create(host, port, connectTimeout = CONNECT_TIMEOUT_MS).use { kadb ->
