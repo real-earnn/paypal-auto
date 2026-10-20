@@ -25,6 +25,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 class AutomationService : Service() {
 
@@ -184,10 +185,17 @@ class AutomationService : Service() {
                 }
                 AutomationState.log("✔ Accessibility connected")
 
+                // 🟢 ADB status log (actions themselves are inside AirplaneModeController / PayPalClearData)
+                val adbConnected = runBlocking { AdbPairingManager.isConnected(applicationContext) }
+                if (adbConnected) {
+                    AutomationState.log("🔌 ADB connected — fast system actions enabled")
+                } else {
+                    AutomationState.log("⚠ ADB not connected — accessibility fallback")
+                }
+
                 PopupWatcher.start(scope, a11y); popupOn = true
                 CaptchaWatcher.start(scope, a11y); captchaOn = true
 
-                // 🟢 Accessibility Watchdog: detect if system kills the service
                 val watchdogJob = scope.launch {
                     watchdogOn = true
                     while (true) {
@@ -211,7 +219,6 @@ class AutomationService : Service() {
                     while (AutomationState.getStatus() == AutomationState.Status.PAUSED) delay(300)
                     if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
 
-                    // Recheck accessibility each iteration
                     if (PayPalAccessibilityService.instance == null) {
                         AutomationState.log("✘ Accessibility lost — stopping")
                         break
