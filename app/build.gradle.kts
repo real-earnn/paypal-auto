@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.real.earn.paypal"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.real.earn.paypal"
@@ -79,6 +79,6 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
-    // 🟢 Kadb — compileSdk 34 کے ساتھ مطابقت رکھنے والا ورژن
+    // 🟢 Kadb — compileSdk 36 کے ساتھ
     implementation("com.flyfishxu:kadb:2.1.1")
 }
