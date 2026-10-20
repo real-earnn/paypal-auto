@@ -45,19 +45,18 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/xopJack/XopProtector.git
           cd XopProtector
+          # local.properties میں صحیح SDK راستہ لکھیں (GitHub Actions کا ڈیفالٹ راستہ)
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           echo "ndk.dir=$ANDROID_HOME/ndk/25.2.9519653" >> local.properties
 
-      - name: Patch XopProtector settings.gradle.kts (Remove Windows hardcoded path)
+      - name: Patch XopProtector (Remove Windows hardcoded path)
         run: |
-          # لائن حذف کریں جس میں SDK-Android@5.14 موجود ہو
-          sed -i '/SDK-Android@5.14/d' XopProtector/settings.gradle.kts
-          echo "✔ Patched settings.gradle.kts — Windows path removed"
-
-      - name: Verify Patch (Optional)
-        run: |
-          echo "Checking for any remaining hardcoded paths:"
-          grep -n "SDK-Android" XopProtector/settings.gradle.kts || echo "✔ No hardcoded SDK path found"
+          # یہ کمانڈ اس لائن کو یقینی طور پر حذف کر دے گی
+          grep -v "SDK-Android@5.14" XopProtector/settings.gradle.kts > XopProtector/settings.gradle.kts.tmp
+          mv XopProtector/settings.gradle.kts.tmp XopProtector/settings.gradle.kts
+          echo "✔ settings.gradle.kts patched — Windows path removed"
+          echo "--- Checking file content for any remaining hardcoded path ---"
+          grep "SDK-Android" XopProtector/settings.gradle.kts || echo "✔ No hardcoded SDK path found. Patch successful."
 
       - name: Build XopProtector Packer & Shell Files
         run: |
