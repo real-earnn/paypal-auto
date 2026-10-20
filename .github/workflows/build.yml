@@ -48,22 +48,31 @@ jobs:
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           echo "ndk.dir=$ANDROID_HOME/ndk/25.2.9519653" >> local.properties
 
-      - name: Patch XopProtector settings.gradle.kts (Remove Windows path)
+      - name: Replace XopProtector settings.gradle.kts with clean version
         run: |
-          python3 - <<'EOF'
-          import pathlib
-          p = pathlib.Path('XopProtector/settings.gradle.kts')
-          text = p.read_text()
-          # ونڈوز والا سخت کوڈ شدہ راستہ ہٹا دیں
-          text = text.replace(
-              'file("E:/Android/SDK-Android@5.14-20260706/SDK/libs")',
-              'file("/nonexistent")'
-          )
-          p.write_text(text)
-          print("✔ Patched settings.gradle.kts")
+          cat > XopProtector/settings.gradle.kts <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "XopProtector"
+          include(":native")
+          include(":demo")
+          include(":packer")
           EOF
-          echo "--- Verifying patch ---"
-          grep -n "SDK-Android" XopProtector/settings.gradle.kts || echo "✔ No hardcoded SDK path found"
+          echo "✔ settings.gradle.kts replaced with clean version"
+          echo "--- Full print of new settings.gradle.kts ---"
+          cat XopProtector/settings.gradle.kts
 
       - name: Build XopProtector Packer & Shell Files
         run: |
