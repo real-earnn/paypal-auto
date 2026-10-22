@@ -1,224 +1,233 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
     android:background="@color/bg_dark"
-    android:padding="16dp">
+    android:fillViewport="true">
 
-    <TextView
-        android:id="@+id/btnBack"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:padding="8dp"
-        android:text="← Back"
-        android:textColor="@color/paypal_blue"
-        android:textSize="14sp"
-        android:textStyle="bold" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="Start Automation"
-        android:textColor="@color/text_light"
-        android:textSize="24sp"
-        android:textStyle="bold" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:text="Choose karo kaise shuru karna hai:"
-        android:textColor="@color/text_dim"
-        android:textSize="13sp" />
-
-    <!-- TOP: Select Services button -->
-    <androidx.cardview.widget.CardView
-        android:id="@+id/cardServices"
-        android:layout_width="match_parent"
-        android:layout_height="90dp"
-        android:layout_marginTop="20dp"
-        android:clickable="true"
-        android:focusable="true"
-        android:foreground="?android:attr/selectableItemBackground"
-        app:cardBackgroundColor="@color/paypal_blue"
-        app:cardCornerRadius="16dp"
-        app:cardElevation="0dp">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingHorizontal="20dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="📱"
-                android:textSize="32sp" />
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="16dp"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Select Services"
-                    android:textColor="@color/white"
-                    android:textSize="18sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="Service + Country choose karo"
-                    android:textColor="#CCFFFFFF"
-                    android:textSize="12sp" />
-
-            </LinearLayout>
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="→"
-                android:textColor="@color/white"
-                android:textSize="22sp"
-                android:textStyle="bold" />
-
-        </LinearLayout>
-
-    </androidx.cardview.widget.CardView>
-
-    <!-- BOTTOM: 2 buttons side by side -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:orientation="horizontal">
+        android:orientation="vertical"
+        android:padding="16dp">
 
-        <!-- Auto Start -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:paddingBottom="12dp">
+
+            <ImageButton
+                android:id="@+id/btnBack"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_arrow_back"
+                app:tint="@color/vip_gold_light" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="Start Mode"
+                android:textColor="@color/vip_gold_light"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Select Services -->
         <androidx.cardview.widget.CardView
-            android:id="@+id/cardAuto"
-            android:layout_width="0dp"
-            android:layout_height="110dp"
-            android:layout_marginEnd="6dp"
-            android:layout_weight="1"
-            android:clickable="true"
-            android:focusable="true"
-            android:foreground="?android:attr/selectableItemBackground"
-            app:cardBackgroundColor="@color/success_green"
-            app:cardCornerRadius="16dp"
+            android:id="@+id/cardServices"
+            android:layout_width="match_parent"
+            android:layout_height="90dp"
+            android:layout_marginBottom="10dp"
+            app:cardBackgroundColor="@android:color/transparent"
+            app:cardCornerRadius="18dp"
             app:cardElevation="0dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:padding="12dp">
+                android:background="@drawable/bg_vip_shizuku_card"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="📋"
+                    android:textSize="26sp" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="12dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Select Services"
+                        android:textColor="@color/white"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Service + Country"
+                        android:textColor="@color/vip_gold_light"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="→"
+                    android:textColor="@color/vip_gold_light"
+                    android:textSize="22sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- Auto Start -->
+        <androidx.cardview.widget.CardView
+            android:id="@+id/cardAuto"
+            android:layout_width="match_parent"
+            android:layout_height="90dp"
+            android:layout_marginBottom="10dp"
+            app:cardBackgroundColor="@android:color/transparent"
+            app:cardCornerRadius="18dp"
+            app:cardElevation="0dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/bg_vip_card"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="16dp">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="⚡"
-                    android:textSize="30sp" />
+                    android:textSize="26sp" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="12dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Auto Start"
+                        android:textColor="@color/white"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Smart Prefixes"
+                        android:textColor="@color/vip_emerald_light"
+                        android:textSize="10sp" />
+                </LinearLayout>
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:text="Auto Start"
-                    android:textColor="@color/white"
-                    android:textSize="15sp"
+                    android:text="→"
+                    android:textColor="@color/vip_gold_light"
+                    android:textSize="22sp"
                     android:textStyle="bold" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="with Prefix"
-                    android:textColor="#CCFFFFFF"
-                    android:textSize="11sp" />
-
             </LinearLayout>
-
         </androidx.cardview.widget.CardView>
 
-        <!-- Search with Prefix -->
+        <!-- Prefix Search -->
         <androidx.cardview.widget.CardView
             android:id="@+id/cardPrefix"
-            android:layout_width="0dp"
-            android:layout_height="110dp"
-            android:layout_marginStart="6dp"
-            android:layout_weight="1"
-            android:clickable="true"
-            android:focusable="true"
-            android:foreground="?android:attr/selectableItemBackground"
-            app:cardBackgroundColor="@color/paypal_blue_dark"
-            app:cardCornerRadius="16dp"
+            android:layout_width="match_parent"
+            android:layout_height="90dp"
+            app:cardBackgroundColor="@android:color/transparent"
+            app:cardCornerRadius="18dp"
             app:cardElevation="0dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:padding="12dp">
+                android:background="@drawable/bg_vip_card"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="16dp">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="🔍"
-                    android:textSize="30sp" />
+                    android:textSize="26sp" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="12dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Search Prefix"
+                        android:textColor="@color/white"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Custom prefix + file"
+                        android:textColor="@color/vip_emerald_light"
+                        android:textSize="10sp" />
+                </LinearLayout>
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:text="Search"
-                    android:textColor="@color/white"
-                    android:textSize="15sp"
+                    android:text="→"
+                    android:textColor="@color/vip_gold_light"
+                    android:textSize="22sp"
                     android:textStyle="bold" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="with Prefix"
-                    android:textColor="#CCFFFFFF"
-                    android:textSize="11sp" />
-
             </LinearLayout>
-
         </androidx.cardview.widget.CardView>
 
+        <ProgressBar
+            android:id="@+id/progressBar"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="16dp"
+            android:indeterminateTint="@color/vip_emerald"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/tvEmpty"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:gravity="center"
+            android:textColor="@color/text_dim"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
     </LinearLayout>
-
-    <ProgressBar
-        android:id="@+id/progressBar"
-        android:layout_width="32dp"
-        android:layout_height="32dp"
-        android:layout_gravity="center_horizontal"
-        android:layout_marginTop="24dp"
-        android:indeterminateTint="@color/paypal_blue"
-        android:visibility="gone" />
-
-    <TextView
-        android:id="@+id/tvEmpty"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
-        android:gravity="center"
-        android:textColor="@color/text_dim"
-        android:textSize="14sp"
-        android:visibility="gone" />
-
-</LinearLayout>
+</androidx.core.widget.NestedScrollView>
