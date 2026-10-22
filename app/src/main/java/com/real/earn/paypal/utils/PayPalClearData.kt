@@ -15,33 +15,33 @@ import kotlinx.coroutines.runBlocking
 object PayPalClearData {
 
     fun strictClear(service: AccessibilityService, targetPackage: String): Boolean {
-        // ══════════════════════════════════════════════════════════════
-        // 🟢 ADB-FIRST: pm clear — one command, no UI hunting
-        // ══════════════════════════════════════════════════════════════
-        val adbResult = runBlocking {
-            SystemActionsViaAdb.clearAppData(service.applicationContext, targetPackage)
-        }
-        if (adbResult != null) {
-            if (adbResult) {
-                AutomationState.log("✔ ADB clear data success: $targetPackage")
+        val prefs = AppPrefs(service)
+
+        // ═══════════════════════════════════════════════════════════
+        // 🟢 PATH 1: Shizuku — single command, instant
+        // ═══════════════════════════════════════════════════════════
+        if (prefs.shizukuModeEnabled && ShizukuShell.isAvailable() && ShizukuShell.hasPermission()) {
+            AutomationState.log("🧹 Shizuku clear data: $targetPackage")
+            val ok = runBlocking { ShizukuShell.clearAppData(targetPackage) }
+            if (ok) {
+                AutomationState.log("✔ Shizuku clear success")
+                // Launch کو reset کرنے کے لیے force stop بھی
+                runBlocking { ShizukuShell.forceStopApp(targetPackage) }
                 return true
-            } else {
-                AutomationState.log("⚠ ADB clear failed — falling back to accessibility")
             }
+            AutomationState.log("⚠ Shizuku clear failed — falling back")
         }
 
-        // ══════════════════════════════════════════════════════════════
-        // FALLBACK: old Settings → App Info → Storage → Clear
-        // ══════════════════════════════════════════════════════════════
+        // ═══════════════════════════════════════════════════════════
+        // PATH 2: Accessibility Settings → Storage → Clear
+        // ═══════════════════════════════════════════════════════════
         try {
-            AutomationState.log("🧹 Clear data for $targetPackage (accessibility)…")
-
+            AutomationState.log("🧹 Accessibility clear: $targetPackage")
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
             StepUtils.sleepMs(900)
 
             for (attempt in 1..3) {
                 if (StepUtils.shouldStop()) return false
-
                 if (attempt > 1) {
                     AutomationState.log("ℹ App Info retry #$attempt")
                     service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
@@ -62,12 +62,10 @@ object PayPalClearData {
                 } catch (_: Exception) {}
 
                 var appInfoReady = waitForAppInfoContent(service, 6000)
-
                 if (!appInfoReady) {
-                    AutomationState.log("  ⚠ Intent didn't open foreground — trying Recents fallback")
+                    AutomationState.log("  ⚠ Intent didn't open — trying Recents")
                     appInfoReady = tryRecentsFallback(service)
                 }
-
                 if (!appInfoReady) {
                     AutomationState.log("  ⚠ App Info not detected — retrying")
                     continue
@@ -81,8 +79,7 @@ object PayPalClearData {
                     exitHome(service)
                     return true
                 }
-
-                AutomationState.log("  ⚠ Clear attempt failed — retrying")
+                AutomationState.log("  ⚠ Clear failed — retrying")
             }
 
             AutomationState.log("✘ Clear data failed after 3 attempts")
@@ -97,10 +94,9 @@ object PayPalClearData {
 
     private fun tryRecentsFallback(service: AccessibilityService): Boolean {
         if (waitForAppInfoContent(service, 1500)) {
-            AutomationState.log("  ✔ App Info was already visible!")
+            AutomationState.log("  ✔ App Info already visible!")
             return true
         }
-
         service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_RECENTS)
         StepUtils.sleepMs(2000)
 
@@ -111,13 +107,12 @@ object PayPalClearData {
                 ?: findByContentDescContains(root, "Settings")
 
             if (settingsNode != null) {
-                AutomationState.log("  ✔ Found 'Settings' label in Recents")
-
+                AutomationState.log("  ✔ Found 'Settings' in Recents")
                 val clickableParent = NodeFinder.findClickableParent(settingsNode)
                 if (clickableParent != null) {
                     val pR = Rect(); clickableParent.getBoundsInScreen(pR)
                     if (pR.width() > 0 && pR.height() > 0 && pR.top < pR.bottom) {
-                        AutomationState.log("  → Tap 1: Clickable card at (${pR.centerX()}, ${pR.centerY()})")
+                        AutomationState.log("  → Tap 1: Card at (${pR.centerX()}, ${pR.centerY()})")
                         tapAt(service, pR.centerX(), pR.centerY())
                         StepUtils.sleepMs(1500)
                         if (waitForAppInfoContent(service, 6000)) return true
@@ -125,25 +120,21 @@ object PayPalClearData {
                 }
 
                 val r = Rect(); settingsNode.getBoundsInScreen(r)
-                val tapX = r.centerX()
                 val tapY = r.top - 250
                 if (tapY > 100) {
-                    AutomationState.log("  → Tap 2: Above label at ($tapX, $tapY)")
-                    tapAt(service, tapX, tapY)
+                    AutomationState.log("  → Tap 2: Above label at (${r.centerX()}, $tapY)")
+                    tapAt(service, r.centerX(), tapY)
                     StepUtils.sleepMs(1500)
                     if (waitForAppInfoContent(service, 6000)) return true
                 }
 
                 val screenR = Rect(); root.getBoundsInScreen(screenR)
-                AutomationState.log("  → Tap 3: Screen center (${screenR.centerX()}, ${screenR.centerY()})")
+                AutomationState.log("  → Tap 3: Center (${screenR.centerX()}, ${screenR.centerY()})")
                 tapAt(service, screenR.centerX(), screenR.centerY())
                 StepUtils.sleepMs(1500)
                 if (waitForAppInfoContent(service, 6000)) return true
-            } else {
-                AutomationState.log("  ⚠ 'Settings' label not found in Recents")
             }
         }
-
         service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
         StepUtils.sleepMs(1000)
         return false
@@ -172,13 +163,9 @@ object PayPalClearData {
             if (StepUtils.shouldStop()) return false
             val root = service.rootInActiveWindow
             val now = SystemClock.uptimeMillis()
-
-            if (root == null) {
-                StepUtils.sleepMs(400); continue
-            }
+            if (root == null) { StepUtils.sleepMs(400); continue }
 
             val pkg = root.packageName?.toString()?.lowercase() ?: ""
-
             if (pkg.contains("launcher") || pkg.contains("home") ||
                 pkg.contains("com.miui.home") || pkg.contains("com.oppo.launcher") ||
                 pkg.contains("com.vivo.launcher") || pkg.contains("tw.launcher") ||
@@ -191,11 +178,9 @@ object PayPalClearData {
             launcherStreak = 0
 
             val hasContent = NodeFinder.containsAny(
-                root,
-                "Storage", "Storage & cache", "Force stop", "Uninstall",
-                "App info", "App permissions", "Notifications",
-                "Permissions", "Battery", "Mobile data", "Data usage",
-                "Version", "Size",
+                root, "Storage", "Storage & cache", "Force stop", "Uninstall",
+                "App info", "App permissions", "Notifications", "Permissions",
+                "Battery", "Mobile data", "Data usage", "Version", "Size",
                 "اسٹوریج", "اسٹور", "زبردستی", "ان انسٹال"
             )
             if (hasContent) return true
@@ -229,7 +214,7 @@ object PayPalClearData {
     }
 
     private fun tryClearViaStorage(service: AccessibilityService): Boolean {
-        AutomationState.log("  → Looking for Storage & cache row")
+        AutomationState.log("  → Looking for Storage row")
         val storageNode = findStorageRow(service, 5000)
         if (storageNode == null) {
             AutomationState.log("  ✘ Storage row not found")
@@ -239,19 +224,19 @@ object PayPalClearData {
         scrollIntoViewIfNeeded(service, storageNode)
 
         if (!clickNodeRobust(service, storageNode)) {
-            AutomationState.log("  ✘ Storage row click failed")
+            AutomationState.log("  ✘ Storage click failed")
             return false
         }
-        AutomationState.log("  ✔ Storage row clicked")
+        AutomationState.log("  ✔ Storage clicked")
         StepUtils.sleepMs(1500)
 
         if (!waitForClearDataButton(service, 5000)) {
-            AutomationState.log("  ✘ Clear button not found in sub-screen")
+            AutomationState.log("  ✘ Clear button not found")
             return false
         }
 
         if (!clickClearDataButton(service, 3000)) {
-            AutomationState.log("  ✘ Clear button click failed")
+            AutomationState.log("  ✘ Clear click failed")
             return false
         }
         StepUtils.sleepMs(1000)
@@ -265,8 +250,7 @@ object PayPalClearData {
         val end = SystemClock.uptimeMillis() + timeoutMs
         while (SystemClock.uptimeMillis() < end) {
             if (StepUtils.shouldStop()) return null
-            val root = service.rootInActiveWindow
-            if (root == null) { StepUtils.sleepMs(300); continue }
+            val root = service.rootInActiveWindow ?: run { StepUtils.sleepMs(300); continue }
 
             val variants = arrayOf(
                 "Storage & cache", "Storage and cache",
@@ -278,28 +262,16 @@ object PayPalClearData {
                 if (n != null && n.isVisibleToUser) {
                     val r = Rect(); n.getBoundsInScreen(r)
                     if (r.width() > 0 && r.height() > 0 && r.top > 100) {
-                        AutomationState.log("  ℹ Row found: '$v'")
+                        AutomationState.log("  ℹ Row: '$v'")
                         return n
                     }
                 }
             }
-
-            for (v in arrayOf("Storage & cache", "Storage & Cache", "storage & cache")) {
-                val n = NodeFinder.findByTextContains(root, v)
-                if (n != null && n.isVisibleToUser) {
-                    val r = Rect(); n.getBoundsInScreen(r)
-                    if (r.width() > 0 && r.height() > 0 && r.top > 100) {
-                        AutomationState.log("  ℹ Row found (contains): '$v'")
-                        return n
-                    }
-                }
-            }
-
             val row = findClickableRowBySubtree(root, "storage")
             if (row != null) {
                 val r = Rect(); row.getBoundsInScreen(r)
                 if (r.width() > 0 && r.height() > 0 && r.top > 100) {
-                    AutomationState.log("  ℹ Row found (subtree)")
+                    AutomationState.log("  ℹ Row (subtree)")
                     return row
                 }
             }
@@ -366,7 +338,6 @@ object PayPalClearData {
         val rootR = Rect(); root.getBoundsInScreen(rootR)
         val bottomSafeZone = rootR.bottom - 250
         val topSafeZone = rootR.top + 150
-
         if (r.centerY() > bottomSafeZone) {
             findScrollable(root)?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
             StepUtils.sleepMs(500)
@@ -423,8 +394,7 @@ object PayPalClearData {
         StepUtils.sleepMs(600)
         val root = service.rootInActiveWindow ?: return
         if (!NodeFinder.containsAny(root, "Clear cache", "Clear all data", "Cancel")) return
-
-        AutomationState.log("  ℹ Sub-menu detected")
+        AutomationState.log("  ℹ Sub-menu")
         val options = arrayOf("Clear all data", "Clear app data", "Clear data", "Delete data")
         for (opt in options) {
             val node = NodeFinder.findByText(root, opt)
