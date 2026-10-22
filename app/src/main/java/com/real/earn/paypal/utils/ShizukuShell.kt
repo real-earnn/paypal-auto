@@ -1,11 +1,11 @@
 package com.real.earn.paypal.utils
 
-import android.content.Context
 import android.content.pm.PackageManager
 import com.real.earn.paypal.service.AutomationState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
+import java.lang.reflect.Method
 
 /**
  * 🟢 Shizuku Shell — ADB pairing کی جگہ
@@ -24,12 +24,20 @@ object ShizukuShell {
         false
     }
 
-    /** کیا ہمیں ADB shell کی اجازت مل چکی ہے؟ */
-    fun hasPermission(): Boolean = try {
-        if (!isAvailable()) return false
-        Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-    } catch (e: Exception) {
-        false
+    /**
+     * کیا ہمیں ADB shell کی اجازت مل چکی ہے؟
+     * Block body use کیا تاکہ `return` expression body میں نہ ہو.
+     */
+    fun hasPermission(): Boolean {
+        return try {
+            if (!isAvailable()) {
+                false
+            } else {
+                Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+            }
+        } catch (e: Exception) {
+            false
+        }
     }
 
     /** Shizuku سے permission مانگیں (یہ system dialog دکھاتا ہے) */
@@ -44,23 +52,66 @@ object ShizukuShell {
     }
 
     /**
-     * Shell command چلائیں۔
-     * @return Pair(exitCode, output) — null اگر Shizuku available نہیں ہے
+     * 🟢 Reflection-based process creation.
+     *
+     * Shizuku 13.1.5 میں `newProcess()` private ہے، لہٰذا reflection سے access کرتے ہیں.
+     * Signature: static ShizukuRemoteProcess newProcess(String[] cmd, String[] env, String dir)
      */
-    suspend fun executeShell(command: String): ShellResult? = withContext(Dispatchers.IO) {
-        if (!isAvailable() || !hasPermission()) return@withContext null
-        try {
-            val process = Shizuku.newProcess(arrayOf("sh", "-c", command), null, null)
-            val stdout = process.inputStream.bufferedReader().readText()
-            val stderr = process.errorStream.bufferedReader().readText()
-            val exitCode = process.waitFor()
-            if (exitCode != 0) {
-                AutomationState.log("⚠ Shell exit $exitCode: $command → $stderr")
+    private fun createShizukuProcess(command: Array<String>): Process? {
+        return try {
+            val stringArrayClass: Class<*> = emptyArray<String>()::class.java
+
+            val method: Method = try {
+                // Primary: method directly in rikka.shizuku.Shizuku
+                Shizuku::class.java.getDeclaredMethod(
+                    "newProcess",
+                    stringArrayClass,
+                    stringArrayClass,
+                    String::class.java
+                )
+            } catch (e: NoSuchMethodException) {
+                // Fallback: companion class (اگر مستقبل میں Shizuku Companion میں move کرے)
+                Class.forName("rikka.shizuku.Shizuku\$Companion").getDeclaredMethod(
+                    "newProcess",
+                    stringArrayClass,
+                    stringArrayClass,
+                    String::class.java
+                )
             }
-            ShellResult(exitCode, stdout.trim())
+
+            method.isAccessible = true
+            method.invoke(null, command, null, null) as? Process
         } catch (e: Exception) {
-            AutomationState.log("✘ Shell error: ${e.message}")
+            AutomationState.log("✘ Shizuku process error: ${e.message}")
             null
+        }
+    }
+
+    /**
+     * Shell command چلائیں.
+     * @return ShellResult — null اگر Shizuku available/permitted نہیں
+     */
+    suspend fun executeShell(command: String): ShellResult? {
+        return withContext(Dispatchers.IO) {
+            if (!isAvailable() || !hasPermission()) {
+                return@withContext null
+            }
+            try {
+                val process = createShizukuProcess(arrayOf("sh", "-c", command))
+                    ?: return@withContext null
+
+                val stdout = process.inputStream.bufferedReader().readText()
+                val stderr = process.errorStream.bufferedReader().readText()
+                val exitCode = process.waitFor()
+
+                if (exitCode != 0) {
+                    AutomationState.log("⚠ Shell exit $exitCode: $command → $stderr")
+                }
+                ShellResult(exitCode, stdout.trim())
+            } catch (e: Exception) {
+                AutomationState.log("✘ Shell error: ${e.message}")
+                null
+            }
         }
     }
 
