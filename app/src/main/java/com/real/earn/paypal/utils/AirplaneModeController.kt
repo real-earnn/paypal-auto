@@ -11,75 +11,99 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.real.earn.paypal.service.AutomationState
 import kotlinx.coroutines.runBlocking
 
+/**
+ * 🟢 Flight Mode — 5× cycles
+ *
+ * Strategy:
+ *   1) Shizuku available → `cmd connectivity airplane-mode enable/disable` × 5
+ *   2) Shizuku not available → QS tile tap:
+ *      - Icon recognition via contentDescription (best)
+ *      - Tap **10-12dp ABOVE the text center** so panel doesn't close
+ *      - Reopen panel if closed
+ */
 object AirplaneModeController {
 
     private val AIRPLANE_KEYWORDS = arrayOf(
         "airplane", "aeroplane", "air plane", "air-plane",
         "flight mode", "flight-mode", "in-flight", "inflight", "flight",
         "ایروپلین", "ایرو پلین", "فلائٹ", "ہوائی جہاز", "ہوائی", "طیارہ",
-        "एयरप्लेन", "एयरोप्लेन", "फ्लाइट", "हवाई जहाज", "हवाई जहाज़", "विमान",
+        "एयरप्लेन", "एयरोप्लेन", "फ्लाइट", "हवाई जहाज", "विमान",
         "طيران", "الطيران", "وضع الطيران",
-        "هواپیما", "پرواز", "حالت هواپیما",
-        "uçak", "ucak", "uçuş", "ucus",
-        "বিমান", "ফ্লাইট",
-        "mode pesawat", "pesawat",
-        "самолет", "самолёт", "авиарежим", "полет", "полёт",
+        "uçak", "ucak", "uçuş",
+        "самолет", "самолёт", "авиарежим",
         "mode avion", "avion",
-        "modo avión", "modo avion", "avión", "avion",
+        "modo avión", "modo avion",
         "flugmodus", "flug",
-        "modo avião", "modo aviao",
-        "modalità aereo", "modalita aereo", "aereo",
+        "modalità aereo", "modalita aereo",
     )
 
-    fun toggleCycle(service: AccessibilityService): Boolean = strictToggle(service)
-
+    /**
+     * 5 بار on/off cycle — پہلے Shizuku کوشش، پھر accessibility fallback
+     */
     fun strictToggle(service: AccessibilityService): Boolean {
-        // ══════════════════════════════════════════════════════════════
-        // 🟢 ADB-FIRST: fast, device-agnostic, no tile hunting
-        // ══════════════════════════════════════════════════════════════
-        val adbResult = runBlocking {
-            SystemActionsViaAdb.cycleAirplaneMode(service.applicationContext, 5)
-        }
-        if (adbResult != null) {
-            if (adbResult) {
-                AutomationState.log("✔ Flight cycle via ADB")
-                return true
-            } else {
-                AutomationState.log("⚠ ADB flight failed — falling back to accessibility")
+        val prefs = AppPrefs(service)
+        val cycles = prefs.flightCycles
+
+        // ═══════════════════════════════════════════════════════════
+        // 🟢 PATH 1: Shizuku — fast, device-agnostic, zero UI
+        // ═══════════════════════════════════════════════════════════
+        if (prefs.shizukuModeEnabled && ShizukuShell.isAvailable() && ShizukuShell.hasPermission()) {
+            AutomationState.log("✈ Shizuku flight cycle ×$cycles")
+            val ok = runBlocking {
+                var success = true
+                for (i in 1..cycles) {
+                    if (!ShizukuShell.setAirplaneMode(true)) { success = false; break }
+                    Thread.sleep(900)
+                    if (!ShizukuShell.setAirplaneMode(false)) { success = false; break }
+                    Thread.sleep(900)
+                    AutomationState.log("  ↳ cycle $i/$cycles done")
+                }
+                success
             }
+            if (ok) {
+                AutomationState.log("✔ Shizuku flight cycle complete")
+                return true
+            }
+            AutomationState.log("⚠ Shizuku flight failed — falling back to accessibility")
         }
 
-        // ══════════════════════════════════════════════════════════════
-        // FALLBACK: old Quick Settings tile method
-        // ══════════════════════════════════════════════════════════════
+        // ═══════════════════════════════════════════════════════════
+        // PATH 2: Accessibility Quick Settings tile tap
+        // ═══════════════════════════════════════════════════════════
         return try {
+            // Normalize: اگر پہلے سے ON ہے تو OFF کر دو
             if (isAirplaneModeOn(service)) {
                 AutomationState.log("ℹ Flight was ON — normalizing")
-                toggleTo(service, targetOn = false)
+                tapTileForTarget(service, targetOn = false)
                 service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
                 StepUtils.waitForPackageExit(service, "systemui", 1500)
             }
 
-            AutomationState.log("✈ Flight ON")
-            if (!toggleTo(service, targetOn = true)) {
-                AutomationState.log("✘ ON failed")
-                goHome(service); return false
-            }
-            AutomationState.log("✔ Flight ON")
+            // 5 بار on/off
+            var allOk = true
+            for (i in 1..cycles) {
+                AutomationState.log("✈ Cycle $i/$cycles — ON")
+                if (!tapTileForTarget(service, targetOn = true)) {
+                    AutomationState.log("✘ Cycle $i ON failed")
+                    allOk = false
+                    break
+                }
+                StepUtils.sleepMs(700)
 
-            StepUtils.sleepMs(900)
-
-            AutomationState.log("✈ Flight OFF")
-            if (!toggleTo(service, targetOn = false)) {
-                AutomationState.log("✘ OFF failed")
-                goHome(service); return false
+                AutomationState.log("✈ Cycle $i/$cycles — OFF")
+                if (!tapTileForTarget(service, targetOn = false)) {
+                    AutomationState.log("✘ Cycle $i OFF failed")
+                    allOk = false
+                    break
+                }
+                StepUtils.sleepMs(700)
             }
-            AutomationState.log("✔ Flight OFF")
 
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
             StepUtils.waitForPackageExit(service, "systemui", 1500)
-            AutomationState.log("✔ Flight cycle done")
-            true
+
+            if (allOk) AutomationState.log("✔ Flight cycle complete ($cycles cycles)")
+            allOk
         } catch (e: Exception) {
             AutomationState.log("✘ Flight error: ${e.message}")
             goHome(service)
@@ -87,58 +111,94 @@ object AirplaneModeController {
         }
     }
 
-    private fun toggleTo(service: AccessibilityService, targetOn: Boolean): Boolean {
+    /**
+     * QS panel کھولیں، tile تلاش کریں، tap کریں، panel بند ہو تو reopen.
+     */
+    private fun tapTileForTarget(service: AccessibilityService, targetOn: Boolean): Boolean {
         val prefs = AppPrefs(service)
 
+        // ═══ Step 1: QS open کریں ═══
         if (!openQs(service)) {
-            AutomationState.log("  ✘ QS not open")
+            AutomationState.log("  ✘ QS open fail")
             return false
         }
-        StepUtils.sleepMs(700)
+        StepUtils.sleepMs(600)
 
-        var targetX = prefs.flightTapX
-        var targetY = prefs.flightTapY
+        // ═══ Step 2: Tile تلاش کریں — icon recognition (best) → text recognition ═══
+        var tileNode: AccessibilityNodeInfo? = null
+        var tapX = 0
+        var tapY = 0
 
-        if (targetX > 0 && targetY > 0) {
-            AutomationState.log("  ℹ Using saved coords ($targetX, $targetY)")
+        // پہلے saved coords چیک
+        if (prefs.flightTapX > 0 && prefs.flightTapY > 0) {
+            AutomationState.log("  ℹ Using saved coords (${prefs.flightTapX}, ${prefs.flightTapY})")
+            tapX = prefs.flightTapX
+            tapY = prefs.flightTapY
         } else {
-            val pick = findTile(service) ?: run {
-                AutomationState.log("  ✘ No tile found")
+            tileNode = findAirplaneTile(service) ?: run {
+                AutomationState.log("  ✘ No airplane tile found")
                 return false
             }
-            val r = Rect(); pick.getBoundsInScreen(r)
-            targetX = r.centerX()
-            targetY = r.centerY()
-            AutomationState.log("  ℹ Tile found at ($targetX, $targetY) size=${r.width()}x${r.height()}")
+            val r = Rect(); tileNode.getBoundsInScreen(r)
+
+            // 🟢 آپ کی requirement: text center سے 10-12dp اوپر tap
+            // Text center is roughly tile center for QS tiles
+            // 12dp اوپر جانے سے panel dismiss nahi hota
+            val density = service.resources.displayMetrics.density
+            val offsetPx = (12 * density).toInt()
+
+            tapX = r.centerX()
+            tapY = r.centerY() - offsetPx
+            // اگر tap point tile کے top سے اوپر چلا جائے تو پھر center پر لے آئیں
+            if (tapY < r.top + 4) tapY = r.centerY()
+
+            AutomationState.log("  ℹ Tile bounds=${r.width()}×${r.height()} center=(${r.centerX()},${r.centerY()}) → tap=($tapX,$tapY)")
         }
 
+        // ═══ Step 3: Tap — up to 4 attempts (same coords) ═══
         for (attempt in 1..4) {
             if (StepUtils.shouldStop()) return false
 
-            AutomationState.log("  ↳ Tap attempt #$attempt at ($targetX, $targetY)")
-            tapAt(service, targetX, targetY)
+            AutomationState.log("  ↳ Tap #$attempt at ($tapX, $tapY)")
+            tapAt(service, tapX, tapY)
 
-            if (waitAirplaneState(service, targetOn, 3200)) {
-                prefs.flightTapX = targetX
-                prefs.flightTapY = targetY
+            if (waitAirplaneState(service, targetOn, 2800)) {
+                // ✅ success — save coords for next time
+                if (prefs.flightTapX == 0) {
+                    prefs.flightTapX = tapX
+                    prefs.flightTapY = tapY
+                }
                 AutomationState.log("  ✔ Success on attempt #$attempt")
                 return true
             }
 
+            // ═══ Panel بند ہو گیا؟ ═══
             if (!isQsOpen(service)) {
-                AutomationState.log("  ⚠ QS closed after tap #$attempt — reopening")
+                AutomationState.log("  ⚠ Panel closed after tap — reopening")
                 service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS)
                 if (!StepUtils.waitForPackage(service, "systemui", 2000)) {
-                    AutomationState.log("  ✘ QS reopen failed")
+                    AutomationState.log("  ✘ QS reopen fail")
                     return false
                 }
-                StepUtils.sleepMs(600)
+                StepUtils.sleepMs(500)
+
+                // Reopen کے بعد tile دوبارہ تلاش کریں (coords بدل سکتے ہیں)
+                val newTile = findAirplaneTile(service)
+                if (newTile != null) {
+                    val nr = Rect(); newTile.getBoundsInScreen(nr)
+                    val density = service.resources.displayMetrics.density
+                    val offsetPx = (12 * density).toInt()
+                    tapX = nr.centerX()
+                    tapY = nr.centerY() - offsetPx
+                    if (tapY < nr.top + 4) tapY = nr.centerY()
+                    AutomationState.log("  ↳ New tap coords: ($tapX, $tapY)")
+                }
             } else {
                 StepUtils.sleepMs(400)
             }
         }
 
-        AutomationState.log("  ✘ All 4 tap attempts failed — clearing saved coords")
+        AutomationState.log("  ✘ All 4 attempts failed — clearing saved coords")
         prefs.flightTapX = 0
         prefs.flightTapY = 0
         return false
@@ -181,159 +241,61 @@ object AirplaneModeController {
         return false
     }
 
-    private fun findTile(service: AccessibilityService): AccessibilityNodeInfo? {
+    /**
+     * 🟢 Icon recognition — contentDescription اور viewId میں "airplane" ڈھونڈیں
+     */
+    private fun findAirplaneTile(service: AccessibilityService): AccessibilityNodeInfo? {
         val root = service.rootInActiveWindow ?: return null
-        val screenR = Rect(); root.getBoundsInScreen(screenR)
-        val screenArea = screenR.width() * screenR.height()
-
-        data class Candidate(
-            val node: AccessibilityNodeInfo,
-            val score: Int,
-            val desc: String,
-            val text: String,
-            val id: String,
-            val rect: Rect
-        )
-
-        val candidates = mutableListOf<Candidate>()
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
 
+        var bestMatch: AccessibilityNodeInfo? = null
+        var bestScore = Int.MAX_VALUE
+
         while (queue.isNotEmpty()) {
-            val n = queue.removeFirst()
-
-            val desc = n.contentDescription?.toString()?.trim() ?: ""
-            val text = n.text?.toString()?.trim() ?: ""
-            val id = n.viewIdResourceName ?: ""
-
-            val dl = desc.lowercase()
-            val tl = text.lowercase()
-            val il = id.lowercase()
-
-            val saysAirplane = matchesAirplaneKeyword(dl) ||
-                    matchesAirplaneKeyword(tl) ||
-                    matchesAirplaneKeyword(il)
-
-            if (saysAirplane && n.isVisibleToUser) {
-                val r = Rect(); n.getBoundsInScreen(r)
-
-                var score = 0
-                val nodeArea = r.width() * r.height()
-                if (nodeArea > (screenArea * 0.6).toInt()) score += 30
-                if (r.top < 150) score += 20
-
-                val dlLower = dl.lowercase().trim()
-                val tlLower = tl.lowercase().trim()
-
-                val isExactDesc = isExactAirplaneMatch(dlLower)
-                val isExactText = isExactAirplaneMatch(tlLower)
-                val startsDesc = startsWithAirplane(dlLower)
-                val startsText = startsWithAirplane(tlLower)
-
-                when {
-                    isExactDesc || isExactText -> score += 0
-                    startsDesc -> score += 3
-                    startsText -> score += 5
-                    else -> score += 8
-                }
-
-                val adjacent = getAdjacentSiblingTexts(n)
-                val combined = (dl + " " + tl + " " + adjacent).lowercase()
-                if (combined.contains("mobile data")) score += 15
-                if (combined.contains("wi-fi") || combined.contains("wifi")) score += 15
-                if (combined.contains("cellular")) score += 10
-                if (combined.contains("bluetooth")) score += 10
-
-                candidates.add(Candidate(n, score, desc, text, id, r))
+            val node = queue.removeFirst()
+            if (!node.isVisibleToUser) {
+                for (i in 0 until node.childCount) node.getChild(i)?.let { queue.add(it) }
                 continue
             }
 
-            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
+            val desc = node.contentDescription?.toString()?.lowercase()?.trim() ?: ""
+            val text = node.text?.toString()?.lowercase()?.trim() ?: ""
+            val id = node.viewIdResourceName?.lowercase() ?: ""
+
+            val matchesAirplane =
+                matchesKeyword(desc) || matchesKeyword(text) || matchesKeyword(id)
+
+            if (matchesAirplane) {
+                // Score: کم = بہتر
+                var score = 10
+                if (desc.contains("airplane mode") || text.contains("airplane mode")) score = 0
+                else if (desc.contains("airplane") || text.contains("airplane")) score = 2
+                else if (desc.contains("flight") || text.contains("flight")) score = 4
+                else score = 6
+
+                if (score < bestScore) {
+                    bestScore = score
+                    bestMatch = node
+                    AutomationState.log("  ℹ Candidate: desc='${desc.take(25)}' text='${text.take(20)}' score=$score")
+                }
+            }
+
+            for (i in 0 until node.childCount) node.getChild(i)?.let { queue.add(it) }
         }
 
-        if (candidates.isEmpty()) return null
-
-        val sorted = candidates.sortedBy { it.score }
-        AutomationState.log("  ═══ TILE CANDIDATES (${sorted.size}) ═══")
-        sorted.forEachIndexed { i, c ->
-            val d = c.desc.take(30).ifEmpty { "—" }
-            val t = c.text.take(15).ifEmpty { "—" }
-            AutomationState.log("    [$i] sc=${c.score} y=${c.rect.top} ${c.rect.width()}x${c.rect.height()} T='$t' D='$d'")
+        if (bestMatch != null) {
+            AutomationState.log("  ✔ Picked airplane tile (score=$bestScore)")
         }
-
-        val picked = sorted.first()
-        AutomationState.log("  ✔ Picked: sc=${picked.score} D='${picked.desc.take(30)}'")
-        return picked.node
+        return bestMatch
     }
 
-    private fun matchesAirplaneKeyword(input: String): Boolean {
+    private fun matchesKeyword(input: String): Boolean {
         if (input.isEmpty()) return false
         for (kw in AIRPLANE_KEYWORDS) {
             if (input.contains(kw)) return true
         }
         return false
-    }
-
-    private fun isExactAirplaneMatch(input: String): Boolean {
-        val t = input.trim()
-        val exactSet = arrayOf(
-            "airplane mode", "aeroplane mode", "air plane mode",
-            "flight mode", "in-flight mode", "inflight mode",
-            "airplane", "aeroplane", "flight",
-            "ایروپلین موڈ", "فلائٹ موڈ", "ہوائی جہاز کا موڈ",
-            "एयरप्लेन मोड", "एयरोप्लेन मोड", "फ्लाइट मोड",
-            "وضع الطيران", "الطيران",
-            "uçak modu", "ucak modu",
-        )
-        for (e in exactSet) {
-            if (t == e) return true
-        }
-        if ((t.startsWith("airplane") || t.startsWith("aeroplane")) &&
-            (t.endsWith("mode") || t == "airplane" || t == "aeroplane")) return true
-        return false
-    }
-
-    private fun startsWithAirplane(input: String): Boolean {
-        val t = input.trim()
-        val starts = arrayOf(
-            "airplane", "aeroplane", "air plane", "air-plane",
-            "flight", "in-flight", "inflight",
-            "ایروپلین", "فلائٹ", "ہوائی", "طیارہ",
-            "एयरप्लेन", "एयरोप्लेन", "फ्लाइट", "हवाई", "विमान",
-            "طيران", "الطيران",
-            "هواپیما", "پرواز",
-            "uçak", "ucak", "uçuş", "ucus",
-            "বিমান", "ফ্লাইট",
-            "mode pesawat", "pesawat",
-            "самолет", "самолёт", "авиарежим", "полет", "полёт",
-            "mode avion", "avion",
-            "modo avión", "modo avion", "avión",
-            "flugmodus", "flug",
-            "modo avião", "modo aviao",
-            "modalità aereo", "modalita aereo", "aereo",
-        )
-        for (s in starts) {
-            if (t.startsWith(s)) return true
-        }
-        return false
-    }
-
-    private fun getAdjacentSiblingTexts(node: AccessibilityNodeInfo): String {
-        val sb = StringBuilder()
-        try {
-            val parent = node.parent ?: return ""
-            val nr = Rect(); node.getBoundsInScreen(nr)
-            for (i in 0 until parent.childCount) {
-                val sib = parent.getChild(i) ?: continue
-                if (sib === node) continue
-                val sr = Rect(); sib.getBoundsInScreen(sr)
-                if (Math.abs(sr.centerX() - nr.centerX()) > 300 &&
-                    Math.abs(sr.centerY() - nr.centerY()) > 300) continue
-                sib.text?.toString()?.let { if (it.isNotEmpty()) sb.append(" ").append(it) }
-                sib.contentDescription?.toString()?.let { if (it.isNotEmpty()) sb.append(" ").append(it) }
-            }
-        } catch (_: Exception) {}
-        return sb.toString()
     }
 
     private fun goHome(service: AccessibilityService) {
