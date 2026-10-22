@@ -1,116 +1,138 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@color/bg_dark"
-    android:padding="16dp">
+    android:padding="12dp">
 
     <!-- Header -->
-    <TextView
-        android:id="@+id/btnBack"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:padding="6dp"
-        android:text="← Back"
-        android:textColor="@color/paypal_blue"
-        android:textSize="14sp"
-        android:textStyle="bold" />
-
-    <TextView
-        android:id="@+id/tvHeader"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:text="Automation Running"
-        android:textColor="@color/text_light"
-        android:textSize="22sp"
-        android:textStyle="bold" />
-
-    <TextView
-        android:id="@+id/tvSubHeader"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
-        android:text="PayPal · Pakistan"
-        android:textColor="@color/text_dim"
-        android:textSize="13sp" />
-
-    <!-- Stats Row -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
+        android:gravity="center_vertical"
+        android:paddingBottom="8dp">
+
+        <TextView
+            android:id="@+id/btnBack"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:padding="8dp"
+            android:text="←"
+            android:textColor="@color/vip_gold_light"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:layout_marginStart="4dp">
+
+            <TextView
+                android:id="@+id/tvHeader"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Automation Running"
+                android:textColor="@color/vip_gold_light"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvSubHeader"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="PayPal · Pakistan"
+                android:textColor="@color/text_dim"
+                android:textSize="10sp"
+                android:letterSpacing="0.05" />
+        </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/btnCopyLog"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/bg_vip_card"
+            android:padding="10dp"
+            android:src="@android:drawable/ic_menu_save"
+            app:tint="@color/vip_gold_light"
+            android:contentDescription="Copy logs" />
+    </LinearLayout>
+
+    <!-- Stats -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
         android:orientation="horizontal">
 
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:background="@color/bg_card"
+            android:background="@drawable/bg_vip_card"
             android:orientation="vertical"
-            android:padding="12dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Attempts"
-                android:textColor="@color/text_dim"
-                android:textSize="11sp" />
+            android:padding="10dp"
+            android:layout_marginEnd="3dp"
+            android:gravity="center">
 
             <TextView
                 android:id="@+id/tvAttempts"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="0"
-                android:textColor="@color/text_light"
-                android:textSize="18sp"
+                android:textColor="@color/white"
+                android:textSize="16sp"
                 android:textStyle="bold" />
 
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ATTEMPTS"
+                android:textColor="@color/vip_gold"
+                android:textSize="8sp"
+                android:letterSpacing="0.1" />
         </LinearLayout>
 
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:background="@color/bg_card"
+            android:background="@drawable/bg_vip_card"
             android:orientation="vertical"
-            android:padding="12dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Success"
-                android:textColor="@color/text_dim"
-                android:textSize="11sp" />
+            android:padding="10dp"
+            android:layout_marginHorizontal="3dp"
+            android:gravity="center">
 
             <TextView
                 android:id="@+id/tvSuccess"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="0"
-                android:textColor="@color/success_green"
-                android:textSize="18sp"
+                android:textColor="@color/vip_emerald_light"
+                android:textSize="16sp"
                 android:textStyle="bold" />
 
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="SUCCESS"
+                android:textColor="@color/vip_gold"
+                android:textSize="8sp"
+                android:letterSpacing="0.1" />
         </LinearLayout>
 
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:background="@color/bg_card"
+            android:background="@drawable/bg_vip_card"
             android:orientation="vertical"
-            android:padding="12dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Failed"
-                android:textColor="@color/text_dim"
-                android:textSize="11sp" />
+            android:padding="10dp"
+            android:layout_marginStart="3dp"
+            android:gravity="center">
 
             <TextView
                 android:id="@+id/tvFailed"
@@ -118,43 +140,40 @@
                 android:layout_height="wrap_content"
                 android:text="0"
                 android:textColor="@color/error_red"
-                android:textSize="18sp"
+                android:textSize="16sp"
                 android:textStyle="bold" />
 
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="FAILED"
+                android:textColor="@color/vip_gold"
+                android:textSize="8sp"
+                android:letterSpacing="0.1" />
         </LinearLayout>
-
     </LinearLayout>
 
-    <!-- Current number -->
     <TextView
         android:id="@+id/tvCurrentNumber"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:background="@color/bg_card"
-        android:padding="12dp"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/bg_vip_input"
+        android:padding="10dp"
         android:text="Current: —"
-        android:textColor="@color/paypal_blue"
-        android:textSize="13sp"
-        android:textStyle="bold" />
+        android:textColor="@color/vip_gold_light"
+        android:textSize="11sp"
+        android:fontFamily="monospace" />
 
-    <!-- Log area -->
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:text="Live Log"
-        android:textColor="@color/text_dim"
-        android:textSize="12sp" />
-
+    <!-- Terminal -->
     <ScrollView
         android:id="@+id/scrollLog"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginTop="6dp"
-        android:background="@color/bg_card"
-        android:padding="10dp">
+        android:layout_marginTop="8dp"
+        android:background="@drawable/bg_vip_card"
+        android:padding="12dp">
 
         <TextView
             android:id="@+id/tvLog"
@@ -162,16 +181,16 @@
             android:layout_height="wrap_content"
             android:fontFamily="monospace"
             android:text=""
-            android:textColor="@color/text_light"
-            android:textSize="11sp" />
-
+            android:textColor="@color/vip_emerald_light"
+            android:textSize="10sp"
+            android:lineSpacingExtra="4dp" />
     </ScrollView>
 
     <!-- Controls -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
+        android:layout_marginTop="8dp"
         android:orientation="horizontal">
 
         <Button
@@ -179,24 +198,26 @@
             android:layout_width="0dp"
             android:layout_height="52dp"
             android:layout_weight="1"
-            android:backgroundTint="@color/paypal_blue"
-            android:text="⏸ Pause"
-            android:textColor="@color/white"
+            android:background="@drawable/bg_vip_button_gold"
+            android:text="⏸ PAUSE"
+            android:textColor="@color/bg_dark"
             android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textStyle="bold"
+            android:layout_marginEnd="4dp"
+            android:stateListAnimator="@null" />
 
         <Button
             android:id="@+id/btnStop"
             android:layout_width="0dp"
             android:layout_height="52dp"
             android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:backgroundTint="@color/error_red"
-            android:text="⏹ Stop"
+            android:background="@drawable/bg_vip_button_red"
+            android:text="⏹ STOP"
             android:textColor="@color/white"
             android:textSize="13sp"
-            android:textStyle="bold" />
-
+            android:textStyle="bold"
+            android:layout_marginStart="4dp"
+            android:stateListAnimator="@null" />
     </LinearLayout>
 
 </LinearLayout>
