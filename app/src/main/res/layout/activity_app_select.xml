@@ -1,128 +1,157 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#121212"
-    android:padding="24dp">
+    android:background="@color/bg_dark"
+    android:fillViewport="true">
 
-    <ImageButton
-        android:id="@+id/btnBack"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:background="?attr/selectableItemBackgroundBorderless"
-        android:src="@drawable/ic_arrow_back"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:tint="@android:color/white" />
-
-    <TextView
-        android:id="@+id/tvTitle"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:text="Select Application"
-        android:textColor="@android:color/white"
-        android:textSize="24sp"
-        android:textStyle="bold"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/btnBack" />
-
-    <!-- 🟢 VIP Buttons Row -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="32dp"
-        android:orientation="horizontal"
-        android:weightSum="2"
-        app:layout_constraintTop_toBottomOf="@id/tvTitle">
+        android:orientation="vertical"
+        android:padding="16dp">
 
-        <!-- PayPal VIP Button -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:paddingBottom="12dp">
+
+            <ImageButton
+                android:id="@+id/btnBack"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_arrow_back"
+                app:tint="@color/vip_gold_light" />
+
+            <TextView
+                android:id="@+id/tvTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="Select Application"
+                android:textColor="@color/vip_gold_light"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- PayPal Card -->
         <androidx.cardview.widget.CardView
             android:id="@+id/cardPayPal"
-            android:layout_width="0dp"
-            android:layout_height="180dp"
-            android:layout_marginEnd="8dp"
-            android:layout_weight="1"
-            app:cardBackgroundColor="#1E1E1E"
+            android:layout_width="match_parent"
+            android:layout_height="140dp"
+            android:layout_marginBottom="12dp"
+            app:cardBackgroundColor="@android:color/transparent"
             app:cardCornerRadius="20dp"
-            app:cardElevation="8dp"
-            app:cardUseCompatPadding="true">
+            app:cardElevation="0dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:padding="16dp">
+                android:background="@drawable/bg_vip_card"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="20dp">
 
                 <ImageView
                     android:layout_width="56dp"
                     android:layout_height="56dp"
                     android:src="@drawable/ic_paypal" />
 
-                <TextView
-                    android:layout_width="wrap_content"
+                <LinearLayout
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:text="PayPal"
-                    android:textColor="@android:color/white"
-                    android:textSize="18sp"
-                    android:textStyle="bold" />
+                    android:layout_weight="1"
+                    android:layout_marginStart="16dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="PayPal"
+                        android:textColor="@color/white"
+                        android:textSize="22sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="OTP BASED AUTOMATION"
+                        android:textColor="@color/vip_emerald_light"
+                        android:textSize="10sp"
+                        android:letterSpacing="0.08" />
+                </LinearLayout>
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="Automation"
-                    android:textColor="#AAAAAA"
-                    android:textSize="14sp" />
+                    android:text="→"
+                    android:textColor="@color/vip_gold_light"
+                    android:textSize="26sp"
+                    android:textStyle="bold" />
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
-        <!-- TikTok VIP Button -->
+        <!-- TikTok Card -->
         <androidx.cardview.widget.CardView
             android:id="@+id/cardTikTok"
-            android:layout_width="0dp"
-            android:layout_height="180dp"
-            android:layout_marginStart="8dp"
-            android:layout_weight="1"
-            app:cardBackgroundColor="#1E1E1E"
+            android:layout_width="match_parent"
+            android:layout_height="140dp"
+            app:cardBackgroundColor="@android:color/transparent"
             app:cardCornerRadius="20dp"
-            app:cardElevation="8dp"
-            app:cardUseCompatPadding="true">
+            app:cardElevation="0dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:padding="16dp">
+                android:background="@drawable/bg_vip_card"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="20dp">
 
                 <ImageView
                     android:layout_width="56dp"
                     android:layout_height="56dp"
                     android:src="@drawable/ic_tiktok" />
 
-                <TextView
-                    android:layout_width="wrap_content"
+                <LinearLayout
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:text="TikTok"
-                    android:textColor="@android:color/white"
-                    android:textSize="18sp"
-                    android:textStyle="bold" />
+                    android:layout_weight="1"
+                    android:layout_marginStart="16dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="TikTok"
+                        android:textColor="@color/white"
+                        android:textSize="22sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="OTP · OLD ACCOUNT METHOD"
+                        android:textColor="@color/vip_emerald_light"
+                        android:textSize="10sp"
+                        android:letterSpacing="0.08" />
+                </LinearLayout>
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="Automation"
-                    android:textColor="#AAAAAA"
-                    android:textSize="14sp" />
+                    android:text="→"
+                    android:textColor="@color/vip_gold_light"
+                    android:textSize="26sp"
+                    android:textStyle="bold" />
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
     </LinearLayout>
-
-</androidx.constraintlayout.widget.ConstraintLayout>
+</androidx.core.widget.NestedScrollView>
