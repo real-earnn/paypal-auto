@@ -19,30 +19,27 @@
             android:id="@+id/tvTitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Real Earning Platform"
-            android:textColor="@color/text_light"
-            android:textSize="26sp"
+            android:text="Real Earn Pro"
+            android:textColor="@color/vip_gold_light"
+            android:textSize="24sp"
             android:textStyle="bold" />
 
         <TextView
             android:id="@+id/tvSubtitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="PayPal Automation"
-            android:textColor="@color/paypal_blue"
-            android:textSize="18sp"
-            android:textStyle="bold" />
+            android:layout_marginTop="6dp"
+            android:text="VIP Automation"
+            android:textColor="@color/vip_emerald_light"
+            android:textSize="14sp" />
 
         <TextView
             android:id="@+id/tvBuildInfo"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="32dp"
-            android:text="Build Test — Empty Shell v1.0.0"
+            android:layout_marginTop="24dp"
+            android:text="v2.0.0"
             android:textColor="@color/text_dim"
-            android:textSize="13sp" />
-
+            android:textSize="11sp" />
     </LinearLayout>
-
 </androidx.constraintlayout.widget.ConstraintLayout>
