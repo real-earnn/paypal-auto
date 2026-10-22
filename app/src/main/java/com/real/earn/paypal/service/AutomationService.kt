@@ -17,7 +17,18 @@ import com.real.earn.paypal.api.GetNumberBody
 import com.real.earn.paypal.api.GetNumberByPrefixBody
 import com.real.earn.paypal.api.ReleaseNumberBody
 import com.real.earn.paypal.auth.AuthManager
-import com.real.earn.paypal.utils.*
+import com.real.earn.paypal.utils.AirplaneModeController
+import com.real.earn.paypal.utils.AppPrefs
+import com.real.earn.paypal.utils.CaptchaWatcher
+import com.real.earn.paypal.utils.OverlayManager
+import com.real.earn.paypal.utils.PayPalAutomation
+import com.real.earn.paypal.utils.PayPalClearData
+import com.real.earn.paypal.utils.PopupWatcher
+import com.real.earn.paypal.utils.ShizukuShell
+import com.real.earn.paypal.utils.StepUtils
+import com.real.earn.paypal.utils.TikTokActions
+import com.real.earn.paypal.utils.TikTokAutomation
+import com.real.earn.paypal.utils.TikTokOldAccountAutomation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -25,7 +36,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 
 class AutomationService : Service() {
 
@@ -175,7 +185,6 @@ class AutomationService : Service() {
         loopJob = scope.launch {
             var popupOn = false
             var captchaOn = false
-            var watchdogOn = false
             try {
                 val a11y = PayPalAccessibilityService.instance
                 if (a11y == null) {
@@ -185,19 +194,23 @@ class AutomationService : Service() {
                 }
                 AutomationState.log("✔ Accessibility connected")
 
-                // 🟢 ADB status log (actions themselves are inside AirplaneModeController / PayPalClearData)
-                val adbConnected = runBlocking { AdbPairingManager.isConnected(applicationContext) }
-                if (adbConnected) {
-                    AutomationState.log("🔌 ADB connected — fast system actions enabled")
+                // 🟢 Shizuku status check
+                val prefs = AppPrefs(applicationContext)
+                val shizukuReady = prefs.shizukuModeEnabled &&
+                        ShizukuShell.isAvailable() &&
+                        ShizukuShell.hasPermission()
+                if (shizukuReady) {
+                    AutomationState.log("🔌 Shizuku connected — fast system actions enabled")
+                } else if (prefs.shizukuModeEnabled) {
+                    AutomationState.log("⚠ Shizuku not ready — accessibility fallback for flight/clear")
                 } else {
-                    AutomationState.log("⚠ ADB not connected — accessibility fallback")
+                    AutomationState.log("ℹ Shizuku mode OFF — using accessibility for flight/clear")
                 }
 
                 PopupWatcher.start(scope, a11y); popupOn = true
                 CaptchaWatcher.start(scope, a11y); captchaOn = true
 
                 val watchdogJob = scope.launch {
-                    watchdogOn = true
                     while (true) {
                         delay(10000)
                         if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
@@ -212,7 +225,6 @@ class AutomationService : Service() {
                 }
 
                 val auth = AuthManager(applicationContext)
-                val prefs = AppPrefs(applicationContext)
                 val autoFlight = prefs.autoFlightMode
 
                 while (AutomationState.getStatus() != AutomationState.Status.STOPPING) {
@@ -368,7 +380,11 @@ class AutomationService : Service() {
     }
 
     private fun buildNotification(text: String): Notification {
-        val pi = PendingIntent.getActivity(this, 0, Intent(this, AutomationActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val pi = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, AutomationActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         return NotificationCompat.Builder(this, CHANNEL)
             .setContentTitle(getString(R.string.foreground_notif_title))
             .setContentText(text)
