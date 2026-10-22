@@ -1,54 +1,69 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="wrap_content"
-    android:layout_height="wrap_content">
+    android:layout_height="wrap_content"
+    android:paddingStart="4dp"
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp">
+
+    <!-- Pulse ring behind toggle (decorative) -->
+    <View
+        android:id="@+id/ovPulseRing"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="end|center_vertical"
+        android:background="@drawable/bg_overlay_toggle_ring"
+        android:alpha="0.6" />
 
     <LinearLayout
-        android:id="@+id/llExpanded"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:gravity="end"
-        android:background="@drawable/bg_overlay_panel"
-        android:padding="8dp">
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
 
+        <!-- Expandable buttons (hidden initially) -->
+        <LinearLayout
+            android:id="@+id/ovActions"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:visibility="gone"
+            android:alpha="0">
+
+            <!-- Pause button -->
+            <ImageButton
+                android:id="@+id/btnPause"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="@drawable/bg_overlay_btn_pause"
+                android:src="@drawable/ic_overlay_pause"
+                android:scaleType="centerInside"
+                android:contentDescription="Pause" />
+
+            <!-- Stop button -->
+            <ImageButton
+                android:id="@+id/btnStop"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="8dp"
+                android:background="@drawable/bg_overlay_btn_stop"
+                android:src="@drawable/ic_overlay_stop"
+                android:scaleType="centerInside"
+                android:contentDescription="Stop" />
+        </LinearLayout>
+
+        <!-- Toggle bubble (small, 40dp) -->
         <ImageButton
             android:id="@+id/btnToggle"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:background="@android:color/transparent"
-            android:src="@drawable/ic_pause"
-            android:contentDescription="Pause/Resume"
-            android:tint="@color/vip_gold_light"/>
-
-        <ImageButton
-            android:id="@+id/btnClose"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_marginTop="4dp"
-            android:background="@android:color/transparent"
-            android:src="@drawable/ic_close"
-            android:contentDescription="Stop"
-            android:tint="@color/error_red"/>
-
-        <ImageButton
-            android:id="@+id/btnMinimize"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:layout_gravity="center_horizontal"
-            android:layout_marginTop="4dp"
-            android:background="@android:color/transparent"
-            android:src="@android:drawable/arrow_down_float"
-            android:tint="@color/vip_emerald_light"/>
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bg_overlay_toggle_closed"
+            android:src="@drawable/ic_overlay_lightning"
+            android:scaleType="centerInside"
+            android:padding="10dp"
+            android:contentDescription="Toggle controls" />
     </LinearLayout>
-
-    <ImageView
-        android:id="@+id/ivMinimized"
-        android:layout_width="40dp"
-        android:layout_height="40dp"
-        android:visibility="gone"
-        android:src="@drawable/ic_launcher"
-        android:background="@drawable/bg_round_blue"
-        android:padding="8dp"/>
 
 </FrameLayout>
