@@ -1,13 +1,8 @@
 package com.real.earn.paypal
 
-import android.app.admin.DevicePolicyManager
-import android.content.Context
 import android.content.Intent
-import android.content.pm.LauncherApps
 import android.os.Bundle
-import android.os.Process
-import android.os.UserManager
-import android.widget.Toast
+import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.real.earn.paypal.api.ApiClient
@@ -27,44 +22,18 @@ class DashboardActivity : AppCompatActivity() {
 
         authManager = AuthManager(this)
 
+        // 🟢 Virtual Android button — feature removed, button hidden
+        binding.btnVirtualProfile.visibility = View.GONE
+
         binding.btnRefresh.setOnClickListener { loadMe() }
         binding.btnLogout.setOnClickListener { logout() }
-        
+
         binding.btnStartAutomation.setOnClickListener {
             startActivity(Intent(this, AppSelectActivity::class.java))
         }
 
-        binding.btnVirtualProfile.setOnClickListener {
-            startActivity(Intent(this, VirtualProfileActivity::class.java))
-        }
-
         loadMe()
     }
-
-    override fun onResume() {
-        super.onResume()
-        updateVirtualProfileButtonText()
-    }
-
-private fun updateVirtualProfileButtonText() {
-    val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-    val isOwner = dpm.isProfileOwnerApp(packageName)
-    
-    val launcherApps = getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
-    val myHandle = Process.myUserHandle()
-    val hasWorkProfile = launcherApps.profiles.any { it != myHandle } || isOwner
-    
-    val prefs = getSharedPreferences("virtual_prefs", Context.MODE_PRIVATE)
-    val prefCreated = prefs.getBoolean("profile_created", false)
-
-    if (hasWorkProfile || prefCreated) {
-        binding.btnVirtualProfile.text = "Show Virtual Android Setup"
-        binding.btnVirtualProfile.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#4CAF50"))
-    } else {
-        binding.btnVirtualProfile.text = "Create Virtual Android"
-        binding.btnVirtualProfile.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#673AB7"))
-    }
-}
 
     private fun loadMe() {
         lifecycleScope.launch {
@@ -73,7 +42,9 @@ private fun updateVirtualProfileButtonText() {
                 if (response.isSuccessful && response.body()?.success == true) {
                     val user = response.body()?.user
                     if (user != null) {
-                        binding.tvName.text = user.firstName.ifEmpty { user.username.ifEmpty { "User #${user.id}" } }
+                        binding.tvName.text = user.firstName.ifEmpty {
+                            user.username.ifEmpty { "User #${user.id}" }
+                        }
                         binding.tvBalance.text = "%.2f %s".format(user.balance, user.currency)
                         binding.tvTodayOtps.text = user.todayOtps.toString()
                         binding.tvTotalOtps.text = user.totalOtps.toString()
