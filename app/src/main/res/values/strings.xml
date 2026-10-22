@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Real Earn PayPal</string>
+    <string name="app_name">Real Earn Pro</string>
     <string name="accessibility_description">Enables automatic PayPal account creation flow. Used only for authorized automation on this device.</string>
-    <string name="foreground_notif_title">Real Earn PayPal</string>
+    <string name="foreground_notif_title">Real Earn Pro</string>
     <string name="foreground_notif_text">Automation running…</string>
 </resources>
