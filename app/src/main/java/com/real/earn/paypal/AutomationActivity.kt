@@ -1,7 +1,11 @@
 package com.real.earn.paypal
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Bundle
 import android.view.View
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -20,7 +24,6 @@ class AutomationActivity : AppCompatActivity() {
         binding = ActivityAutomationBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // 🟢 Mode-aware subtitle
         val mode = intent.getStringExtra("mode") ?: "service"
         val service = intent.getStringExtra("service") ?: "PayPal"
         val country = intent.getStringExtra("country") ?: ""
@@ -50,6 +53,9 @@ class AutomationActivity : AppCompatActivity() {
         binding.btnStop.setOnClickListener {
             AutomationService.stopAndClose(this)
         }
+
+        // 🟢 Copy log button (safe lookup)
+        setupCopyLogButton()
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -96,6 +102,21 @@ class AutomationActivity : AppCompatActivity() {
                     }
                 }
             }
+        }
+    }
+
+    private fun setupCopyLogButton() {
+        val copyId = resources.getIdentifier("btnCopyLog", "id", packageName)
+        if (copyId == 0) return
+        findViewById<View>(copyId)?.setOnClickListener {
+            val logText = binding.tvLog.text.toString()
+            if (logText.isEmpty()) {
+                Toast.makeText(this, "No logs yet", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cm.setPrimaryClip(ClipData.newPlainText("logs", logText))
+            Toast.makeText(this, "Logs copied ✓", Toast.LENGTH_SHORT).show()
         }
     }
 }
