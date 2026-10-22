@@ -2,11 +2,11 @@
 <resources>
 
     <style name="Theme.RealEarnPayPal" parent="Theme.MaterialComponents.NoActionBar">
-        <item name="colorPrimary">@color/paypal_blue</item>
-        <item name="colorPrimaryVariant">@color/paypal_blue_dark</item>
+        <item name="colorPrimary">@color/vip_emerald</item>
+        <item name="colorPrimaryVariant">@color/vip_emerald_dark</item>
         <item name="colorOnPrimary">@color/white</item>
-        <item name="colorSecondary">@color/paypal_blue</item>
-        <item name="colorOnSecondary">@color/white</item>
+        <item name="colorSecondary">@color/vip_gold</item>
+        <item name="colorOnSecondary">@color/black</item>
         <item name="android:statusBarColor">@color/bg_dark</item>
         <item name="android:navigationBarColor">@color/bg_dark</item>
         <item name="android:windowBackground">@color/bg_dark</item>
@@ -37,6 +37,21 @@
         <item name="android:textColor">@color/text_light</item>
         <item name="android:textSize">15sp</item>
         <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- 🟢 VIP Title Style -->
+    <style name="VipTitle">
+        <item name="android:textColor">@color/vip_gold_light</item>
+        <item name="android:textSize">24sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.02</item>
+    </style>
+
+    <!-- 🟢 VIP Subtitle -->
+    <style name="VipSubtitle">
+        <item name="android:textColor">@color/text_dim</item>
+        <item name="android:textSize">11sp</item>
+        <item name="android:letterSpacing">0.08</item>
     </style>
 
 </resources>
