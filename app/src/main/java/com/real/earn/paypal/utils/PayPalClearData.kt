@@ -246,11 +246,21 @@ object PayPalClearData {
         return true
     }
 
+    /**
+     * 🟢 FIX: `?: run { ...; continue }` ہٹا دیا
+     * — `run {}` inline lambda تھا، اس میں `continue` experimental feature ہے Kotlin 2.0 میں.
+     * اب explicit null-check + continue استعمال کیا ہے.
+     */
     private fun findStorageRow(service: AccessibilityService, timeoutMs: Long): AccessibilityNodeInfo? {
         val end = SystemClock.uptimeMillis() + timeoutMs
         while (SystemClock.uptimeMillis() < end) {
             if (StepUtils.shouldStop()) return null
-            val root = service.rootInActiveWindow ?: run { StepUtils.sleepMs(300); continue }
+
+            val root = service.rootInActiveWindow
+            if (root == null) {
+                StepUtils.sleepMs(300)
+                continue
+            }
 
             val variants = arrayOf(
                 "Storage & cache", "Storage and cache",
