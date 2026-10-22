@@ -5,20 +5,16 @@ import android.content.Intent
 import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Bundle
-import android.text.InputType
 import android.view.View
-import android.widget.EditText
+import android.widget.CompoundButton
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.lifecycleScope
 import com.real.earn.paypal.databinding.ActivityPermissionBinding
 import com.real.earn.paypal.service.AutomationService
-import com.real.earn.paypal.utils.AdbPairingManager
 import com.real.earn.paypal.utils.AppPrefs
 import com.real.earn.paypal.utils.PermissionHelper
-import kotlinx.coroutines.launch
+import com.real.earn.paypal.utils.ShizukuShell
 
 class PermissionActivity : AppCompatActivity() {
 
@@ -81,217 +77,84 @@ class PermissionActivity : AppCompatActivity() {
         binding.btnChooseSound.setOnClickListener { openRingtonePicker() }
         updateSoundLabel()
 
-        // 🟢 ADB toggle setup
-        setupAdbToggle()
+        // 🟢 Shizuku toggle — safe lookup (XML may or may not have it yet)
+        setupShizukuToggle()
 
-        // 🟢 Start button
         binding.btnStart.setOnClickListener {
             if (!allGranted()) {
                 Toast.makeText(this, "Pehle saari permissions enable karo", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
+            startAutomation()
+        }
+    }
 
-            lifecycleScope.launch {
-                val adbToggleOn = binding.switchAdbPairing.isChecked
-                if (adbToggleOn) {
-                    val adbConnected = AdbPairingManager.isConnected(this@PermissionActivity)
-                    if (!adbConnected) {
-                        Toast.makeText(
-                            this@PermissionActivity,
-                            "ADB connect nahi hai — pehle pair karo (toggle ke neeche)",
-                            Toast.LENGTH_LONG
-                        ).show()
-                        return@launch
+    // ══════════════════════════════════════════════════════════════════
+    // 🟢 Shizuku Toggle — null-safe binding (works with or without XML)
+    // ══════════════════════════════════════════════════════════════════
+    private fun setupShizukuToggle() {
+        val shizukuId = resources.getIdentifier("switchShizukuMode", "id", packageName)
+        if (shizukuId == 0) return
+
+        val shizukuSwitch = findViewById<View>(shizukuId)
+        if (shizukuSwitch is CompoundButton) {
+            shizukuSwitch.isChecked = prefs.shizukuModeEnabled
+            shizukuSwitch.setOnCheckedChangeListener { _, checked ->
+                prefs.shizukuModeEnabled = checked
+                if (checked) {
+                    when {
+                        !ShizukuShell.isAvailable() -> {
+                            Toast.makeText(
+                                this,
+                                "Shizuku install karo (Play Store → Shizuku)",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            shizukuSwitch.isChecked = false
+                            prefs.shizukuModeEnabled = false
+                        }
+                        !ShizukuShell.hasPermission() -> {
+                            ShizukuShell.requestPermission()
+                            Toast.makeText(
+                                this,
+                                "Shizuku me permission allow karo",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                        else -> {
+                            Toast.makeText(this, "Shizuku ready ✓", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
-                startAutomation()
+                updateShizukuStatus()
             }
         }
+
+        updateShizukuStatus()
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // 🟢 ADB Toggle Setup + Pairing Flow
-    // ══════════════════════════════════════════════════════════════════════
-    private fun setupAdbToggle() {
-        // Restore saved host
-        prefs.adbHost?.let { binding.etAdbHost.setText(it) }
+    private fun updateShizukuStatus() {
+        val statusId = resources.getIdentifier("tvShizukuStatus", "id", packageName)
+        if (statusId == 0) return
+        val tv = findViewById<TextView>(statusId) ?: return
 
-        // Restore previous state
-        val wasPaired = prefs.adbPaired
-        binding.switchAdbPairing.isChecked = wasPaired
-
-        // Set initial section visibility
-        binding.layoutAdbSection.visibility = if (wasPaired) View.VISIBLE else View.GONE
-
-        binding.switchAdbPairing.setOnCheckedChangeListener { _, isChecked ->
-            if (isChecked) {
-                binding.layoutAdbSection.visibility = View.VISIBLE
-                checkAdbConnectionAndUpdate()
-            } else {
-                binding.layoutAdbSection.visibility = View.GONE
+        when {
+            !prefs.shizukuModeEnabled -> {
+                tv.text = "Disabled"
+                tv.setTextColor(getColor(R.color.text_dim))
+            }
+            !ShizukuShell.isAvailable() -> {
+                tv.text = "✘ Shizuku not installed"
+                tv.setTextColor(getColor(R.color.error_red))
+            }
+            !ShizukuShell.hasPermission() -> {
+                tv.text = "⚠ Permission needed — tap toggle to grant"
+                tv.setTextColor(getColor(R.color.warning_amber))
+            }
+            else -> {
+                tv.text = "✔ Connected — ADB ready"
+                tv.setTextColor(getColor(R.color.success_green))
             }
         }
-
-        binding.btnAdbPair.setOnClickListener { onPairButtonClick() }
-
-        // 🟢 Auto-check on activity open if toggle already ON
-        if (wasPaired) {
-            lifecycleScope.launch {
-                val connected = AdbPairingManager.isConnected(this@PermissionActivity)
-                if (connected) {
-                    showConnectedUi(prefs.adbHost ?: "", prefs.adbConnectPort)
-                } else {
-                    // Connection lost — show pair UI so user can re-pair
-                    showPairUi("⚠ Connection lost — pair again")
-                }
-            }
-        }
-    }
-
-    /**
-     * Called when toggle is turned ON.
-     * - If already connected → show "✅ Connected" + Disconnect button
-     * - If not connected → show pairing fields
-     */
-    private fun checkAdbConnectionAndUpdate() {
-        lifecycleScope.launch {
-            binding.tvAdbStatus.text = "Checking connection…"
-            binding.tvAdbStatus.setTextColor(getColor(R.color.text_dim))
-
-            val connected = AdbPairingManager.isConnected(this@PermissionActivity)
-
-            if (connected) {
-                showConnectedUi(prefs.adbHost ?: "", prefs.adbConnectPort)
-            } else {
-                showPairUi("⚠ Not connected — pair below")
-            }
-        }
-    }
-
-    private fun showConnectedUi(host: String, port: Int) {
-        binding.tvAdbStatus.text = "✅ Connected: $host:$port"
-        binding.tvAdbStatus.setTextColor(getColor(R.color.success_green))
-        binding.btnAdbPair.text = "Disconnect"
-        binding.btnAdbPair.backgroundTintList = android.content.res.ColorStateList.valueOf(
-            getColor(R.color.error_red)
-        )
-        binding.etAdbHost.isEnabled = false
-        binding.etCode.isEnabled = false
-        binding.etCode.text?.clear()
-    }
-
-    private fun showPairUi(statusMsg: String) {
-        binding.tvAdbStatus.text = statusMsg
-        binding.tvAdbStatus.setTextColor(getColor(R.color.error_red))
-        binding.btnAdbPair.text = "Pair Now"
-        binding.btnAdbPair.backgroundTintList = android.content.res.ColorStateList.valueOf(
-            getColor(R.color.paypal_blue)
-        )
-        binding.etAdbHost.isEnabled = true
-        binding.etCode.isEnabled = true
-    }
-
-    private fun onPairButtonClick() {
-        // If currently connected → Disconnect
-        if (binding.btnAdbPair.text == "Disconnect") {
-            AdbPairingManager.clearPairing(this)
-            binding.switchAdbPairing.isChecked = false
-            binding.layoutAdbSection.visibility = View.GONE
-            Toast.makeText(this, "ADB disconnected", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        // Otherwise, attempt pairing
-        val hostPort = binding.etAdbHost.text.toString().trim()
-        val code = binding.etCode.text.toString().trim()
-
-        if (hostPort.isEmpty() || code.length != 6) {
-            binding.tvAdbStatus.text = "⚠ IP:Port aur 6-digit code sahi likho"
-            binding.tvAdbStatus.setTextColor(getColor(R.color.error_red))
-            return
-        }
-
-        val parts = hostPort.split(":")
-        if (parts.size != 2) {
-            binding.tvAdbStatus.text = "⚠ Format: IP:Port (e.g. 192.168.1.5:37755)"
-            binding.tvAdbStatus.setTextColor(getColor(R.color.error_red))
-            return
-        }
-
-        val host = parts[0].trim()
-        val pairingPort = parts[1].trim().toIntOrNull()
-        if (pairingPort == null || pairingPort <= 0) {
-            binding.tvAdbStatus.text = "⚠ Port number sahi nahi hai"
-            binding.tvAdbStatus.setTextColor(getColor(R.color.error_red))
-            return
-        }
-
-        binding.btnAdbPair.isEnabled = false
-        binding.tvAdbStatus.text = "🔗 Pairing ho rahi hai…"
-        binding.tvAdbStatus.setTextColor(getColor(R.color.text_dim))
-
-        lifecycleScope.launch {
-            val (success, msg) = AdbPairingManager.pair(
-                this@PermissionActivity, host, pairingPort, code
-            )
-
-            if (!success) {
-                binding.tvAdbStatus.text = "✘ $msg"
-                binding.tvAdbStatus.setTextColor(getColor(R.color.error_red))
-                binding.btnAdbPair.isEnabled = true
-                return@launch
-            }
-
-            binding.tvAdbStatus.text = "✔ Paired! Connect port dhoond raha hun…"
-
-            val connectPort = AdbPairingManager.discoverConnectPort(
-                this@PermissionActivity, host
-            )
-
-            if (connectPort != null) {
-                AdbPairingManager.savePairing(
-                    this@PermissionActivity, host, pairingPort, connectPort
-                )
-                showConnectedUi(host, connectPort)
-                Toast.makeText(
-                    this@PermissionActivity,
-                    "ADB connected — ab Flight Mode aur Clear Data fast honge",
-                    Toast.LENGTH_SHORT
-                ).show()
-                binding.btnAdbPair.isEnabled = true
-            } else {
-                binding.tvAdbStatus.text =
-                    "⚠ mDNS se connect port nahi mila — manually enter karo"
-                binding.tvAdbStatus.setTextColor(getColor(R.color.error_red))
-                binding.btnAdbPair.isEnabled = true
-                showConnectPortDialog(host, pairingPort)
-            }
-        }
-    }
-
-    private fun showConnectPortDialog(host: String, pairingPort: Int) {
-        val input = EditText(this).apply {
-            hint = "Connect Port (e.g. 42567)"
-            inputType = InputType.TYPE_CLASS_NUMBER
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle("Connect Port")
-            .setMessage("Wireless Debugging screen pe 'IP address & Port' mein jo port hai woh enter karo:")
-            .setView(input)
-            .setPositiveButton("Save") { _, _ ->
-                val cp = input.text.toString().trim().toIntOrNull()
-                if (cp != null && cp > 0) {
-                    AdbPairingManager.savePairing(this, host, pairingPort, cp)
-                    showConnectedUi(host, cp)
-                    Toast.makeText(this, "ADB connected!", Toast.LENGTH_SHORT).show()
-                } else {
-                    binding.tvAdbStatus.text = "✘ Port invalid"
-                    binding.tvAdbStatus.setTextColor(getColor(R.color.error_red))
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
     }
 
     private fun startAutomation() {
@@ -323,6 +186,7 @@ class PermissionActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refreshUi()
+        updateShizukuStatus()
     }
 
     private fun refreshUi() {
@@ -379,7 +243,8 @@ class PermissionActivity : AppCompatActivity() {
     private fun openRingtonePicker() {
         try {
             val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
-                putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM or RingtoneManager.TYPE_NOTIFICATION or RingtoneManager.TYPE_RINGTONE)
+                putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE,
+                    RingtoneManager.TYPE_ALARM or RingtoneManager.TYPE_NOTIFICATION or RingtoneManager.TYPE_RINGTONE)
                 putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
                 putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
                 putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Select Captcha Alarm Sound")
@@ -388,7 +253,8 @@ class PermissionActivity : AppCompatActivity() {
                 if (!existing.isNullOrEmpty()) {
                     putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, Uri.parse(existing))
                 } else {
-                    putExtra(RingtoneManager.EXTRA_RINGTONE_DEFAULT_URI, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_DEFAULT_URI,
+                        RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
                 }
             }
             startActivityForResult(intent, 5001)
