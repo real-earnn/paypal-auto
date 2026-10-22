@@ -37,12 +37,11 @@ object PayPalAutomation {
         if (!launchOk) return Pair(0, numbers.size)
 
         if (!PayPalActions.tapGetStarted(service, 20000)) {
-            AutomationState.log("✘ [ABORT] Get Started not found")
+            AutomationState.log("✘ [ABORT] Get Started")
             PayPalActions.closePayPal(service)
             return Pair(0, numbers.size)
         }
 
-        AutomationState.log("ℹ Allowing Gmail popup cycle...")
         StepUtils.sleepMs(3000)
         PayPalActions.waitForGmailPopupToClose(service, 10000)
 
@@ -64,7 +63,6 @@ object PayPalAutomation {
         }
 
         var consecutiveFails = 0
-
         for (num in numbers) {
             if (AutomationState.getStatus() == AutomationState.Status.STOPPING) break
             while (AutomationState.getStatus() == AutomationState.Status.PAUSED) delay(300)
@@ -75,12 +73,11 @@ object PayPalAutomation {
             AutomationState.log("─────────────")
             AutomationState.log("▶ $num")
 
-            // 🟢 CRITICAL: Verify we're on number input before typing (not password/OTP)
             val preRoot = service.rootInActiveWindow
             if (preRoot != null) {
-                val isWrongScreen = NodeFinder.containsAny(preRoot, "Password", "More Options", "Resend Code")
-                if (isWrongScreen) {
-                    AutomationState.log("  ⚠ Wrong screen detected — back to number")
+                val isWrong = NodeFinder.containsAny(preRoot, "Password", "More Options", "Resend Code")
+                if (isWrong) {
+                    AutomationState.log("  ⚠ Wrong screen — back to number")
                     service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
                     StepUtils.sleepMs(1200)
                     continue
@@ -90,17 +87,12 @@ object PayPalAutomation {
             if (!StepUtils.retryStep("Number type") {
                     PayPalActions.typeNumber(service, num, dialingCode)
                 }) {
-                onNumberFail(num); fail++
-                consecutiveFails++
-                continue
+                onNumberFail(num); fail++; consecutiveFails++; continue
             }
-
             if (!StepUtils.retryStep("Continue") {
                     PayPalActions.tapContinue(service)
                 }) {
-                onNumberFail(num); fail++
-                consecutiveFails++
-                continue
+                onNumberFail(num); fail++; consecutiveFails++; continue
             }
 
             var finalResult = PayPalActions.Result.TIMEOUT
@@ -122,80 +114,60 @@ object PayPalAutomation {
 
             when (finalResult) {
                 PayPalActions.Result.OTP_SCREEN -> {
-                    onNumberSuccess(num); success++
-                    consecutiveFails = 0
+                    onNumberSuccess(num); success++; consecutiveFails = 0
                     AutomationState.log("✔ OTP — SUCCESS: $num")
-
                     PayPalActions.tapResendTwice(service)
                     StepUtils.sleepMs(2000)
-
                     if (PayPalActions.hasRedError(service)) {
-                        onNumberFail(num); fail++
-                        consecutiveFails++
+                        onNumberFail(num); fail++; consecutiveFails++
                         PayPalActions.closeResendPopup(service)
                         PayPalActions.clearNumberField(service)
                         StepUtils.sleepMs(200)
                         continue
                     }
-
                     var closeAttempts = 0
                     while (closeAttempts < 3 && PayPalActions.isResendVisible(service)) {
                         closeAttempts++
-                        AutomationState.log("  ↳ Close attempt #$closeAttempts")
                         PayPalActions.closeResendPopup(service)
                         StepUtils.sleepMs(800)
                     }
                     PayPalActions.clearNumberField(service)
                     StepUtils.sleepMs(500)
                 }
-
                 PayPalActions.Result.ERROR -> {
-                    onNumberFail(num); fail++
-                    consecutiveFails++
+                    onNumberFail(num); fail++; consecutiveFails++
                     AutomationState.log("✘ Red error")
                     PayPalActions.closeResendPopup(service)
                     PayPalActions.clearNumberField(service)
                     StepUtils.sleepMs(200)
                 }
-
                 PayPalActions.Result.PASSWORD_SCREEN -> {
                     AutomationState.log("🔒 Password screen")
                     if (PayPalActions.handlePasswordScreen(service)) {
-                        onNumberSuccess(num); success++
-                        consecutiveFails = 0
+                        onNumberSuccess(num); success++; consecutiveFails = 0
                     } else {
-                        onNumberFail(num); fail++
-                        consecutiveFails++
-                        // 🟢 Force reset signal from PayPalActions
+                        onNumberFail(num); fail++; consecutiveFails++
                         if (PayPalActions.passwordFlowNeedsReset) {
-                            AutomationState.log("🔄 FORCE RESET triggered by Password flow")
-                            break // abort round, AutomationService will reset
+                            AutomationState.log("🔄 FORCE RESET")
+                            break
                         }
                         service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
                         StepUtils.sleepMs(800)
                     }
                 }
-
                 PayPalActions.Result.STUCK -> {
-                    onNumberFail(num); fail++
-                    consecutiveFails++
-                    AutomationState.log("⏳ STUCK — aborting for reset")
+                    onNumberFail(num); fail++; consecutiveFails++
+                    AutomationState.log("⏳ STUCK — aborting")
                     break
                 }
-
                 PayPalActions.Result.TIMEOUT -> {
-                    onNumberFail(num); fail++
-                    consecutiveFails++
+                    onNumberFail(num); fail++; consecutiveFails++
                     AutomationState.log("⏱ Timeout")
                     PayPalActions.closeResendPopup(service)
                     PayPalActions.clearNumberField(service)
                     StepUtils.sleepMs(200)
                 }
-
-                else -> {
-                    onNumberFail(num); fail++
-                    consecutiveFails++
-                }
+                else -> { onNumberFail(num); fail++; consecutiveFails++ }
             }
         }
 
