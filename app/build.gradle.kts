@@ -8,11 +8,12 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.real.earn.paypal"
+        // 🟢 نیا package name — purana version alag chalega
+        applicationId = "com.realearn.paypalpro"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "2.0.0"
 
         buildConfigField(
             "String",
@@ -49,7 +50,6 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
-        // 🟢 Kadb (Kotlin 2.3.0 metadata) ke liye — metadata version check skip
         freeCompilerArgs += listOf("-Xskip-metadata-version-check")
     }
 
@@ -58,7 +58,6 @@ android {
         buildConfig = true
     }
 
-    // 🟢 FIX: bouncycastle / jspecify کی duplicate META-INF files exclude کریں
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -93,6 +92,7 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
-    // 🟢 Kadb — direct ADB client (pairing + shell)
-    implementation("com.flyfishxu:kadb:2.1.1")
+    // 🟢 Shizuku — ADB pairing ki jagah
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 }
