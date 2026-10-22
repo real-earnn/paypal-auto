@@ -3,14 +3,13 @@
     android:layout_width="wrap_content"
     android:layout_height="wrap_content">
 
-    <!-- 🟢 Expanded Controls -->
     <LinearLayout
         android:id="@+id/llExpanded"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:gravity="end"
-        android:background="#80000000"
+        android:background="@drawable/bg_overlay_panel"
         android:padding="8dp">
 
         <ImageButton
@@ -20,7 +19,7 @@
             android:background="@android:color/transparent"
             android:src="@drawable/ic_pause"
             android:contentDescription="Pause/Resume"
-            android:tint="#FFFFFF"/>
+            android:tint="@color/vip_gold_light"/>
 
         <ImageButton
             android:id="@+id/btnClose"
@@ -28,11 +27,10 @@
             android:layout_height="48dp"
             android:layout_marginTop="4dp"
             android:background="@android:color/transparent"
-            android:src="@android:drawable/ic_menu_close_clear_cancel"
+            android:src="@drawable/ic_close"
             android:contentDescription="Stop"
-            android:tint="#FF0000"/>
+            android:tint="@color/error_red"/>
 
-        <!-- Minimize Button -->
         <ImageButton
             android:id="@+id/btnMinimize"
             android:layout_width="32dp"
@@ -41,18 +39,16 @@
             android:layout_marginTop="4dp"
             android:background="@android:color/transparent"
             android:src="@android:drawable/arrow_down_float"
-            android:tint="#FFFFFF"/>
+            android:tint="@color/vip_emerald_light"/>
     </LinearLayout>
 
-    <!-- 🟢 Minimized Icon -->
     <ImageView
         android:id="@+id/ivMinimized"
         android:layout_width="40dp"
         android:layout_height="40dp"
         android:visibility="gone"
-        android:src="@android:drawable/ic_menu_compass"
-        android:background="#80000000"
-        android:padding="8dp"
-        android:tint="#00FF00"/>
+        android:src="@drawable/ic_launcher"
+        android:background="@drawable/bg_round_blue"
+        android:padding="8dp"/>
 
 </FrameLayout>
