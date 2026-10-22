@@ -7,8 +7,9 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+# 🟢 تبدیلی 1: ریلیز بنانے کے لیے write کی اجازت دی ہے
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -202,17 +203,13 @@ jobs:
           echo "  VERIFYING FINAL SIGNATURE"
           echo "════════════════════════════════════════════════════════════"
 
-          # 🟢 Normalize expected hash (remove colons + lowercase)
           EXPECTED_NORM=$(echo "$SIGNING_SHA256" | tr -d ':' | tr 'A-Z' 'a-z')
           echo "Expected (normalized): $EXPECTED_NORM"
 
-          # 🟢 Dump full apksigner output for debugging
           echo "────────────────── apksigner output ──────────────────"
           $APKSIGNER verify --print-certs app-protected-signed.apk
           echo "──────────────────────────────────────────────────────"
 
-          # 🟢 Robust check: does the expected hash appear ANYWHERE in apksigner output?
-          # (apksigner format different hota hai per build-tools version)
           if $APKSIGNER verify --print-certs app-protected-signed.apk \
               | tr -d ':' | tr 'A-Z' 'a-z' \
               | grep -q "$EXPECTED_NORM"; then
@@ -231,16 +228,32 @@ jobs:
             exit 1
           fi
 
-      - name: Upload Final APK
+      # 🟢 تبدیلی 2: سب سے پہلے ریلیز میں APK اپلوڈ کریں (محفوظ جگہ)
+      - name: Create Release and Upload APK
         if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0-${{ github.run_number }}
+          name: Protected APK v1.0-${{ github.run_number }}
+          files: |
+            app-protected-signed.apk
+            app/build/outputs/mapping/release/mapping.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 🟢 تبدیلی 3: آرٹیفیکٹ اپلوڈ (اگر کوٹہ فل ہو تو فیل ہو جائے مگر بلڈ سرخ نہ ہو)
+      - name: Upload Final APK (Artifact)
+        if: success()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: RealEarnPayPal-Signed-${{ github.run_number }}
           path: app-protected-signed.apk
           retention-days: 30
 
-      - name: Upload mapping.txt
+      - name: Upload mapping.txt (Artifact)
         if: success()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: mapping-${{ github.run_number }}
@@ -250,6 +263,7 @@ jobs:
 
       - name: Upload build reports (on failure)
         if: failure()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: build-reports-${{ github.run_number }}
