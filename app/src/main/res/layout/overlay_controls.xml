@@ -6,15 +6,6 @@
     android:paddingTop="4dp"
     android:paddingBottom="4dp">
 
-    <!-- Pulse ring behind toggle (decorative) -->
-    <View
-        android:id="@+id/ovPulseRing"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:layout_gravity="end|center_vertical"
-        android:background="@drawable/bg_overlay_toggle_ring"
-        android:alpha="0.6" />
-
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -31,7 +22,7 @@
             android:visibility="gone"
             android:alpha="0">
 
-            <!-- Pause button -->
+            <!-- Pause / Resume button -->
             <ImageButton
                 android:id="@+id/btnPause"
                 android:layout_width="48dp"
@@ -53,17 +44,31 @@
                 android:contentDescription="Stop" />
         </LinearLayout>
 
-        <!-- Toggle bubble (small, 40dp) -->
-        <ImageButton
-            android:id="@+id/btnToggle"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:layout_marginStart="8dp"
-            android:background="@drawable/bg_overlay_toggle_closed"
-            android:src="@drawable/ic_overlay_lightning"
-            android:scaleType="centerInside"
-            android:padding="10dp"
-            android:contentDescription="Toggle controls" />
+        <!-- 🟢 Toggle bubble + ring — both perfectly centered -->
+        <FrameLayout
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:layout_marginStart="8dp">
+
+            <View
+                android:id="@+id/ovPulseRing"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_gravity="center"
+                android:background="@drawable/bg_overlay_toggle_ring"
+                android:alpha="0.6" />
+
+            <ImageButton
+                android:id="@+id/btnToggle"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_gravity="center"
+                android:background="@drawable/bg_overlay_toggle_closed"
+                android:src="@drawable/ic_overlay_lightning"
+                android:scaleType="centerInside"
+                android:padding="10dp"
+                android:contentDescription="Toggle controls" />
+        </FrameLayout>
     </LinearLayout>
 
 </FrameLayout>
