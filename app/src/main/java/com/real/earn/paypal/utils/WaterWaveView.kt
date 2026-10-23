@@ -8,9 +8,11 @@ import android.graphics.Path
 import android.util.AttributeSet
 import android.view.View
 import android.view.animation.LinearInterpolator
+import kotlin.math.sin
 
 /**
- * 🟢 Water wave animation — card ke andar flowing water
+ * 🟢 Calm water tank animation — balance card ke andar.
+ * Subtle, slow, two layers only. Not a rushing river.
  */
 class WaterWaveView @JvmOverloads constructor(
     context: Context,
@@ -18,22 +20,20 @@ class WaterWaveView @JvmOverloads constructor(
     defStyle: Int = 0
 ) : View(context, attrs, defStyle) {
 
-    private val paint1 = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0x8827B86E.toInt()
-        style = Paint.Style.FILL
-    }
-    private val paint2 = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0x55E6C15A.toInt()
-        style = Paint.Style.FILL
-    }
-    private val paint3 = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0x33FFFFFF.toInt()
+    // Back layer — deeper, darker emerald
+    private val paintBack = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0x44168A50.toInt()
         style = Paint.Style.FILL
     }
 
-    private var offset1 = 0f
-    private var offset2 = 0f
-    private var offset3 = 0f
+    // Front layer — slightly brighter emerald, still subtle
+    private val paintFront = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0x5527B86E.toInt()
+        style = Paint.Style.FILL
+    }
+
+    private var offsetBack = 0f
+    private var offsetFront = 0f
 
     private var animator: ValueAnimator? = null
 
@@ -43,13 +43,12 @@ class WaterWaveView @JvmOverloads constructor(
 
     private fun startAnimation() {
         animator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 4000
+            duration = 14000L       // 🟢 Very slow — 14s per cycle
             repeatCount = ValueAnimator.INFINITE
             interpolator = LinearInterpolator()
             addUpdateListener {
-                offset1 = (offset1 + 0.008f) % 1f
-                offset2 = (offset2 + 0.012f) % 1f
-                offset3 = (offset3 + 0.016f) % 1f
+                offsetBack = (offsetBack + 0.0015f) % 1f
+                offsetFront = (offsetFront + 0.0022f) % 1f
                 invalidate()
             }
             start()
@@ -61,16 +60,24 @@ class WaterWaveView @JvmOverloads constructor(
         val w = width.toFloat()
         val h = height.toFloat()
 
-        drawWave(canvas, w, h, 0.55f, offset1, paint1)
-        drawWave(canvas, w, h, 0.62f, offset2, paint2)
-        drawWave(canvas, w, h, 0.70f, offset3, paint3)
+        // 🟢 Two layers only. Low amplitude. Long wavelength.
+        drawWave(canvas, w, h, 0.58f, offsetBack, paintBack, amplitudeRatio = 0.012f)
+        drawWave(canvas, w, h, 0.65f, offsetFront, paintFront, amplitudeRatio = 0.010f)
     }
 
-    private fun drawWave(canvas: Canvas, w: Float, h: Float, startRatio: Float, offset: Float, paint: Paint) {
+    private fun drawWave(
+        canvas: Canvas,
+        w: Float,
+        h: Float,
+        startRatio: Float,
+        offset: Float,
+        paint: Paint,
+        amplitudeRatio: Float
+    ) {
         val path = Path()
         val startY = h * startRatio
-        val amplitude = h * 0.06f
-        val wavelength = w * 0.9f
+        val amplitude = h * amplitudeRatio
+        val wavelength = w * 2.0f       // 🟢 Long wave = calm
         val phase = offset * wavelength * 2
 
         path.moveTo(0f, h)
@@ -78,9 +85,9 @@ class WaterWaveView @JvmOverloads constructor(
 
         var x = 0f
         while (x <= w) {
-            val y = startY + kotlin.math.sin((x / wavelength * 2 * Math.PI + phase).toFloat()) * amplitude
+            val y = startY + sin((x / wavelength * 2 * Math.PI + phase).toFloat()) * amplitude
             path.lineTo(x, y)
-            x += 5f
+            x += 6f
         }
         path.lineTo(w, h)
         path.close()
@@ -90,5 +97,6 @@ class WaterWaveView @JvmOverloads constructor(
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         animator?.cancel()
+        animator = null
     }
 }
