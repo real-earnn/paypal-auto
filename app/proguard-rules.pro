@@ -2,9 +2,6 @@
 # 🟢 Real Earn PayPal — R8 Rules (Fixed for Retrofit/Gson generics)
 # ══════════════════════════════════════════════════════════════════
 
-# ── 1. اپنی ایپ کی کلاسز کو obfuscate ہونے دیں (کوئی keep نہیں) ──
-# صرف ضروری کلاسز کو رکھیں، باقی سب rename ہو جائیں گی
-
 # ── 2. Activities, Services, Receivers, Providers ──
 -keep public class * extends android.app.Activity
 -keep public class * extends android.app.Service
@@ -46,28 +43,41 @@
 -keep class org.jspecify.** { *; }
 
 # ══════════════════════════════════════════════════════════════════
+# 🟢 CRITICAL: SHIZUKU — Reflection needs method names preserved
+# ══════════════════════════════════════════════════════════════════
+# Hum `Shizuku.newProcess()` reflection se call karte hain.
+# R8 ke bina ye method rename ho jati hai aur reflection fail hota hai.
+
+-keep class rikka.shizuku.** { *; }
+-keepclassmembers class rikka.shizuku.** {
+    <methods>;
+    <fields>;
+    <init>(...);
+}
+-dontwarn rikka.shizuku.**
+
+# Shizuku uses reflection internally for AIDL stubs
+-keep class moe.shizuku.** { *; }
+-dontwarn moe.shizuku.**
+
+# ══════════════════════════════════════════════════════════════════
 # 🟢 CRITICAL FIXES for Retrofit / Gson / Kotlin Coroutines
-# (R8 Full Mode generic signatures strip kar deta hai)
 # ══════════════════════════════════════════════════════════════════
 
-# 10.1. Generic signatures — lazmi (Retrofit ke liye)
 -keepattributes Signature
 -keepattributes Exceptions
 -keepattributes *Annotation*
 -keepattributes InnerClasses
 -keepattributes EnclosingMethod
 
-# 10.2. Gson TypeToken — must keep generic signature
 -keep,allowobfuscation,allowshrinking class com.google.gson.reflect.TypeToken
 -keep class com.google.gson.reflect.TypeToken { *; }
 -keep class * extends com.google.gson.reflect.TypeToken
 
-# 10.3. Retrofit Call / Response — generic signatures
 -keep,allowobfuscation,allowshrinking interface retrofit2.Call
 -keep,allowobfuscation,allowshrinking class retrofit2.Response
 -keep,allowobfuscation,allowshrinking class kotlin.coroutines.Continuation
 
-# 10.4. Retrofit core (reflection on annotations)
 -keep class retrofit2.** { *; }
 -keepclassmembers,allowshrinking,allowobfuscation interface * {
     @retrofit2.http.* <methods>;
@@ -76,13 +86,11 @@
 -dontwarn okhttp3.**
 -dontwarn okio.**
 
-# 10.5. Kotlin Coroutines — Flow / Continuation generics
 -keep,allowobfuscation,allowshrinking class kotlinx.coroutines.flow.Flow
 -keepclassmembers class kotlinx.coroutines.** {
     volatile <fields>;
 }
 
-# 10.6. Gson core (field reflection)
 -keep class com.google.gson.** { *; }
 -keepclassmembers class com.google.gson.** {
     <fields>;
@@ -93,29 +101,24 @@
 # 🟢 General Rules (Kotlin, Enums, Parcelable, Native)
 # ══════════════════════════════════════════════════════════════════
 
-# Kotlin metadata
 -keep class kotlin.Metadata { *; }
 -keepclassmembers class **$WhenMappings {
     <fields>;
 }
 
-# Enums
 -keepclassmembers enum * {
     public static **[] values();
     public static ** valueOf(java.lang.String);
 }
 
-# Native methods
 -keepclasseswithmembernames class * {
     native <methods>;
 }
 
-# Parcelable
 -keepclassmembers class * implements android.os.Parcelable {
     public static final android.os.Parcelable$Creator CREATOR;
 }
 
-# Suppress warnings
 -dontwarn java.lang.invoke.**
 -dontwarn javax.annotation.**
 -dontwarn org.slf4j.**
