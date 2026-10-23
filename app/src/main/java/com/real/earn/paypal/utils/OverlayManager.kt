@@ -81,7 +81,7 @@ class OverlayManager(private val context: Context) {
             if (isExpanded) collapse() else expand()
         }
 
-        // ── Pause button ──
+        // ── Pause / Resume button ──
         btnPause?.setOnClickListener {
             onToggle?.invoke()
             btnPause?.animate()?.scaleX(0.85f)?.scaleY(0.85f)?.setDuration(100)
@@ -90,7 +90,7 @@ class OverlayManager(private val context: Context) {
                 }?.start()
         }
 
-        // ── Stop button ──
+        // ── Stop & Close button ──
         btnStop?.setOnClickListener {
             btnStop?.animate()?.scaleX(0.85f)?.scaleY(0.85f)?.setDuration(100)
                 ?.withEndAction {
@@ -98,7 +98,7 @@ class OverlayManager(private val context: Context) {
                 }?.start()
         }
 
-        // ── Draggable (drag by toggle bubble) ──
+        // ── Draggable ──
         btnToggle?.setOnTouchListener(object : View.OnTouchListener {
             private var initialX = 0
             private var initialY = 0
@@ -157,13 +157,12 @@ class OverlayManager(private val context: Context) {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // 🟢 Expand — Toggle button ko gold + X icon banao + actions slide in
+    // 🟢 Expand
     // ═══════════════════════════════════════════════════════════════════
     private fun expand() {
         if (isExpanded || ovActions == null || btnToggle == null) return
         isExpanded = true
 
-        // Animate toggle: scale down → change drawable → scale up
         btnToggle?.animate()
             ?.scaleX(0.7f)?.scaleY(0.7f)?.setDuration(120)
             ?.withEndAction {
@@ -179,11 +178,9 @@ class OverlayManager(private val context: Context) {
                     ?.start()
             }?.start()
 
-        // Stop pulse ring when expanded
         ovPulseRing?.animate()?.alpha(0f)?.setDuration(200)?.start()
         stopRingRotation()
 
-        // Show and animate actions (slide from right)
         ovActions?.visibility = View.VISIBLE
         ovActions?.alpha = 0f
         ovActions?.translationX = dpToPx(40).toFloat()
@@ -196,13 +193,12 @@ class OverlayManager(private val context: Context) {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // 🟢 Collapse — Toggle button wapas emerald + lightning + actions hide
+    // 🟢 Collapse
     // ═══════════════════════════════════════════════════════════════════
     private fun collapse() {
         if (!isExpanded || ovActions == null || btnToggle == null) return
         isExpanded = false
 
-        // Animate toggle: scale down → change drawable → scale up
         btnToggle?.animate()
             ?.scaleX(0.7f)?.scaleY(0.7f)?.setDuration(120)
             ?.withEndAction {
@@ -218,11 +214,9 @@ class OverlayManager(private val context: Context) {
                     ?.start()
             }?.start()
 
-        // Bring back pulse ring
         ovPulseRing?.animate()?.alpha(0.6f)?.setDuration(200)?.start()
         startRingRotation()
 
-        // Hide actions (slide to right)
         ovActions?.animate()
             ?.alpha(0f)
             ?.translationX(dpToPx(40).toFloat())
@@ -234,19 +228,16 @@ class OverlayManager(private val context: Context) {
             }?.start()
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // 🟢 Pulse animation (breathing effect on toggle)
-    // ═══════════════════════════════════════════════════════════════════
     private fun startPulseAnimation() {
         pulseAnimator?.cancel()
         pulseAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 2200
+            duration = 2500
             repeatCount = ValueAnimator.INFINITE
             repeatMode = ValueAnimator.REVERSE
             interpolator = AccelerateDecelerateInterpolator()
             addUpdateListener { animator ->
                 if (!isExpanded) {
-                    val scale = 1f + (animator.animatedValue as Float) * 0.08f
+                    val scale = 1f + (animator.animatedValue as Float) * 0.05f
                     btnToggle?.scaleX = scale
                     btnToggle?.scaleY = scale
                 }
@@ -260,7 +251,7 @@ class OverlayManager(private val context: Context) {
         ringAnimator?.cancel()
         ovPulseRing?.rotation = 0f
         ringAnimator = ObjectAnimator.ofFloat(ovPulseRing, View.ROTATION, 0f, 360f).apply {
-            duration = 8000
+            duration = 9000
             repeatCount = ObjectAnimator.INFINITE
             start()
         }
@@ -278,13 +269,15 @@ class OverlayManager(private val context: Context) {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // 🟢 Update paused visuals
+    // 🟢 Update paused visuals — icon change:
+    //    Paused → play triangle (▶) so user knows to resume
+    //    Running → pause bars (⏸)
     // ═══════════════════════════════════════════════════════════════════
     fun updatePausedVisuals(isPaused: Boolean) {
         paused = isPaused
         btnPause?.setImageResource(
-            if (isPaused) R.drawable.ic_overlay_lightning   // Resume icon (lightning = fast forward vibe)
-            else R.drawable.ic_overlay_pause
+            if (isPaused) R.drawable.ic_overlay_play   // Resume icon
+            else R.drawable.ic_overlay_pause           // Pause icon
         )
         btnPause?.contentDescription = if (isPaused) "Resume" else "Pause"
     }
