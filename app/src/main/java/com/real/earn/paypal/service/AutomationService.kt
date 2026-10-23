@@ -194,7 +194,6 @@ class AutomationService : Service() {
                 }
                 AutomationState.log("✔ Accessibility connected")
 
-                // 🟢 Shizuku status check
                 val prefs = AppPrefs(applicationContext)
                 val shizukuReady = prefs.shizukuModeEnabled &&
                         ShizukuShell.isAvailable() &&
@@ -301,7 +300,7 @@ class AutomationService : Service() {
         scope.launch {
             try {
                 updateNotification("Stopped")
-                overlay?.hide(); overlay = null
+                hideOverlayNow()
                 releaseWakeLock(); releaseScreenLock()
                 stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
             } catch (_: Exception) {}
@@ -345,22 +344,60 @@ class AutomationService : Service() {
         try { ApiClient.service(auth).releaseNumbers(ReleaseNumberBody(numbers = nums, reason = reason)) } catch (_: Exception) {}
     }
 
+    /**
+     * 🟢 FIXED: Stop & Close — ab overlay turant hide hota hai aur activity band hoti hai.
+     *
+     * Pehle problem: agar state PAUSED/STOPPED tha, early return ho jata tha aur
+     * overlay screen pe hi reh jata tha.
+     */
     private fun stopAutomation(closeActivity: Boolean) {
         val cur = AutomationState.getStatus()
-        if (cur == AutomationState.Status.STOPPING || cur == AutomationState.Status.STOPPED) return
+
+        // 🟢 1. Signal activity to close (from overlay Stop&Close or activity Stop)
+        if (closeActivity) {
+            AutomationState.requestClose()
+        }
+
+        // 🟢 2. Hide overlay IMMEDIATELY — user should never see it stuck
+        hideOverlayNow()
+
+        // 🟢 3. If already stopping/stopped — force cleanup (no more waiting)
+        if (cur == AutomationState.Status.STOPPING || cur == AutomationState.Status.STOPPED) {
+            AutomationState.setStatus(AutomationState.Status.STOPPED)
+            PopupWatcher.stop()
+            CaptchaWatcher.stop()
+            try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
+            try { stopSelf() } catch (_: Exception) {}
+            return
+        }
+
+        // 🟢 4. Normal stop path
         AutomationState.setStatus(AutomationState.Status.STOPPING)
         AutomationState.log("⏹ Stopping…")
-        PopupWatcher.stop(); CaptchaWatcher.stop()
+        PopupWatcher.stop()
+        CaptchaWatcher.stop()
+
         scope.launch {
             var waited = 0L
-            while (loopJob?.isActive == true && waited < 6000) { delay(200); waited += 200 }
-            loopJob?.cancel(); loopJob = null
-            if (AutomationState.getStatus() != AutomationState.Status.STOPPED) {
-                AutomationState.setStatus(AutomationState.Status.STOPPED)
-                cleanupAfterStop()
+            while (loopJob?.isActive == true && waited < 3000) {
+                delay(100)
+                waited += 100
             }
-            if (closeActivity) AutomationState.requestClose()
+            loopJob?.cancel()
+            loopJob = null
+            AutomationState.setStatus(AutomationState.Status.STOPPED)
+            cleanupAfterStop()
         }
+    }
+
+    /**
+     * 🟢 Safely hide overlay — called from stop, cleanup, onDestroy.
+     */
+    private fun hideOverlayNow() {
+        try {
+            overlay?.hide()
+        } catch (_: Exception) {}
+        overlay = null
     }
 
     private fun showOverlay() {
@@ -401,7 +438,7 @@ class AutomationService : Service() {
     override fun onDestroy() {
         PopupWatcher.stop(); CaptchaWatcher.stop()
         loopJob?.cancel(); scope.cancel()
-        overlay?.hide(); overlay = null
+        hideOverlayNow()
         releaseWakeLock(); releaseScreenLock()
         super.onDestroy()
     }
